@@ -1,6 +1,6 @@
 # pkg
 
-Shared Go packages for Latere AI.
+Platform-wide Go packages for Latere AI.
 
 ## Gold Standards
 

@@ -1,6 +1,6 @@
 # pkg
 
-Shared Go packages for [Latere AI](https://latere.ai).
+Platform-wide Go packages for [Latere AI](https://latere.ai).
 
 ## Packages
 
