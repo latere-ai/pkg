@@ -22,15 +22,21 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/attribute"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
 var (
 	newResource = func(ctx context.Context, name, version string) (*resource.Resource, error) {
+		env := os.Getenv("LATERE_ENV")
+		if env == "" {
+			env = "production"
+		}
 		return resource.New(ctx,
 			resource.WithAttributes(
 				semconv.ServiceName(name),
 				semconv.ServiceVersion(version),
+				attribute.String("deployment.environment", env),
 			),
 		)
 	}
