@@ -13,6 +13,10 @@ import "latere.ai/x/pkg/otel"
 
 shutdown := otel.Setup(ctx, "my-service", "1.0.0")
 defer shutdown()
+
+srv := &http.Server{
+    Handler: otel.Handler(mux, "my-service"),
+}
 ```
 
 Environment variables:
