@@ -25,28 +25,39 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
+var (
+	newResource = func(ctx context.Context, name, version string) (*resource.Resource, error) {
+		return resource.New(ctx,
+			resource.WithAttributes(
+				semconv.ServiceName(name),
+				semconv.ServiceVersion(version),
+			),
+		)
+	}
+	newTraceExporter = func(ctx context.Context) (trace.SpanExporter, error) {
+		return otlptracehttp.New(ctx)
+	}
+	newMetricExporter = func(ctx context.Context) (metric.Exporter, error) {
+		return otlpmetrichttp.New(ctx)
+	}
+)
+
 // Setup initializes OpenTelemetry. If OTEL_EXPORTER_OTLP_ENDPOINT is set,
 // traces and metrics are exported via OTLP/HTTP. Otherwise, telemetry is
 // a noop (no overhead). Returns a shutdown function.
 func Setup(ctx context.Context, serviceName, serviceVersion string) func() {
 	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 	if endpoint == "" {
-		return func() {} // noop — no telemetry overhead
+		return func() {}
 	}
 
-	res, err := resource.New(ctx,
-		resource.WithAttributes(
-			semconv.ServiceName(serviceName),
-			semconv.ServiceVersion(serviceVersion),
-		),
-	)
+	res, err := newResource(ctx, serviceName, serviceVersion)
 	if err != nil {
 		log.Printf("telemetry: resource error: %v", err)
 		return func() {}
 	}
 
-	// Trace exporter (OTLP/HTTP).
-	traceExp, err := otlptracehttp.New(ctx)
+	traceExp, err := newTraceExporter(ctx)
 	if err != nil {
 		log.Printf("telemetry: trace exporter error: %v", err)
 		return func() {}
@@ -63,8 +74,7 @@ func Setup(ctx context.Context, serviceName, serviceVersion string) func() {
 		propagation.Baggage{},
 	))
 
-	// Metric exporter (OTLP/HTTP).
-	metricExp, err := otlpmetrichttp.New(ctx)
+	metricExp, err := newMetricExporter(ctx)
 	if err != nil {
 		log.Printf("telemetry: metric exporter error: %v", err)
 		return func() { tp.Shutdown(ctx) }
