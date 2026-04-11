@@ -6,7 +6,9 @@ Platform-wide Go packages for [Latere AI](https://latere.ai).
 
 | Package | Description |
 |---|---|
+| [`jwtauth`](jwtauth/) | JWKS-based RS256 JWT validation for services accepting auth-issued tokens |
 | [`md`](md/) | YAML frontmatter parsing and GFM-to-HTML rendering |
+| [`oidc`](oidc/) | OIDC Relying Party client with PKCE, encrypted cookie sessions, and token refresh |
 | [`otel`](otel/) | OpenTelemetry tracing, metrics, and HTTP instrumentation |
 
 ## Development
