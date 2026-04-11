@@ -114,8 +114,9 @@ func New(cfg Config) *Client {
 			ClientSecret: cfg.ClientSecret,
 			RedirectURL:  cfg.RedirectURL,
 			Endpoint: oauth2.Endpoint{
-				AuthURL:  cfg.AuthURL + "/authorize",
-				TokenURL: cfg.AuthURL + "/token",
+				AuthURL:   cfg.AuthURL + "/authorize",
+				TokenURL:  cfg.AuthURL + "/token",
+				AuthStyle: oauth2.AuthStyleInHeader,
 			},
 			Scopes: []string{"openid", "email", "profile"},
 		},
