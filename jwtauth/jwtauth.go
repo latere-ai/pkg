@@ -182,7 +182,8 @@ func New(cfg Config) *Validator {
 // ── Package-level vars for testability ──────────────────────────────────────
 
 var httpGet = func(url string) (*http.Response, error) {
-	return http.Get(url) //nolint:gosec
+	client := &http.Client{Timeout: 10 * time.Second}
+	return client.Get(url) //nolint:gosec
 }
 
 var timeNow = time.Now
