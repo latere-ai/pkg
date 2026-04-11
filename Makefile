@@ -8,6 +8,8 @@ race:
 
 fuzz:
 	go test -fuzz=. -fuzztime=30s ./otel/
+	go test -fuzz=FuzzValidate -fuzztime=30s ./jwtauth/
+	go test -fuzz=FuzzParseJWKS -fuzztime=30s ./jwtauth/
 
 cover:
 	go test -coverprofile=coverage.out -covermode=atomic ./...
