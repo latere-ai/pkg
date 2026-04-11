@@ -1,5 +1,72 @@
 // Package jwtauth provides JWKS-based RS256 JWT validation for services
 // that accept tokens issued by the Latere auth service.
+//
+// # Design
+//
+// The auth service issues RS256 JWTs with claims that vary by principal type.
+// Downstream services (FS, API, etc.) validate these tokens locally using the
+// public keys published at the auth service's JWKS endpoint, without any
+// round-trip to the auth service.
+//
+// # Principal types and validation strategies
+//
+// Every token carries a "principal_type" claim that identifies the subject:
+//
+//   - "user"    — a human user authenticated via OIDC. Local JWT validation
+//     is always sufficient.
+//   - "service" — a service account using client_credentials. Local JWT
+//     validation is always sufficient.
+//   - "agent"   — an AI agent acting on behalf of a delegator (RFC 8693
+//     token exchange). Agent tokens carry a "validation" claim:
+//   - "local"  — read-only agent; local JWT validation is sufficient.
+//   - "strict" — agent with write/delete/admin scopes; the downstream
+//     service MUST call GET /tokeninfo on EVERY request to verify
+//     that the delegation has not been revoked or expired.
+//
+// Use [Claims.NeedsTokenInfo] to determine whether a token requires online
+// validation. The /tokeninfo call itself is the caller's responsibility.
+//
+// # JWKS caching
+//
+// Public keys are fetched from the JWKS endpoint and cached for the duration
+// specified by [Config.CacheTTL] (default 5 minutes). On fetch errors the
+// validator falls back to stale cached keys, so transient auth-service
+// outages do not break validation for already-seen keys.
+//
+// # Token claims
+//
+// The [Claims] struct is a superset of all principal types. Fields that do
+// not apply to a given principal type are zero-valued:
+//
+//	Field          User   Service  Agent
+//	─────          ────   ───────  ─────
+//	Sub            ✓      ✓        ✓
+//	PrincipalType  ✓      ✓        ✓
+//	OrgID          ✓      ✓        ✓
+//	Scopes         ✓      ✓        ✓       (JWT claim key: "scp")
+//	Roles          ✓      ✓        ✓
+//	Email          ✓
+//	IsSuperadmin   ✓      ✓        ✓
+//	Validation                      ✓       ("local" or "strict")
+//	DelegationID                    ✓
+//	Act                             ✓       (delegator identity)
+//
+// # Usage
+//
+//	v := jwtauth.New(jwtauth.Config{
+//	    JWKSURL:   "https://auth.latere.ai/.well-known/jwks.json",
+//	    Issuer:    "https://auth.latere.ai",        // optional
+//	    Audiences: []string{"my-service-client-id"}, // optional
+//	})
+//
+//	// As HTTP middleware:
+//	mux.Handle("GET /api/resource", v.Middleware(handler))
+//
+//	// In a handler:
+//	claims := jwtauth.ClaimsFromContext(r.Context())
+//	if claims.NeedsTokenInfo() {
+//	    // call auth service's GET /tokeninfo before proceeding
+//	}
 package jwtauth
 
 import (
