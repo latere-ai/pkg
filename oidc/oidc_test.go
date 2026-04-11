@@ -163,26 +163,19 @@ func TestAuthURL(t *testing.T) {
 
 // --- PKCE and state ---
 
-func TestGeneratePKCE(t *testing.T) {
-	v, ch, err := GeneratePKCE()
-	if err != nil {
-		t.Fatalf("GeneratePKCE error: %v", err)
+func TestGenerateVerifier(t *testing.T) {
+	v := GenerateVerifier()
+	if v == "" {
+		t.Error("verifier is empty")
 	}
-	if v == "" || ch == "" {
-		t.Error("verifier or challenge is empty")
-	}
-	if v == ch {
-		t.Error("verifier and challenge should differ")
-	}
-	// Verify length: 32 bytes base64url = 43 chars.
-	if len(v) != 43 {
-		t.Errorf("verifier length = %d, want 43", len(v))
+	if len(v) < 32 {
+		t.Errorf("verifier length = %d, want >= 32", len(v))
 	}
 }
 
-func TestGeneratePKCEUniqueness(t *testing.T) {
-	v1, _, _ := GeneratePKCE()
-	v2, _, _ := GeneratePKCE()
+func TestGenerateVerifierUniqueness(t *testing.T) {
+	v1 := GenerateVerifier()
+	v2 := GenerateVerifier()
 	if v1 == v2 {
 		t.Error("two calls should produce different verifiers")
 	}
@@ -214,7 +207,8 @@ func TestGenerateStateUniqueness(t *testing.T) {
 
 func TestAuthCodeURL(t *testing.T) {
 	c := testClient(t)
-	url := c.AuthCodeURL("test-state", "test-challenge")
+	verifier := GenerateVerifier()
+	url := c.AuthCodeURL("test-state", verifier)
 
 	if !strings.Contains(url, "https://auth.example.com/authorize") {
 		t.Errorf("URL missing authorize endpoint: %s", url)
@@ -225,7 +219,7 @@ func TestAuthCodeURL(t *testing.T) {
 	if !strings.Contains(url, "state=test-state") {
 		t.Errorf("URL missing state: %s", url)
 	}
-	if !strings.Contains(url, "code_challenge=test-challenge") {
+	if !strings.Contains(url, "code_challenge=") {
 		t.Errorf("URL missing code_challenge: %s", url)
 	}
 	if !strings.Contains(url, "code_challenge_method=S256") {
@@ -750,17 +744,10 @@ type failReader struct{}
 
 func (failReader) Read([]byte) (int, error) { return 0, fmt.Errorf("entropy failure") }
 
-func TestGeneratePKCERandError(t *testing.T) {
-	orig := randReader
-	t.Cleanup(func() { randReader = orig })
-	randReader = failReader{}
-
-	_, _, err := GeneratePKCE()
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !strings.Contains(err.Error(), "generate PKCE verifier") {
-		t.Errorf("error = %q", err.Error())
+func TestGenerateVerifierNonEmpty(t *testing.T) {
+	v := GenerateVerifier()
+	if v == "" {
+		t.Fatal("expected non-empty verifier")
 	}
 }
 

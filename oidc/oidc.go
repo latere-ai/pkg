@@ -145,16 +145,10 @@ func (c *Client) AuthURL() string {
 // randReader is the entropy source. Package-level variable for testability.
 var randReader io.Reader = rand.Reader
 
-// GeneratePKCE creates a code verifier and its S256 challenge.
-func GeneratePKCE() (verifier, challenge string, err error) {
-	buf := make([]byte, 32)
-	if _, err := io.ReadFull(randReader, buf); err != nil {
-		return "", "", fmt.Errorf("generate PKCE verifier: %w", err)
-	}
-	verifier = base64.RawURLEncoding.EncodeToString(buf)
-	h := sha256.Sum256([]byte(verifier))
-	challenge = base64.RawURLEncoding.EncodeToString(h[:])
-	return verifier, challenge, nil
+// GenerateVerifier creates a PKCE code verifier.
+// Uses the oauth2 package's built-in generator for correct formatting.
+func GenerateVerifier() string {
+	return oauth2.GenerateVerifier()
 }
 
 // GenerateState creates a random state parameter for CSRF protection.
@@ -169,17 +163,17 @@ func GenerateState() (string, error) {
 // --- OAuth2 operations ---
 
 // AuthCodeURL returns the URL to redirect the user to for authorization.
-func (c *Client) AuthCodeURL(state, challenge string) string {
+// The verifier is used to derive the S256 challenge automatically.
+func (c *Client) AuthCodeURL(state, verifier string) string {
 	return c.oauthCfg.AuthCodeURL(state,
-		oauth2.SetAuthURLParam("code_challenge", challenge),
-		oauth2.SetAuthURLParam("code_challenge_method", "S256"),
+		oauth2.S256ChallengeOption(verifier),
 	)
 }
 
 // Exchange trades an authorization code for tokens using the PKCE verifier.
 func (c *Client) Exchange(r *http.Request, code, verifier string) (*oauth2.Token, error) {
 	return c.oauthCfg.Exchange(r.Context(), code,
-		oauth2.SetAuthURLParam("code_verifier", verifier),
+		oauth2.VerifierOption(verifier),
 	)
 }
 
