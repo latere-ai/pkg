@@ -129,6 +129,7 @@ func New(cfg Config) *Client {
 			c.cookieKey = sha256.Sum256([]byte(cfg.CookieKey))
 		}
 	} else {
+		slog.Warn("oidc: AUTH_COOKIE_KEY not set, falling back to client secret — set AUTH_COOKIE_KEY for production")
 		c.cookieKey = sha256.Sum256([]byte(cfg.ClientSecret))
 	}
 
