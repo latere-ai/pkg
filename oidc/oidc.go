@@ -118,7 +118,7 @@ func New(cfg Config) *Client {
 				TokenURL:  cfg.AuthURL + "/token",
 				AuthStyle: oauth2.AuthStyleInHeader,
 			},
-			Scopes: []string{"openid", "email", "profile", "offline_access"},
+			Scopes: []string{"openid", "email", "profile"},
 		},
 	}
 
