@@ -44,7 +44,6 @@ type User struct {
 	Email   string `json:"email"`
 	Name    string `json:"name"`
 	Picture string `json:"picture"`
-	IsAdmin bool   `json:"is_superadmin,omitempty"`
 }
 
 // Session holds tokens and user info stored in the encrypted session cookie.
