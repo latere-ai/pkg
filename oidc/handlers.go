@@ -212,14 +212,29 @@ func (c *Client) UserFromRequest(w http.ResponseWriter, r *http.Request) *User {
 		}
 	}
 
-	// Decode claims from the (possibly refreshed) access token.
+	// Decode sub + email from the JWT — available without a round-trip
+	// and covers the common "tell me who this is" query. Name and
+	// picture aren't in the access token; fetch them from /userinfo
+	// so downstream RPs can render display_name / avatar_url without
+	// knowing about a second endpoint. Userinfo failure falls back to
+	// the JWT-only shape: better to return a partial User than nil.
 	claims, err := decodeJWTClaims(sess.AccessToken)
 	if err != nil {
 		return nil
 	}
 
-	return &User{
+	u := &User{
 		Sub:   claims.Sub,
 		Email: claims.Email,
 	}
+	if info, err := c.FetchUserInfo(r, sess.AccessToken); err == nil && info != nil {
+		// /userinfo is authoritative for profile fields; overwrite in
+		// case the JWT copy is stale or missing.
+		if info.Email != "" {
+			u.Email = info.Email
+		}
+		u.Name = info.Name
+		u.Picture = info.Picture
+	}
+	return u
 }
