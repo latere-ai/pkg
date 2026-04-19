@@ -84,11 +84,23 @@ func (c *Client) HandleLogin(w http.ResponseWriter, r *http.Request) {
 // forwardedAuthorizeParams is the allowlist of query parameters on
 // /login that get forwarded to the authorize endpoint. Kept narrow
 // to avoid turning /login into an open pass-through.
+//
+// Presence-sensitive for org_id: a present-but-empty "org_id=" must
+// survive the forward, because the auth service reads it as the
+// clear-to-personal signal. An absent org_id leaves the session's
+// active_org unchanged. Silently stripping the empty value is what
+// caused "switch to Personal" to be a no-op end-to-end.
 func forwardedAuthorizeParams(q url.Values) url.Values {
 	out := url.Values{}
 	for _, k := range []string{"org_id"} {
-		if v := q.Get(k); v != "" {
-			out.Set(k, v)
+		if vs, ok := q[k]; ok {
+			// Forward even when the value is empty, so the auth
+			// service sees `?org_id=` and not the param missing.
+			if len(vs) > 0 {
+				out.Set(k, vs[0])
+			} else {
+				out.Set(k, "")
+			}
 		}
 	}
 	return out

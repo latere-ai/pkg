@@ -186,10 +186,16 @@ func (c *Client) AuthCodeURLWithOpts(state, verifier string, extra url.Values) s
 		oauth2.S256ChallengeOption(verifier),
 	}
 	for k, vs := range extra {
+		// Forward every key that's present in extra, including
+		// empty-string values. Callers rely on this to pass signals
+		// like org_id="" which the auth service interprets as
+		// "clear the active org" — silently dropping it would
+		// turn the switch-to-personal UX into a no-op.
+		if len(vs) == 0 {
+			opts = append(opts, oauth2.SetAuthURLParam(k, ""))
+			continue
+		}
 		for _, v := range vs {
-			if v == "" {
-				continue
-			}
 			opts = append(opts, oauth2.SetAuthURLParam(k, v))
 		}
 	}

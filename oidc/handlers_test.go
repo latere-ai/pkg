@@ -136,6 +136,29 @@ func TestHandleLogin_ForwardsOrgID(t *testing.T) {
 	}
 }
 
+// TestHandleLogin_ForwardsEmptyOrgID regression-guards the
+// switch-to-personal path. /login?org_id= must forward the
+// present-but-empty param so the auth service reads it as the
+// "clear active_org" signal. A prior implementation dropped
+// empty values and turned the Personal menu into a no-op.
+func TestHandleLogin_ForwardsEmptyOrgID(t *testing.T) {
+	c := testClient(t)
+	r := httptest.NewRequest("GET", "/login?org_id=", nil)
+	w := httptest.NewRecorder()
+
+	c.HandleLogin(w, r)
+
+	loc := w.Result().Header.Get("Location")
+	if !strings.Contains(loc, "org_id=") {
+		t.Errorf("empty org_id not forwarded: %s", loc)
+	}
+	// Make sure it's the empty form, not a stray value picked up
+	// from elsewhere.
+	if strings.Contains(loc, "org_id=some") {
+		t.Errorf("unexpected org_id value in: %s", loc)
+	}
+}
+
 func TestHandleLogin_UnknownParamsNotForwarded(t *testing.T) {
 	// Defensive test: /login must not turn into an open pass-through
 	// that forwards arbitrary query params to the authorize endpoint.
