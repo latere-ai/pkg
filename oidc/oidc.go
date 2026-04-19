@@ -25,6 +25,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -167,9 +168,32 @@ func GenerateState() (string, error) {
 // AuthCodeURL returns the URL to redirect the user to for authorization.
 // The verifier is used to derive the S256 challenge automatically.
 func (c *Client) AuthCodeURL(state, verifier string) string {
-	return c.oauthCfg.AuthCodeURL(state,
+	return c.AuthCodeURLWithOpts(state, verifier, nil)
+}
+
+// AuthCodeURLWithOpts returns the authorize URL with additional
+// extension parameters appended as-is. Use for non-standard hints the
+// auth service understands — e.g. org_id to scope the resulting token
+// to a specific organization, or login_hint to preselect an identity
+// provider. Standard OAuth parameters (response_type, scope, state,
+// code_challenge, redirect_uri) are already handled; do not pass them
+// here.
+//
+// Each value becomes a single oauth2.SetAuthURLParam so unknown keys
+// round-trip through to the auth server unchanged.
+func (c *Client) AuthCodeURLWithOpts(state, verifier string, extra url.Values) string {
+	opts := []oauth2.AuthCodeOption{
 		oauth2.S256ChallengeOption(verifier),
-	)
+	}
+	for k, vs := range extra {
+		for _, v := range vs {
+			if v == "" {
+				continue
+			}
+			opts = append(opts, oauth2.SetAuthURLParam(k, v))
+		}
+	}
+	return c.oauthCfg.AuthCodeURL(state, opts...)
 }
 
 // Exchange trades an authorization code for tokens using the PKCE verifier.

@@ -72,7 +72,26 @@ func (c *Client) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, c.AuthCodeURL(state, verifier), http.StatusFound)
+	// Forward selected query params to the authorize endpoint as
+	// extension parameters. Currently allowlisted: org_id, which the
+	// auth service uses to scope the resulting token. New hints go
+	// through this same list so unknown query strings don't leak into
+	// the authorize URL accidentally.
+	extra := forwardedAuthorizeParams(r.URL.Query())
+	http.Redirect(w, r, c.AuthCodeURLWithOpts(state, verifier, extra), http.StatusFound)
+}
+
+// forwardedAuthorizeParams is the allowlist of query parameters on
+// /login that get forwarded to the authorize endpoint. Kept narrow
+// to avoid turning /login into an open pass-through.
+func forwardedAuthorizeParams(q url.Values) url.Values {
+	out := url.Values{}
+	for _, k := range []string{"org_id"} {
+		if v := q.Get(k); v != "" {
+			out.Set(k, v)
+		}
+	}
+	return out
 }
 
 // HandleCallback handles the OAuth2 redirect from the auth service.

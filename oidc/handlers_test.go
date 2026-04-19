@@ -119,6 +119,44 @@ func TestHandleLogin(t *testing.T) {
 	}
 }
 
+func TestHandleLogin_ForwardsOrgID(t *testing.T) {
+	c := testClient(t)
+	r := httptest.NewRequest("GET", "/login?org_id=00000000-0000-0000-0000-000000000123", nil)
+	w := httptest.NewRecorder()
+
+	c.HandleLogin(w, r)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("status = %d, want 302", resp.StatusCode)
+	}
+	loc := resp.Header.Get("Location")
+	if !strings.Contains(loc, "org_id=00000000-0000-0000-0000-000000000123") {
+		t.Errorf("org_id not forwarded into authorize URL: %s", loc)
+	}
+}
+
+func TestHandleLogin_UnknownParamsNotForwarded(t *testing.T) {
+	// Defensive test: /login must not turn into an open pass-through
+	// that forwards arbitrary query params to the authorize endpoint.
+	// Only the explicit allowlist (org_id today) should survive.
+	c := testClient(t)
+	r := httptest.NewRequest("GET", "/login?evil=pwn&client_id=wrong", nil)
+	w := httptest.NewRecorder()
+
+	c.HandleLogin(w, r)
+
+	loc := w.Result().Header.Get("Location")
+	if strings.Contains(loc, "evil=pwn") {
+		t.Errorf("unknown param leaked into authorize URL: %s", loc)
+	}
+	// client_id is a standard OAuth param the library adds itself;
+	// making sure we didn't let the caller override it.
+	if strings.Count(loc, "client_id=") > 1 {
+		t.Errorf("client_id appears more than once (caller override?): %s", loc)
+	}
+}
+
 func TestHandleLogin_UnsafeReturnTo(t *testing.T) {
 	c := testClient(t)
 	r := httptest.NewRequest("GET", "/login?return_to=https://evil.com", nil)
