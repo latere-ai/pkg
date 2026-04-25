@@ -37,9 +37,17 @@ func decodeJWTClaims(accessToken string) (*jwtClaims, error) {
 }
 
 // isSafeRedirect returns true when target is a relative path that won't
-// redirect to an external host.
+// redirect to an external host. Rejects "//host" (protocol-relative) and
+// "/\host" (Chrome and other browsers normalize backslashes to forward
+// slashes, so "/\evil.com" is followed as "//evil.com").
 func isSafeRedirect(target string) bool {
-	return target != "" && target[0] == '/' && (len(target) == 1 || target[1] != '/')
+	if target == "" || target[0] != '/' {
+		return false
+	}
+	if len(target) == 1 {
+		return true
+	}
+	return target[1] != '/' && target[1] != '\\'
 }
 
 // HandleLogin initiates the OAuth2 Authorization Code + PKCE flow.
