@@ -168,18 +168,24 @@ func New(cfg Config) *Client {
 		},
 	}
 
-	if cfg.CookieKey != "" {
-		if key, err := hex.DecodeString(cfg.CookieKey); err == nil && len(key) >= 16 {
-			c.cookieKey = sha256.Sum256(key)
+	// Cookie key + startup log only matter for relying parties using
+	// the browser-based session helpers; a device-only client (no
+	// RedirectURL) skips both so a CLI invocation doesn't dump a
+	// warning + info line on every run.
+	browserMode := cfg.RedirectURL != ""
+	if browserMode {
+		if cfg.CookieKey != "" {
+			if key, err := hex.DecodeString(cfg.CookieKey); err == nil && len(key) >= 16 {
+				c.cookieKey = sha256.Sum256(key)
+			} else {
+				c.cookieKey = sha256.Sum256([]byte(cfg.CookieKey))
+			}
 		} else {
-			c.cookieKey = sha256.Sum256([]byte(cfg.CookieKey))
+			slog.Warn("oidc: AUTH_COOKIE_KEY not set, falling back to client secret — set AUTH_COOKIE_KEY for production")
+			c.cookieKey = sha256.Sum256([]byte(cfg.ClientSecret))
 		}
-	} else {
-		slog.Warn("oidc: AUTH_COOKIE_KEY not set, falling back to client secret — set AUTH_COOKIE_KEY for production")
-		c.cookieKey = sha256.Sum256([]byte(cfg.ClientSecret))
+		slog.Info("oidc: enabled", "auth_url", cfg.AuthURL, "client_id", cfg.ClientID)
 	}
-
-	slog.Info("oidc: enabled", "auth_url", cfg.AuthURL, "client_id", cfg.ClientID)
 	return c
 }
 
