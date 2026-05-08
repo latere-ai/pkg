@@ -15,6 +15,7 @@ import (
 type jwtClaims struct {
 	Sub   string `json:"sub"`
 	Email string `json:"email"`
+	OrgID string `json:"org_id"`
 }
 
 // decodeJWTClaims extracts claims from a JWT access token without
@@ -159,7 +160,9 @@ func (c *Client) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store session with token + claims.
+	// Store session with token + claims. JWT carries sub/email/org_id;
+	// name and picture aren't in the access token, so a follow-up
+	// /userinfo round-trip in UserFromRequest fills those in.
 	sess := &Session{
 		AccessToken:  token.AccessToken,
 		RefreshToken: token.RefreshToken,
@@ -167,6 +170,7 @@ func (c *Client) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		User: User{
 			Sub:   claims.Sub,
 			Email: claims.Email,
+			OrgID: claims.OrgID,
 		},
 	}
 	if err := c.SetSession(w, sess); err != nil {
@@ -246,6 +250,7 @@ func (c *Client) UserFromRequest(w http.ResponseWriter, r *http.Request) *User {
 	u := &User{
 		Sub:   claims.Sub,
 		Email: claims.Email,
+		OrgID: claims.OrgID,
 	}
 	if info, err := c.FetchUserInfo(r, sess.AccessToken); err == nil && info != nil {
 		// /userinfo is authoritative for profile fields; overwrite in
@@ -255,6 +260,12 @@ func (c *Client) UserFromRequest(w http.ResponseWriter, r *http.Request) *User {
 		}
 		u.Name = info.Name
 		u.Picture = info.Picture
+		u.AvatarURL = info.AvatarURL
+		// auth's /userinfo refreshes org_id from the active SSO
+		// session, so prefer it over the JWT copy when present.
+		if info.OrgID != "" {
+			u.OrgID = info.OrgID
+		}
 	}
 	return u
 }

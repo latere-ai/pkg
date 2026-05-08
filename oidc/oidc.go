@@ -40,11 +40,18 @@ const (
 )
 
 // User holds authenticated user info from the /userinfo endpoint.
+//
+// Picture and AvatarURL are aliases — auth's /userinfo emits the OIDC
+// standard "picture" claim, but downstream callers historically referred
+// to the URL as avatar_url. Populated together by FetchUserInfo so a
+// caller can pick whichever name fits its template.
 type User struct {
-	Sub     string `json:"sub"`
-	Email   string `json:"email"`
-	Name    string `json:"name"`
-	Picture string `json:"picture"`
+	Sub       string `json:"sub"`
+	Email     string `json:"email"`
+	Name      string `json:"name"`
+	Picture   string `json:"picture"`
+	OrgID     string `json:"org_id,omitempty"`     // active org for this session, "" for personal view
+	AvatarURL string `json:"avatar_url,omitempty"` // alias of Picture
 }
 
 // Session holds tokens and user info stored in the encrypted session cookie.
@@ -69,6 +76,13 @@ type Config struct {
 	ClientSecret string
 	RedirectURL  string // callback URL, e.g. https://app.latere.ai/callback
 	CookieKey    string // encryption key for cookies (hex or raw string)
+
+	// Audience requested on /authorize. Defaults to AuthURL when empty,
+	// which is what the auth service requires for its JWT-protected
+	// endpoints (/me/orgs, /userinfo, /tokeninfo). Set explicitly only
+	// when the issued access token is meant for a different relying
+	// party (e.g. tokens with aud="<other-service>").
+	Audience string
 }
 
 // Client is the OIDC Relying Party for a latere-ai service.
@@ -106,6 +120,10 @@ func New(cfg Config) *Client {
 	if !cfg.Enabled() {
 		slog.Info("oidc: disabled (AUTH_CLIENT_ID, AUTH_CLIENT_SECRET, or AUTH_REDIRECT_URL not set)")
 		return nil
+	}
+
+	if cfg.Audience == "" {
+		cfg.Audience = cfg.AuthURL
 	}
 
 	c := &Client{
@@ -185,6 +203,14 @@ func (c *Client) AuthCodeURLWithOpts(state, verifier string, extra url.Values) s
 	opts := []oauth2.AuthCodeOption{
 		oauth2.S256ChallengeOption(verifier),
 	}
+	// Stamp the audience on every authorize URL. Without it, fosite
+	// emits aud:[] in the access token (the JWT strategy always
+	// materialises the claim from the granted audience set, even when
+	// empty), and the auth service's JWT validator then rejects every
+	// JWT-protected endpoint as an audience mismatch.
+	if c.cfg.Audience != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("audience", c.cfg.Audience))
+	}
 	for k, vs := range extra {
 		// Forward every key that's present in extra, including
 		// empty-string values. Callers rely on this to pass signals
@@ -210,6 +236,10 @@ func (c *Client) Exchange(r *http.Request, code, verifier string) (*oauth2.Token
 }
 
 // FetchUserInfo calls the auth service /userinfo endpoint.
+//
+// Auth emits the OIDC-standard "picture" claim; mirror it onto
+// User.AvatarURL so callers that key off avatar_url don't have to
+// reach for the Picture field.
 func (c *Client) FetchUserInfo(r *http.Request, accessToken string) (*User, error) {
 	req, err := http.NewRequestWithContext(r.Context(), "GET", c.cfg.AuthURL+"/userinfo", nil)
 	if err != nil {
@@ -230,6 +260,9 @@ func (c *Client) FetchUserInfo(r *http.Request, accessToken string) (*User, erro
 	var u User
 	if err := json.NewDecoder(resp.Body).Decode(&u); err != nil {
 		return nil, fmt.Errorf("decode userinfo: %w", err)
+	}
+	if u.AvatarURL == "" {
+		u.AvatarURL = u.Picture
 	}
 	return &u, nil
 }
