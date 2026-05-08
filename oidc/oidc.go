@@ -119,8 +119,22 @@ func getenv(key, fallback string) string {
 }
 
 // Enabled returns true if the required configuration is present.
+//
+// ClientID + ClientSecret + RedirectURL are the trio needed for the
+// browser-based authorization-code + PKCE flow. Public clients that
+// only want the RFC 8628 device-code flow can leave ClientSecret and
+// RedirectURL empty — DeviceAuth and DeviceAccessToken work without
+// either; the cookie helpers and HandleLogin will fail loudly at use
+// time if called against such a client.
 func (c Config) Enabled() bool {
-	return c.ClientID != "" && c.ClientSecret != "" && c.RedirectURL != ""
+	if c.ClientID == "" {
+		return false
+	}
+	if c.ClientSecret == "" && c.RedirectURL == "" {
+		// Device-code-only client.
+		return true
+	}
+	return c.ClientSecret != "" && c.RedirectURL != ""
 }
 
 // New creates a new OIDC Client. Returns nil if the config is not enabled.
@@ -145,9 +159,10 @@ func New(cfg Config) *Client {
 			ClientSecret: cfg.ClientSecret,
 			RedirectURL:  cfg.RedirectURL,
 			Endpoint: oauth2.Endpoint{
-				AuthURL:   cfg.AuthURL + "/authorize",
-				TokenURL:  cfg.AuthURL + "/token",
-				AuthStyle: oauth2.AuthStyleInHeader,
+				AuthURL:       cfg.AuthURL + "/authorize",
+				TokenURL:      cfg.AuthURL + "/token",
+				DeviceAuthURL: cfg.AuthURL + "/device/code",
+				AuthStyle:     oauth2.AuthStyleInHeader,
 			},
 			Scopes: scopes,
 		},
@@ -290,6 +305,36 @@ func (c *Client) FetchUserInfoContext(ctx context.Context, accessToken string) (
 		u.AvatarURL = u.Picture
 	}
 	return &u, nil
+}
+
+// DeviceAuth initiates an RFC 8628 device authorization flow against
+// the configured AuthURL. The caller renders the returned UserCode +
+// VerificationURI to the user, then calls DeviceAccessToken to poll
+// for approval. extra carries auth-server extension parameters
+// (auth.latere.ai honours `org_id` to scope the resulting token).
+//
+// Use this for headless / CLI flows. Browser-based clients should
+// use HandleLogin instead.
+func (c *Client) DeviceAuth(ctx context.Context, extra url.Values) (*oauth2.DeviceAuthResponse, error) {
+	var opts []oauth2.AuthCodeOption
+	for k, vs := range extra {
+		if len(vs) == 0 {
+			opts = append(opts, oauth2.SetAuthURLParam(k, ""))
+			continue
+		}
+		for _, v := range vs {
+			opts = append(opts, oauth2.SetAuthURLParam(k, v))
+		}
+	}
+	return c.oauthCfg.DeviceAuth(ctx, opts...)
+}
+
+// DeviceAccessToken polls the token endpoint with the device-code
+// grant until the user approves, denies, or the code expires. RFC
+// 8628 slow_down / authorization_pending semantics are honoured by
+// the underlying oauth2 client.
+func (c *Client) DeviceAccessToken(ctx context.Context, da *oauth2.DeviceAuthResponse) (*oauth2.Token, error) {
+	return c.oauthCfg.DeviceAccessToken(ctx, da)
 }
 
 // RefreshToken uses a refresh token to obtain a new access token.
