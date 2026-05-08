@@ -31,6 +31,47 @@ func TestNew_AudienceDefaultsToAuthURL(t *testing.T) {
 	}
 }
 
+// TestNew_ScopesDefault asserts the OIDC-minimum default kicks in
+// when Config.Scopes is left empty, so basic /userinfo lookups work
+// out of the box.
+func TestNew_ScopesDefault(t *testing.T) {
+	c := New(Config{
+		AuthURL:      "https://auth.example.com",
+		ClientID:     "cid",
+		ClientSecret: "sec",
+		RedirectURL:  "https://app.example.com/cb",
+	})
+	got := c.AuthCodeURLWithOpts("state", "verifier", nil)
+	parsed, _ := url.Parse(got)
+	scope := parsed.Query().Get("scope")
+	if !strings.Contains(scope, "openid") || !strings.Contains(scope, "email") || !strings.Contains(scope, "profile") {
+		t.Errorf("default scope = %q, want to contain openid/email/profile", scope)
+	}
+}
+
+// TestNew_ScopesOverride asserts Config.Scopes wins when set, so
+// product RPs can request offline_access or product-specific scopes.
+func TestNew_ScopesOverride(t *testing.T) {
+	c := New(Config{
+		AuthURL:      "https://auth.example.com",
+		ClientID:     "cid",
+		ClientSecret: "sec",
+		RedirectURL:  "https://app.example.com/cb",
+		Scopes:       []string{"openid", "offline_access", "read:resource"},
+	})
+	got := c.AuthCodeURLWithOpts("state", "verifier", nil)
+	parsed, _ := url.Parse(got)
+	scope := parsed.Query().Get("scope")
+	if !strings.Contains(scope, "offline_access") || !strings.Contains(scope, "read:resource") {
+		t.Errorf("scope = %q, want override scopes", scope)
+	}
+	// Default scopes (email, profile) should be dropped — caller
+	// is in charge once they set Scopes explicitly.
+	if strings.Contains(scope, "email") || strings.Contains(scope, "profile") {
+		t.Errorf("scope = %q, override should replace default not extend", scope)
+	}
+}
+
 func TestNew_AudienceExplicit(t *testing.T) {
 	c := New(Config{
 		AuthURL:      "https://auth.example.com",

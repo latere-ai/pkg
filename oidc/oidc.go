@@ -13,6 +13,7 @@
 package oidc
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -83,6 +84,13 @@ type Config struct {
 	// when the issued access token is meant for a different relying
 	// party (e.g. tokens with aud="<other-service>").
 	Audience string
+
+	// Scopes requested on /authorize. When empty, defaults to
+	// ["openid", "email", "profile"] — the minimum needed for the
+	// /userinfo claims this package surfaces. Set explicitly to
+	// request additional scopes (offline_access for refresh tokens,
+	// or product-specific scopes the relying party gates on).
+	Scopes []string
 }
 
 // Client is the OIDC Relying Party for a latere-ai service.
@@ -125,6 +133,10 @@ func New(cfg Config) *Client {
 	if cfg.Audience == "" {
 		cfg.Audience = cfg.AuthURL
 	}
+	scopes := cfg.Scopes
+	if len(scopes) == 0 {
+		scopes = []string{"openid", "email", "profile"}
+	}
 
 	c := &Client{
 		cfg: cfg,
@@ -137,7 +149,7 @@ func New(cfg Config) *Client {
 				TokenURL:  cfg.AuthURL + "/token",
 				AuthStyle: oauth2.AuthStyleInHeader,
 			},
-			Scopes: []string{"openid", "email", "profile"},
+			Scopes: scopes,
 		},
 	}
 
@@ -230,7 +242,14 @@ func (c *Client) AuthCodeURLWithOpts(state, verifier string, extra url.Values) s
 
 // Exchange trades an authorization code for tokens using the PKCE verifier.
 func (c *Client) Exchange(r *http.Request, code, verifier string) (*oauth2.Token, error) {
-	return c.oauthCfg.Exchange(r.Context(), code,
+	return c.ExchangeContext(r.Context(), code, verifier)
+}
+
+// ExchangeContext is the context-only form of Exchange. Prefer this in
+// non-HTTP-handler contexts (background workers, internal auth bridges)
+// where threading a *http.Request just to pass its Context is awkward.
+func (c *Client) ExchangeContext(ctx context.Context, code, verifier string) (*oauth2.Token, error) {
+	return c.oauthCfg.Exchange(ctx, code,
 		oauth2.VerifierOption(verifier),
 	)
 }
@@ -241,7 +260,13 @@ func (c *Client) Exchange(r *http.Request, code, verifier string) (*oauth2.Token
 // User.AvatarURL so callers that key off avatar_url don't have to
 // reach for the Picture field.
 func (c *Client) FetchUserInfo(r *http.Request, accessToken string) (*User, error) {
-	req, err := http.NewRequestWithContext(r.Context(), "GET", c.cfg.AuthURL+"/userinfo", nil)
+	return c.FetchUserInfoContext(r.Context(), accessToken)
+}
+
+// FetchUserInfoContext is the context-only form of FetchUserInfo.
+// Same response handling; pick this when threading r is awkward.
+func (c *Client) FetchUserInfoContext(ctx context.Context, accessToken string) (*User, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.cfg.AuthURL+"/userinfo", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -269,7 +294,13 @@ func (c *Client) FetchUserInfo(r *http.Request, accessToken string) (*User, erro
 
 // RefreshToken uses a refresh token to obtain a new access token.
 func (c *Client) RefreshToken(r *http.Request, refreshToken string) (*oauth2.Token, error) {
-	ts := c.oauthCfg.TokenSource(r.Context(), &oauth2.Token{
+	return c.RefreshTokenContext(r.Context(), refreshToken)
+}
+
+// RefreshTokenContext is the context-only form of RefreshToken.
+// Same flow; pick this when threading r is awkward.
+func (c *Client) RefreshTokenContext(ctx context.Context, refreshToken string) (*oauth2.Token, error) {
+	ts := c.oauthCfg.TokenSource(ctx, &oauth2.Token{
 		RefreshToken: refreshToken,
 	})
 	return ts.Token()
