@@ -59,7 +59,7 @@ func TestNames_StableOrder(t *testing.T) {
 func TestKnownScopesPresent(t *testing.T) {
 	required := []string{
 		"openid", "email", "profile", "offline_access",
-		"read:sandbox", "write:sandbox", "exec:sandbox", "admin:sandbox",
+		"read:sandbox", "write:sandbox", "exec:sandbox", "attach:sandbox", "admin:sandbox",
 		"policy:write",
 		"billing:read", "billing:report",
 		"read:projects", "admin:tasks",
