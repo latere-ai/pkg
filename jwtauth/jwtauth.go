@@ -46,6 +46,7 @@
 //	Scopes         ✓      ✓        ✓       (JWT claim key: "scp")
 //	Roles          ✓      ✓        ✓
 //	Email          ✓
+//	ClientID       ✓      ✓        ✓       (JWT claim key: "client_id", "azp" fallback)
 //	IsSuperadmin   ✓      ✓        ✓
 //	Validation                      ✓       ("local" or "strict")
 //	DelegationID                    ✓
@@ -115,6 +116,7 @@ type Claims struct {
 	PrincipalType PrincipalType
 	OrgID         string
 	Email         string // populated for users
+	ClientID      string // originating OAuth client ("client_id", "azp" fallback)
 	IsSuperadmin  bool
 	Scopes        []string
 	Roles         []string
@@ -263,14 +265,27 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 		return nil, ErrMalformedToken
 	}
 
+	return claimsFromRawPayload(raw), nil
+}
+
+// claimsFromRawPayload maps a decoded JWT payload onto Claims. It is
+// the single mapping site shared by Validate (after full verification)
+// and ParseUnverified (transport-trusted, no verification) so the two
+// paths can never disagree on which JSON claim feeds which field.
+func claimsFromRawPayload(raw rawPayload) *Claims {
+	clientID := raw.ClientID
+	if clientID == "" {
+		clientID = raw.AuthorizedParty
+	}
 	claims := &Claims{
 		Sub:           raw.Sub,
 		Iss:           raw.Iss,
 		Aud:           []string(raw.Aud),
-		Exp:           exp,
+		Exp:           time.Unix(int64(raw.Exp), 0),
 		PrincipalType: PrincipalType(raw.PrincipalType),
 		OrgID:         raw.OrgID,
 		Email:         raw.Email,
+		ClientID:      clientID,
 		IsSuperadmin:  raw.IsSuperadmin,
 		Scopes:        raw.Scopes,
 		Roles:         raw.Roles,
@@ -280,7 +295,39 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 	if raw.Act != nil {
 		claims.Act = &ActClaims{Sub: raw.Act.Sub}
 	}
-	return claims, nil
+	return claims
+}
+
+// ParseUnverified decodes a JWT's payload into Claims WITHOUT
+// signature, issuer, audience, or expiration validation. It is
+// intended only for tokens already trusted by transport — e.g. an
+// access token loaded from an encrypted session cookie minted via the
+// OIDC PKCE flow, where the bytes never left a trusted boundary
+// unverified. For every other input (Authorization headers, query
+// params, log fields, anything off the wire), use Validate.
+//
+// It performs no network I/O (no JWKS fetch) and the only structural
+// checks are: three dot-separated segments, a base64url-decodable
+// JSON payload, and a non-empty sub. Exp is populated on the returned
+// Claims so callers can apply their own lifecycle policy, but it is
+// not enforced here.
+func ParseUnverified(rawToken string) (*Claims, error) {
+	parts := strings.Split(rawToken, ".")
+	if len(parts) != 3 {
+		return nil, ErrMalformedToken
+	}
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil, ErrMalformedToken
+	}
+	var raw rawPayload
+	if err := json.Unmarshal(payloadBytes, &raw); err != nil {
+		return nil, ErrMalformedToken
+	}
+	if raw.Sub == "" {
+		return nil, ErrMalformedToken
+	}
+	return claimsFromRawPayload(raw), nil
 }
 
 // ── Middleware ───────────────────────────────────────────────────────────────
@@ -440,19 +487,21 @@ func verifySignature(keys []jwkEntry, kid string, digest, sig []byte) bool {
 
 // rawPayload is the JWT payload as emitted by the auth service.
 type rawPayload struct {
-	Sub           string     `json:"sub"`
-	Iss           string     `json:"iss"`
-	Aud           jsonAud    `json:"aud"`
-	Exp           float64    `json:"exp"`
-	PrincipalType string     `json:"principal_type"`
-	Email         string     `json:"email"`
-	OrgID         string     `json:"org_id"`
-	IsSuperadmin  bool       `json:"is_superadmin"`
-	Scopes        []string   `json:"scp"`
-	Roles         []string   `json:"roles"`
-	Validation    string     `json:"validation"`
-	DelegationID  string     `json:"delegation_id"`
-	Act           *rawActSub `json:"act"`
+	Sub             string     `json:"sub"`
+	Iss             string     `json:"iss"`
+	Aud             jsonAud    `json:"aud"`
+	Exp             float64    `json:"exp"`
+	PrincipalType   string     `json:"principal_type"`
+	Email           string     `json:"email"`
+	OrgID           string     `json:"org_id"`
+	IsSuperadmin    bool       `json:"is_superadmin"`
+	Scopes          []string   `json:"scp"`
+	Roles           []string   `json:"roles"`
+	ClientID        string     `json:"client_id"`
+	AuthorizedParty string     `json:"azp"`
+	Validation      string     `json:"validation"`
+	DelegationID    string     `json:"delegation_id"`
+	Act             *rawActSub `json:"act"`
 }
 
 type rawActSub struct {
