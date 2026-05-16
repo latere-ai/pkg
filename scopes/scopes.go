@@ -2,7 +2,7 @@
 // the latere.ai auth service can issue.
 //
 // Each downstream service (sandbox, fs, latere-ai, latere-cli,
-// wallfacer) registers the scopes it gates on in its own file in this
+// wallfacer, lux) registers the scopes it gates on in its own file in this
 // package; auth imports the union to populate /admin/scopes and the
 // OIDC discovery document's scopes_supported field. Adding a new
 // scope is a single-file change here plus an import where the scope
@@ -37,6 +37,7 @@ func All() []Scope {
 	s = append(s, policy()...)
 	s = append(s, billing()...)
 	s = append(s, wallfacer()...)
+	s = append(s, lux()...)
 	sort.SliceStable(s, func(i, j int) bool {
 		if s[i].Category != s[j].Category {
 			return s[i].Category < s[j].Category
