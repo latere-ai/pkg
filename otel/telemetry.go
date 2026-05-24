@@ -13,18 +13,39 @@ import (
 	"context"
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/attribute"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
+
+// defaultSampleRatio is the head-sampling ratio applied to root spans when
+// OTEL_TRACES_SAMPLER_ARG is unset or unparseable. Set to 1.0 to sample every
+// trace. The platform default trades some trace volume for backend headroom as
+// more services come online.
+const defaultSampleRatio = 0.2
+
+// samplerFromEnv builds a ParentBased(TraceIDRatioBased) sampler. ParentBased
+// honours a parent's sampling decision so a distributed trace is kept or
+// dropped as a whole; the ratio only governs root spans. The ratio comes from
+// OTEL_TRACES_SAMPLER_ARG (a float in [0,1]), defaulting to defaultSampleRatio.
+func samplerFromEnv() trace.Sampler {
+	ratio := defaultSampleRatio
+	if v := os.Getenv("OTEL_TRACES_SAMPLER_ARG"); v != "" {
+		if parsed, err := strconv.ParseFloat(v, 64); err == nil && parsed >= 0 {
+			ratio = parsed
+		}
+	}
+	return trace.ParentBased(trace.TraceIDRatioBased(ratio))
+}
 
 var (
 	newResource = func(ctx context.Context, name, version string) (*resource.Resource, error) {
@@ -72,7 +93,7 @@ func Setup(ctx context.Context, serviceName, serviceVersion string) func() {
 	tp := trace.NewTracerProvider(
 		trace.WithBatcher(traceExp, trace.WithBatchTimeout(5*time.Second)),
 		trace.WithResource(res),
-		trace.WithSampler(trace.AlwaysSample()),
+		trace.WithSampler(samplerFromEnv()),
 	)
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(

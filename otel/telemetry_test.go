@@ -76,6 +76,25 @@ func TestSetup_ShutdownIdempotent(t *testing.T) {
 	shutdown() // double-call must not panic
 }
 
+func TestSamplerFromEnv(t *testing.T) {
+	cases := map[string]string{
+		"unset":    "",
+		"valid":    "0.5",
+		"one":      "1.0",
+		"zero":     "0",
+		"invalid":  "not-a-number",
+		"negative": "-0.3",
+	}
+	for name, arg := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("OTEL_TRACES_SAMPLER_ARG", arg)
+			if s := samplerFromEnv(); s == nil {
+				t.Fatal("nil sampler")
+			}
+		})
+	}
+}
+
 func FuzzSetup(f *testing.F) {
 	f.Add("service", "1.0.0")
 	f.Add("", "")

@@ -1,33 +1,85 @@
 # otel
 
-OpenTelemetry tracing and metrics setup. Disabled by default (zero overhead). Set `OTEL_EXPORTER_OTLP_ENDPOINT` to enable OTLP/HTTP export.
+OpenTelemetry traces, metrics, and structured logs for Latere services. Disabled by default (zero overhead). Set `OTEL_EXPORTER_OTLP_ENDPOINT` to enable OTLP/HTTP export.
 
-## Usage
+## Onboard a new service
+
+`Bootstrap` wires logging, traces, and metrics in one call and sets the slog default. This is all most services need.
+
+### HTTP service
 
 ```go
-import "latere.ai/x/pkg/otel"
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-shutdown := otel.Setup(ctx, "my-service", "1.0.0")
-defer shutdown()
+	logger, shutdown, err := otel.Bootstrap(ctx, otel.Config{ServiceName: "my-service"})
+	if err != nil {
+		logger.Warn("otel log bridge degraded", "err", err)
+	}
+	defer shutdown(context.Background())
 
-srv := &http.Server{
-    Handler: otel.Handler(mux, "my-service"),
+	srv := &http.Server{
+		Addr:    ":8080",
+		Handler: otel.Handler(mux, "my-service"),
+	}
+	if err := otel.RunServer(ctx, srv, 5*time.Second, nil); err != nil {
+		logger.Error("server stopped", "err", err)
+		os.Exit(1)
+	}
 }
-
-// Log correlation
-traceID, spanID := otel.TraceIDs(ctx)
 ```
 
-### Functions
+### Worker or CLI (no HTTP server)
 
-- `Setup(ctx, name, version)` — initializes tracing and metrics; noop when endpoint is unset
-- `Handler(h, operation)` — wraps `http.Handler` with tracing/metrics and sets `X-Trace-Id` response header
-- `TraceIDs(ctx)` — extracts trace ID and span ID from context
+```go
+logger, shutdown, err := otel.Bootstrap(ctx, otel.Config{ServiceName: "my-worker"})
+if err != nil {
+	logger.Warn("otel log bridge degraded", "err", err)
+}
+defer shutdown(context.Background())
+// ... run the worker loop; logs/traces/metrics flow automatically.
+```
+
+### Calling another service
+
+Use the instrumented client for every service-to-service call so the trace continues across the hop. Without it, both sides have spans but they are not linked.
+
+```go
+client := otel.HTTPClient()              // or otel.Transport(base) to wrap a custom RoundTripper
+resp, err := client.Do(req.WithContext(ctx))
+```
+
+### Deploy
+
+Set the OTLP endpoint in the service's `deploy/prod/deployment.yaml` (see `terraform/deploy/_base/otel-env.yaml`):
+
+```yaml
+env:
+  - name: OTEL_EXPORTER_OTLP_ENDPOINT
+    value: http://otel-collector.observability.svc:4318
+```
+
+A service is fully observable only when it both imports this package **and** sets that env var. Code without the env var is a silent noop in production.
+
+## Functions
+
+- `Bootstrap(ctx, Config)` — one-call logs + traces + metrics; sets slog default; returns a combined shutdown. Noop export when the endpoint is unset.
+- `RunServer(ctx, srv, timeout, preShutdown)` — runs an `http.Server` and shuts it down gracefully when ctx is cancelled. Caller owns signals and handler wrapping.
+- `Version(override)` — resolves a version string from the override, then build info (module version or short VCS revision), then `"dev"`.
+- `Replica()` — resolves a replica label from `POD_NAME`, `HOSTNAME`, or the OS hostname.
+- `Transport(base)` / `HTTPClient()` — instrument an outbound `http.Client` and propagate the trace context.
+- `Setup(ctx, name, version)` — lower-level traces + metrics only (used by `Bootstrap`).
+- `SetupLogs(ctx, LogsConfig)` — lower-level logging only (used by `Bootstrap`).
+- `Handler(h, operation, opts...)` — wraps an `http.Handler` with tracing/metrics and sets the `X-Trace-Id` response header.
+- `TraceIDs(ctx)` / `LogAttrs(ctx)` — extract trace/span IDs for log correlation.
 
 ## Environment Variables
 
 | Variable | Description |
 |---|---|
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP endpoint URL (required to enable) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP endpoint URL (required to enable export) |
 | `OTEL_EXPORTER_OTLP_HEADERS` | Optional headers (e.g. `Authorization=Basic <base64>`) |
-| `LATERE_ENV` | Deployment environment (sets `deployment.environment` resource attribute; defaults to `production`) |
+| `OTEL_TRACES_SAMPLER_ARG` | Head-sampling ratio for root spans, `0`–`1` (default `0.2`). `ParentBased`, so a sampled trace stays whole across services. Set `1.0` to sample everything. |
+| `LATERE_ENV` | Deployment environment (`deployment.environment` resource attribute; defaults to `production`) |
+| `POD_NAME` | Replica label (set from `metadata.name` in k8s) |
