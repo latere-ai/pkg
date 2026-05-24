@@ -284,12 +284,18 @@ func FuzzStripScheme(f *testing.F) {
 	f.Add("host:1234")
 	f.Add("")
 	f.Add("http://")
+	f.Add("http://http://") // doubled scheme: only the first is stripped
 	f.Fuzz(func(t *testing.T, s string) {
 		got := stripScheme(s)
-		if strings.HasPrefix(got, "http://") || strings.HasPrefix(got, "https://") {
-			if got != s {
-				t.Errorf("stripScheme(%q) = %q still has scheme prefix", s, got)
-			}
+		// stripScheme removes at most one leading http:// or https:// prefix,
+		// so the result is either unchanged or the input with exactly one such
+		// prefix removed. A doubled scheme (e.g. "http://http://") therefore
+		// legitimately leaves a scheme on the result.
+		switch {
+		case got == s, s == "http://"+got, s == "https://"+got:
+			// valid: zero or one prefix removed.
+		default:
+			t.Errorf("stripScheme(%q) = %q is not a single-prefix strip", s, got)
 		}
 	})
 }
