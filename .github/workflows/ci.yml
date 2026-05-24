@@ -38,3 +38,4 @@ jobs:
           go test -fuzz=FuzzSetup -fuzztime=30s ./otel/
           go test -fuzz=FuzzStripScheme -fuzztime=30s ./otel/
           go test -fuzz=FuzzVersion -fuzztime=30s ./otel/
+          go test -fuzz=FuzzRouteFromPattern -fuzztime=30s ./otel/

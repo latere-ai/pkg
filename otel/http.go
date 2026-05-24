@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -78,30 +79,34 @@ func Handler(h http.Handler, operation string, opts ...HandlerOption) http.Handl
 			w.Header().Set(TraceHeaderName, traceID)
 		}
 
-		var route string
-		if cfg.routeTemplate != nil {
-			route = cfg.routeTemplate(r)
-		}
-		if span := trace.SpanFromContext(r.Context()); span.SpanContext().IsValid() {
-			if route != "" {
-				span.SetAttributes(attribute.String("http.route", route))
+		span := trace.SpanFromContext(r.Context())
+		if span.SpanContext().IsValid() && cfg.surfaceAttr != nil {
+			if s := cfg.surfaceAttr(r); s != "" {
+				span.SetAttributes(attribute.String("cella.surface", s))
 			}
-			if cfg.surfaceAttr != nil {
-				if s := cfg.surfaceAttr(r); s != "" {
-					span.SetAttributes(attribute.String("cella.surface", s))
-				}
-			}
-		}
-
-		if cfg.metricsHook == nil {
-			h.ServeHTTP(w, r)
-			return
 		}
 
 		sw := &statusWriter{ResponseWriter: w, code: http.StatusOK}
 		start := time.Now()
 		h.ServeHTTP(sw, r)
-		cfg.metricsHook(r.Context(), route, r.Method, statusClass(sw.code), time.Since(start))
+
+		// The matched route is known only after the mux has run. An explicit
+		// template wins; otherwise fall back to the Go 1.22 ServeMux pattern
+		// (e.g. "GET /v1/parse/{id}"), which the mux sets on r once it matches.
+		// This keeps http.route low-cardinality (bound IDs) without per-service
+		// path normalizers.
+		var route string
+		if cfg.routeTemplate != nil {
+			route = cfg.routeTemplate(r)
+		} else {
+			route = routeFromPattern(r.Pattern)
+		}
+		if route != "" && span.SpanContext().IsValid() {
+			span.SetAttributes(attribute.String("http.route", route))
+		}
+		if cfg.metricsHook != nil {
+			cfg.metricsHook(r.Context(), route, r.Method, statusClass(sw.code), time.Since(start))
+		}
 	})
 
 	otelOpts := []otelhttp.Option{}
@@ -139,6 +144,19 @@ func LogAttrs(ctx context.Context) []any {
 		return nil
 	}
 	return []any{"trace_id", traceID, "span_id", spanID}
+}
+
+// routeFromPattern strips the optional leading method token from a Go 1.22
+// ServeMux pattern, leaving just the path template: "GET /v1/x/{id}" becomes
+// "/v1/x/{id}". An empty pattern (no route matched, e.g. a 404) yields "".
+func routeFromPattern(pattern string) string {
+	if pattern == "" {
+		return ""
+	}
+	if _, path, ok := strings.Cut(pattern, " "); ok {
+		return path
+	}
+	return pattern
 }
 
 func statusClass(code int) string {

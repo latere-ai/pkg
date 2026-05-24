@@ -243,6 +243,64 @@ func TestHandlerWithMetricsHookCarriesMethodAndClass(t *testing.T) {
 	}
 }
 
+func TestRouteFromPattern(t *testing.T) {
+	cases := map[string]string{
+		"":                  "",
+		"GET /v1/parse/{id}": "/v1/parse/{id}",
+		"/static/":          "/static/",
+		"POST /x":           "/x",
+	}
+	for in, want := range cases {
+		if got := routeFromPattern(in); got != want {
+			t.Errorf("routeFromPattern(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestHandlerRouteFromServeMuxPattern verifies that without an explicit
+// WithRouteTemplate, http.route is derived from the Go 1.22 ServeMux pattern the
+// mux sets on the request after matching — bound IDs collapse to {id}.
+func TestHandlerRouteFromServeMuxPattern(t *testing.T) {
+	rec := installRecorder(t)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/parse/{id}", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	wrapped := Handler(mux, "lectiod")
+
+	wrapped.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/v1/parse/prs_abc123", nil))
+
+	spans := rec.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("got %d spans, want 1", len(spans))
+	}
+	var route string
+	for _, kv := range spans[0].Attributes() {
+		if string(kv.Key) == "http.route" {
+			route = kv.Value.AsString()
+		}
+	}
+	if route != "/v1/parse/{id}" {
+		t.Errorf("http.route = %q, want /v1/parse/{id}", route)
+	}
+}
+
+func FuzzRouteFromPattern(f *testing.F) {
+	f.Add("")
+	f.Add("GET /v1/parse/{id}")
+	f.Add("/static/")
+	f.Add("POST /x {$}")
+	f.Fuzz(func(t *testing.T, pattern string) {
+		got := routeFromPattern(pattern)
+		// Never longer than the input, and a space-bearing pattern keeps only
+		// the tail after the first space.
+		if len(got) > len(pattern) {
+			t.Errorf("routeFromPattern(%q) = %q longer than input", pattern, got)
+		}
+	})
+}
+
 func TestStatusClass(t *testing.T) {
 	cases := map[int]string{
 		200: "2xx", 204: "2xx",

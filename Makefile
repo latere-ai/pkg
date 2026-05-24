@@ -10,6 +10,7 @@ fuzz:
 	go test -fuzz=FuzzSetup -fuzztime=30s ./otel/
 	go test -fuzz=FuzzStripScheme -fuzztime=30s ./otel/
 	go test -fuzz=FuzzVersion -fuzztime=30s ./otel/
+	go test -fuzz=FuzzRouteFromPattern -fuzztime=30s ./otel/
 	go test -fuzz=FuzzValidate -fuzztime=30s ./jwtauth/
 	go test -fuzz=FuzzParseJWKS -fuzztime=30s ./jwtauth/
 
