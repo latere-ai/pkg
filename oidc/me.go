@@ -148,30 +148,36 @@ func SwitchOrgRedirect(w http.ResponseWriter, orgID, returnTo string) string {
 	return url
 }
 
-// Initials derives a 1–2 character avatar label from a display name, falling
+// Initials derives a two-letter avatar monogram from a display name, falling
 // back to the email local-part, then "?". One shared rule so every service's
-// avatar fallback looks the same: two letters from a multi-word name (first +
-// last), otherwise the first letter of the single token.
+// avatar fallback is identical: first + last initial of a multi-word name, the
+// first two letters of a single-word name, and the email local-part (split on
+// dots, e.g. "first.last" -> "FL") when there's no name. The SPA renders this
+// only when no avatar_url is available.
 func Initials(name, email string) string {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		if i := strings.IndexByte(email, '@'); i > 0 {
-			name = strings.TrimSpace(email[:i])
+	pick := func(s string) string {
+		fields := strings.Fields(strings.TrimSpace(s))
+		if len(fields) == 0 {
+			return ""
 		}
+		if len(fields) == 1 {
+			r := []rune(fields[0])
+			if len(r) >= 2 {
+				return strings.ToUpper(string(r[:2]))
+			}
+			return strings.ToUpper(string(r))
+		}
+		return strings.ToUpper(string([]rune(fields[0])[:1]) + string([]rune(fields[len(fields)-1])[:1]))
 	}
-	if name == "" {
-		return "?"
+	if v := pick(name); v != "" {
+		return v
 	}
-	fields := strings.Fields(name)
-	if len(fields) >= 2 {
-		return strings.ToUpper(firstRune(fields[0]) + firstRune(fields[len(fields)-1]))
+	local := email
+	if i := strings.IndexByte(email, '@'); i > 0 {
+		local = email[:i]
 	}
-	return strings.ToUpper(firstRune(fields[0]))
-}
-
-func firstRune(s string) string {
-	for _, r := range s {
-		return string(r)
+	if v := pick(strings.ReplaceAll(local, ".", " ")); v != "" {
+		return v
 	}
-	return ""
+	return "?"
 }

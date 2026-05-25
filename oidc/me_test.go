@@ -12,10 +12,12 @@ import (
 func TestInitials(t *testing.T) {
 	cases := []struct{ name, email, want string }{
 		{"Ada Lovelace", "a@b.c", "AL"},
-		{"Ada", "a@b.c", "A"},
-		{"", "hi@changkun.de", "H"},
-		{"   ", "", "?"},
-		{"grace b hopper", "x@y.z", "GH"},
+		{"Ada", "a@b.c", "AD"},                 // single word -> first two letters
+		{"X", "a@b.c", "X"},                    // single rune -> one letter
+		{"", "hi@changkun.de", "HI"},           // email local-part
+		{"", "first.last@latere.ai", "FL"},     // dotted email local
+		{"   ", "", "?"},                        // nothing usable
+		{"grace b hopper", "x@y.z", "GH"},      // first + last
 	}
 	for _, tc := range cases {
 		if got := Initials(tc.name, tc.email); got != tc.want {
