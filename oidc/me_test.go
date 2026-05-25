@@ -92,15 +92,28 @@ func TestBuildMe_Unauthenticated(t *testing.T) {
 	}
 }
 
-// TestBuildMe_DeadSession: an expired access token with no refresh token is a
-// dead session — BuildMe returns (nil,nil) (logged out) rather than a stale
-// identity that would 401 against /userinfo + /me/orgs.
-func TestBuildMe_DeadSession(t *testing.T) {
+// TestBuildMe_ExpiredNoRefreshTolerated: an expired access token with NO
+// refresh token must NOT log the user out — Latere sessions are a short (15min)
+// access token inside a long-lived (24h) cookie, so the JWT is still decoded
+// for identity (the user stays logged in); only /userinfo + /me/orgs degrade.
+// Logging out here is the regression that booted lectio/latere-ai users 15min
+// after login. Mirrors handlers_test.go: TestUserFromRequest_ExpiredNoRefreshToken.
+func TestBuildMe_ExpiredNoRefreshTolerated(t *testing.T) {
+	orig := httpDo
+	t.Cleanup(func() { httpDo = orig })
+	// /userinfo + /me/orgs 401 on the expired token; identity must still resolve.
+	httpDo = func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	}
 	c := testClient(t)
-	r, w := sessionRequest(t, c, &Session{AccessToken: "stale", Expiry: time.Now().Add(-time.Hour)})
-	me, err := c.BuildMe(w, r)
-	if me != nil || err != nil {
-		t.Errorf("BuildMe(dead session) = (%+v, %v), want (nil, nil)", me, err)
+	jwt := makeJWT(map[string]string{"sub": "u1", "email": "ada@latere.ai"})
+	r, w := sessionRequest(t, c, &Session{AccessToken: jwt, Expiry: time.Now().Add(-time.Hour)})
+	me, _ := c.BuildMe(w, r)
+	if me == nil {
+		t.Fatal("BuildMe(expired, no refresh) = nil; want the decoded user (logged in)")
+	}
+	if me.Sub != "u1" {
+		t.Errorf("Sub = %q, want u1 (identity from the JWT)", me.Sub)
 	}
 }
 
