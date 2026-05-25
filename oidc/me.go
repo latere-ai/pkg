@@ -44,7 +44,15 @@ func (c *Client) BuildMe(w http.ResponseWriter, r *http.Request) (*Me, error) {
 	}
 
 	// Refresh once, up front, and reuse the single fresh token below.
-	if sess.Expiry.Before(time.Now()) && sess.RefreshToken != "" {
+	if sess.Expiry.Before(time.Now()) {
+		if sess.RefreshToken == "" {
+			// Dead session: the access token expired and there's no refresh
+			// token to renew it. Clear the stale cookie and treat the request
+			// as logged out so the SPA re-authenticates, rather than returning
+			// a stale identity whose /userinfo + /me/orgs calls will 401.
+			ClearSession(w)
+			return nil, nil
+		}
 		token, rerr := c.RefreshToken(r, sess.RefreshToken)
 		if rerr != nil {
 			slog.Debug("oidc: token refresh failed for /me", "error", rerr)

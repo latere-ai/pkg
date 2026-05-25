@@ -92,6 +92,18 @@ func TestBuildMe_Unauthenticated(t *testing.T) {
 	}
 }
 
+// TestBuildMe_DeadSession: an expired access token with no refresh token is a
+// dead session — BuildMe returns (nil,nil) (logged out) rather than a stale
+// identity that would 401 against /userinfo + /me/orgs.
+func TestBuildMe_DeadSession(t *testing.T) {
+	c := testClient(t)
+	r, w := sessionRequest(t, c, &Session{AccessToken: "stale", Expiry: time.Now().Add(-time.Hour)})
+	me, err := c.BuildMe(w, r)
+	if me != nil || err != nil {
+		t.Errorf("BuildMe(dead session) = (%+v, %v), want (nil, nil)", me, err)
+	}
+}
+
 // TestBuildMe_OrgsDegraded: a 401 on /me/orgs (e.g. aud mismatch) returns a
 // populated profile plus a non-nil error so the caller can log it, instead of
 // silently showing an empty switcher.
