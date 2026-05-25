@@ -266,6 +266,13 @@ func (c *Client) UserFromRequest(w http.ResponseWriter, r *http.Request) *User {
 		if info.OrgID != "" {
 			u.OrgID = info.OrgID
 		}
+	} else if err != nil {
+		// Don't fail the request (a partial User still renders), but make the
+		// degradation visible: a 401 here means the access token lacks the
+		// issuer audience, so name/avatar silently go missing. See the
+		// audience-tagging contract in the auth service bootstrap.
+		slog.Warn("oidc: /userinfo failed; display name + avatar will be missing",
+			"error", err, "sub", u.Sub)
 	}
 	return u
 }
