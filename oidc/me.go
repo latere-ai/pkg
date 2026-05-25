@@ -1,6 +1,7 @@
 package oidc
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -24,23 +25,15 @@ type Me struct {
 	Orgs      []OrgEntry `json:"orgs"`
 }
 
-// BuildMe resolves the full principal for the current request. It is the one
-// shared implementation of /me assembly:
+// BuildMe resolves the full principal for a cookie-session request: it
+// validates the session cookie, refreshes the access token ONCE if expired
+// (persisting it so a request crossing the expiry boundary doesn't refresh
+// twice or use a stale token on one of the two downstream calls), then defers
+// to BuildMeFromToken for the assembly. Use this from apps that store the
+// session in the pkg/oidc cookie (e.g. lectio, latere-ai).
 //
-//   - validate the session cookie; refresh the access token ONCE if expired
-//     and persist it (so a request that crosses the expiry boundary doesn't
-//     refresh twice or use a stale token on one of the two downstream calls);
-//   - decode sub/email/org_id from the JWT (no round-trip);
-//   - fetch name + avatar from /userinfo and the org list from /me/orgs using
-//     that single fresh token (the lux refresh-once pattern);
-//   - derive initials and the active org name.
-//
-// Returns (nil, nil) when the request is not authenticated. Returns
-// (me, nil) on full success. Returns (me, err) when authenticated but a
-// downstream call (/userinfo or /me/orgs) degraded — `me` is still populated
-// with whatever resolved, and `err` is the (already-logged) first failure so
-// the caller can decide whether to surface it. The most common cause of a
-// degraded result is an access token whose `aud` lacks the issuer.
+// Returns (nil, nil) when not authenticated; (me, nil) on success; (me, err)
+// when authenticated but a downstream call degraded (see BuildMeFromToken).
 func (c *Client) BuildMe(w http.ResponseWriter, r *http.Request) (*Me, error) {
 	if c == nil {
 		return nil, nil
@@ -50,8 +43,7 @@ func (c *Client) BuildMe(w http.ResponseWriter, r *http.Request) (*Me, error) {
 		return nil, nil // not authenticated
 	}
 
-	// Refresh once, up front, and reuse the single fresh token for both
-	// downstream calls below.
+	// Refresh once, up front, and reuse the single fresh token below.
 	if sess.Expiry.Before(time.Now()) && sess.RefreshToken != "" {
 		token, rerr := c.RefreshToken(r, sess.RefreshToken)
 		if rerr != nil {
@@ -68,7 +60,30 @@ func (c *Client) BuildMe(w http.ResponseWriter, r *http.Request) (*Me, error) {
 		}
 	}
 
-	claims, cerr := decodeJWTClaims(sess.AccessToken)
+	return c.BuildMeFromToken(r.Context(), sess.AccessToken)
+}
+
+// BuildMeFromToken is the single shared /me assembly, independent of how the
+// caller stores its session — apps with a server-side session store (cella),
+// authkit middleware (lux), or a cookie (lectio/latere-ai) all funnel their
+// access token through here so identity, profile, orgs, initials and the
+// active org name are resolved IDENTICALLY:
+//
+//   - decode sub/email/org_id from the JWT (no round-trip);
+//   - fetch name + avatar from /userinfo and the org list from /me/orgs with
+//     the SAME token;
+//   - derive initials and the active org name.
+//
+// Returns (nil, nil) if the token can't be decoded (treat as unauthenticated);
+// (me, nil) on success; (me, err) when a downstream call (/userinfo or
+// /me/orgs) degraded — `me` is still populated with whatever resolved and
+// `err` is the (already-logged) first failure. The usual cause of a degraded
+// result is a token whose `aud` lacks the issuer.
+func (c *Client) BuildMeFromToken(ctx context.Context, accessToken string) (*Me, error) {
+	if c == nil {
+		return nil, nil
+	}
+	claims, cerr := decodeJWTClaims(accessToken)
 	if cerr != nil {
 		return nil, nil
 	}
@@ -77,7 +92,7 @@ func (c *Client) BuildMe(w http.ResponseWriter, r *http.Request) (*Me, error) {
 	var degraded error
 
 	// Name + avatar from /userinfo (best-effort).
-	if info, uerr := c.FetchUserInfo(r, sess.AccessToken); uerr == nil && info != nil {
+	if info, uerr := c.FetchUserInfoContext(ctx, accessToken); uerr == nil && info != nil {
 		if info.Email != "" {
 			me.Email = info.Email
 		}
@@ -99,7 +114,7 @@ func (c *Client) BuildMe(w http.ResponseWriter, r *http.Request) (*Me, error) {
 	}
 
 	// Org memberships from /me/orgs (best-effort), using the SAME token.
-	if orgs, oerr := c.FetchOrgs(r.Context(), sess.AccessToken); oerr == nil {
+	if orgs, oerr := c.FetchOrgs(ctx, accessToken); oerr == nil {
 		me.Orgs = orgs
 		for _, o := range orgs {
 			if o.ID == me.OrgID {
