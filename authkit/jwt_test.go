@@ -296,13 +296,13 @@ func encodePayloadFuzz(payload string) string {
 	return header + "." + body + "." + sig
 }
 
-func TestJWTAuthenticateCarriesSandboxClaims(t *testing.T) {
+func TestJWTAuthenticateCarriesActorClaims(t *testing.T) {
 	claims := &jwtauth.Claims{
 		Sub:           "u-1",
 		OrgID:         "org-1",
 		PrincipalType: jwtauth.PrincipalUser,
-		SandboxID:     "sb-abc123",
 		Kind:          "sandbox",
+		ActorID:       "sb-abc123",
 	}
 	j := newJWTWithFakeValidator(&fakeValidator{claims: claims}, nil)
 	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"u-1"}`))
@@ -312,8 +312,8 @@ func TestJWTAuthenticateCarriesSandboxClaims(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if id.SandboxID != "sb-abc123" || id.Kind != "sandbox" {
-		t.Fatalf("identity missing sandbox claims: %+v", id)
+	if id.ActorID != "sb-abc123" || id.Kind != "sandbox" {
+		t.Fatalf("identity missing actor claims: %+v", id)
 	}
 	// Attribution unchanged.
 	if id.Sub != "u-1" || id.OrgID != "org-1" {

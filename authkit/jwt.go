@@ -83,8 +83,8 @@ func (j *JWT) Authenticate(r *http.Request) (Identity, error) {
 		Scopes:        claims.Scopes,
 		ClientID:      clientID,
 		TokenID:       claims.Sub,
-		SandboxID:     claims.SandboxID,
 		Kind:          claims.Kind,
+		ActorID:       claims.ActorID,
 	}, nil
 }
 

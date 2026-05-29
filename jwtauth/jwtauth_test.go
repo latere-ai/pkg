@@ -882,20 +882,20 @@ func FuzzParseJWKS(f *testing.F) {
 	})
 }
 
-func TestValidateSandboxClaims(t *testing.T) {
+func TestValidateActorClaims(t *testing.T) {
 	key := genKey(t)
 	v := testValidator(t, key)
 
-	// Sandbox token carries sandbox_id + kind.
+	// A sandbox token carries a generic actor: kind + actor_id.
 	p := defaultPayload()
-	p["sandbox_id"] = "sb-abc123"
+	p["actor_id"] = "sb-abc123"
 	p["kind"] = "sandbox"
 	claims, err := v.Validate(signToken(t, key, defaultHeader(key), p))
 	if err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
-	if claims.SandboxID != "sb-abc123" {
-		t.Errorf("SandboxID = %q, want sb-abc123", claims.SandboxID)
+	if claims.ActorID != "sb-abc123" {
+		t.Errorf("ActorID = %q, want sb-abc123", claims.ActorID)
 	}
 	if claims.Kind != "sandbox" {
 		t.Errorf("Kind = %q, want sandbox", claims.Kind)
@@ -906,7 +906,7 @@ func TestValidateSandboxClaims(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
-	if claims2.SandboxID != "" || claims2.Kind != "" {
-		t.Errorf("non-sandbox token carried SandboxID=%q Kind=%q, want empty", claims2.SandboxID, claims2.Kind)
+	if claims2.ActorID != "" || claims2.Kind != "" {
+		t.Errorf("non-actor token carried ActorID=%q Kind=%q, want empty", claims2.ActorID, claims2.Kind)
 	}
 }
