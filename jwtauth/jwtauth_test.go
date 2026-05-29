@@ -881,3 +881,32 @@ func FuzzParseJWKS(f *testing.F) {
 		cache.getKeys() // must not panic
 	})
 }
+
+func TestValidateSandboxClaims(t *testing.T) {
+	key := genKey(t)
+	v := testValidator(t, key)
+
+	// Sandbox token carries sandbox_id + kind.
+	p := defaultPayload()
+	p["sandbox_id"] = "sb-abc123"
+	p["kind"] = "sandbox"
+	claims, err := v.Validate(signToken(t, key, defaultHeader(key), p))
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if claims.SandboxID != "sb-abc123" {
+		t.Errorf("SandboxID = %q, want sb-abc123", claims.SandboxID)
+	}
+	if claims.Kind != "sandbox" {
+		t.Errorf("Kind = %q, want sandbox", claims.Kind)
+	}
+
+	// Ordinary token: both empty (back-compat).
+	claims2, err := v.Validate(signToken(t, key, defaultHeader(key), defaultPayload()))
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if claims2.SandboxID != "" || claims2.Kind != "" {
+		t.Errorf("non-sandbox token carried SandboxID=%q Kind=%q, want empty", claims2.SandboxID, claims2.Kind)
+	}
+}

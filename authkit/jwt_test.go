@@ -295,3 +295,28 @@ func encodePayloadFuzz(payload string) string {
 	sig := base64.RawURLEncoding.EncodeToString([]byte("sig"))
 	return header + "." + body + "." + sig
 }
+
+func TestJWTAuthenticateCarriesSandboxClaims(t *testing.T) {
+	claims := &jwtauth.Claims{
+		Sub:           "u-1",
+		OrgID:         "org-1",
+		PrincipalType: jwtauth.PrincipalUser,
+		SandboxID:     "sb-abc123",
+		Kind:          "sandbox",
+	}
+	j := newJWTWithFakeValidator(&fakeValidator{claims: claims}, nil)
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"u-1"}`))
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Authorization", "Bearer hdr."+payload+".sig")
+	id, err := j.Authenticate(r)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id.SandboxID != "sb-abc123" || id.Kind != "sandbox" {
+		t.Fatalf("identity missing sandbox claims: %+v", id)
+	}
+	// Attribution unchanged.
+	if id.Sub != "u-1" || id.OrgID != "org-1" {
+		t.Fatalf("attribution changed: %+v", id)
+	}
+}

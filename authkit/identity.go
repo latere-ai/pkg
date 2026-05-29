@@ -41,6 +41,12 @@ type Identity struct {
 	// TokenID is a stable, low-cardinality audit identifier. For JWT it is
 	// the principal Sub; for BearerToken it is "dev".
 	TokenID string
+	// SandboxID and Kind carry Cella sandbox-token metadata when the
+	// caller authenticated with a sandbox token (Kind == "sandbox").
+	// Empty for ordinary user/service/agent identities. They do not
+	// affect tenancy — attribution stays (OrgID, Sub).
+	SandboxID string
+	Kind      string
 }
 
 // Authenticator validates an inbound HTTP request and returns the caller's

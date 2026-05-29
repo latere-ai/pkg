@@ -121,6 +121,11 @@ type Claims struct {
 	Scopes        []string
 	Roles         []string
 
+	// Sandbox-token claims (Cella trust-plane egress tokens). Empty for
+	// ordinary user/service/agent tokens.
+	SandboxID string // opaque Cella sandbox id, e.g. "sb-abc123"
+	Kind      string // token kind, e.g. "sandbox"
+
 	// Agent-only.
 	Validation   ValidationStrategy // "local" or "strict"; empty for non-agents
 	DelegationID string
@@ -289,6 +294,8 @@ func claimsFromRawPayload(raw rawPayload) *Claims {
 		IsSuperadmin:  raw.IsSuperadmin,
 		Scopes:        raw.Scopes,
 		Roles:         raw.Roles,
+		SandboxID:     raw.SandboxID,
+		Kind:          raw.Kind,
 		Validation:    ValidationStrategy(raw.Validation),
 		DelegationID:  raw.DelegationID,
 	}
@@ -498,6 +505,8 @@ type rawPayload struct {
 	Scopes          []string   `json:"scp"`
 	Roles           []string   `json:"roles"`
 	ClientID        string     `json:"client_id"`
+	SandboxID       string     `json:"sandbox_id"`
+	Kind            string     `json:"kind"`
 	AuthorizedParty string     `json:"azp"`
 	Validation      string     `json:"validation"`
 	DelegationID    string     `json:"delegation_id"`
