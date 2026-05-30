@@ -3,6 +3,7 @@ package oidc
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,15 @@ import (
 
 	"golang.org/x/oauth2"
 )
+
+// ErrSessionExpired is returned by SessionFromRequest when the dashboard session
+// lifetime (SessionExpiry) has elapsed. The caller should clear the cookie and
+// redirect to login, the same as for a decrypt error.
+var ErrSessionExpired = errors.New("oidc: session expired")
+
+// refreshLeeway is how far ahead of access-token expiry SessionFromRequest
+// proactively refreshes, so a request never races the expiry boundary.
+const refreshLeeway = 60 * time.Second
 
 // jwtClaims holds the JWT access-token claims we surface in the session. These
 // are identity hints for rendering — the access token itself remains the bearer
@@ -364,4 +374,65 @@ func (c *Client) UserFromRequest(w http.ResponseWriter, r *http.Request) *User {
 			"error", err, "sub", u.Sub)
 	}
 	return u
+}
+
+// SessionFromRequest decrypts the session cookie and returns the session,
+// proactively refreshing the access token when it is within refreshLeeway of
+// expiry. Unlike UserFromRequest it does NOT call /userinfo — cached identity
+// fields persist from the prior session until the next login or an explicit
+// /userinfo fetch — so it is cheap enough for the per-request auth path.
+//
+// Error contract (the caller must clear the cookie + redirect to login on any
+// non-nil error, never surface a 500): a decrypt/parse failure returns the
+// GetSession error unchanged; an elapsed SessionExpiry returns ErrSessionExpired.
+// A successfully refreshed session is written back via w.
+func (c *Client) SessionFromRequest(w http.ResponseWriter, r *http.Request) (*Session, error) {
+	sess, err := c.GetSession(r)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	if !sess.SessionExpiry.IsZero() && !sess.SessionExpiry.After(now) {
+		return nil, ErrSessionExpired
+	}
+
+	// Proactively refresh when the access token is within the leeway of expiry
+	// (covers an already-expired token too). No refresh token → nothing to do.
+	if sess.RefreshToken == "" || sess.Expiry.IsZero() || !sess.Expiry.Add(-refreshLeeway).Before(now) {
+		return sess, nil
+	}
+
+	tok, err := c.RefreshTokenContext(r.Context(), sess.RefreshToken)
+	if err != nil {
+		return nil, fmt.Errorf("refresh token: %w", err)
+	}
+
+	refreshed := SessionFromToken(tok, c.cfg.SessionTTL)
+	// Carry forward what the refresh response / new JWT may not restate.
+	if refreshed.RefreshToken == "" {
+		refreshed.RefreshToken = sess.RefreshToken // some servers don't rotate
+	}
+	if !sess.SessionExpiry.IsZero() {
+		refreshed.SessionExpiry = sess.SessionExpiry // never extend the window
+	}
+	if refreshed.User.ClientID == "" {
+		refreshed.User.ClientID = sess.User.ClientID
+	}
+	if len(refreshed.User.Scopes) == 0 {
+		refreshed.User.Scopes = sess.User.Scopes
+	}
+	if len(refreshed.User.OrgRoles) == 0 {
+		refreshed.User.OrgRoles = sess.User.OrgRoles
+	}
+	// Profile fields aren't in the access token; keep the prior values rather
+	// than blanking the header on refresh.
+	refreshed.User.DisplayName = firstNonEmpty(refreshed.User.DisplayName, sess.User.DisplayName)
+	refreshed.User.AvatarURL = firstNonEmpty(refreshed.User.AvatarURL, sess.User.AvatarURL)
+	refreshed.User.Email = firstNonEmpty(refreshed.User.Email, sess.User.Email)
+
+	if err := c.SetSession(w, refreshed); err != nil {
+		slog.Warn("oidc: failed to persist refreshed session", "error", err)
+	}
+	return refreshed, nil
 }
