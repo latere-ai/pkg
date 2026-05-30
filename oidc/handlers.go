@@ -280,7 +280,7 @@ func (c *Client) HandleCallback(w http.ResponseWriter, r *http.Request) {
 // parameter is forwarded as the post_logout_redirect_uri so the auth
 // service can redirect the user back after sign-out.
 func (c *Client) HandleLogout(w http.ResponseWriter, r *http.Request) {
-	ClearSession(w)
+	c.ClearSession(w)
 
 	returnTo := r.URL.Query().Get("return_to")
 	if !isSafeRedirect(returnTo) {

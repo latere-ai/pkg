@@ -415,7 +415,7 @@ func (c *Client) GetFlowState(r *http.Request) (*FlowState, error) {
 
 // ClearFlowState expires the flow cookie.
 func ClearFlowState(w http.ResponseWriter) {
-	clearCookie(w, FlowCookieName)
+	clearCookie(w, FlowCookieName, true)
 }
 
 // SetSession encrypts and writes the session cookie.
@@ -462,9 +462,19 @@ func (c *Client) GetSession(r *http.Request) (*Session, error) {
 	return &sess, nil
 }
 
-// ClearSession expires the session cookie.
+// ClearSession expires the default session cookie (__Host-latere-session, with
+// Secure set). This package-level form is the public API for relying parties
+// that clear without a *Client (lux/lectio org-switch, latere-ai re-export).
+// Clients configured with a custom cookie name must use the method below.
 func ClearSession(w http.ResponseWriter) {
-	clearCookie(w, SessionCookieName)
+	clearCookie(w, SessionCookieName, true)
+}
+
+// ClearSession expires the session cookie using the client's configured cookie
+// name and Secure setting — the form a relying party with a custom CookieName
+// (e.g. cella's __cella_session) must use.
+func (c *Client) ClearSession(w http.ResponseWriter) {
+	clearCookie(w, c.cfg.CookieName, !c.cfg.InsecureCookies)
 }
 
 func (c *Client) setCookie(w http.ResponseWriter, name string, v any, maxAge int) error {
@@ -512,7 +522,7 @@ func (c *Client) getCookie(r *http.Request, name string, v any) error {
 	return json.Unmarshal(plaintext, v)
 }
 
-func clearCookie(w http.ResponseWriter, name string) {
+func clearCookie(w http.ResponseWriter, name string, secure bool) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     name,
 		Value:    "",
@@ -520,7 +530,7 @@ func clearCookie(w http.ResponseWriter, name string) {
 		MaxAge:   -1,
 		Expires:  time.Unix(0, 0),
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
 }
