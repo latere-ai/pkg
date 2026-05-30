@@ -72,8 +72,8 @@ type Session struct {
 	RefreshToken  string    `json:"rt"`
 	Expiry        time.Time `json:"exp"`
 	User          User      `json:"u"`
-	IssuedAt      time.Time `json:"iat,omitempty"`  // access-token issued-at
-	SessionExpiry time.Time `json:"sexp,omitempty"` // dashboard session expiry, distinct from Expiry
+	IssuedAt      time.Time `json:"iat,omitzero"`  // access-token issued-at (only when SessionTTL is set)
+	SessionExpiry time.Time `json:"sexp,omitzero"` // dashboard session expiry, distinct from Expiry
 }
 
 // FlowState holds PKCE and state params during the OAuth authorization flow.

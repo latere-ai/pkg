@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -79,6 +80,25 @@ func TestSessionFromToken(t *testing.T) {
 	}
 	if sess.IssuedAt.IsZero() || sess.SessionExpiry.IsZero() {
 		t.Errorf("IssuedAt=%v SessionExpiry=%v, both should be set", sess.IssuedAt, sess.SessionExpiry)
+	}
+}
+
+// TestDefaultConfigSessionJSONOmitsTimeFields checks the SERIALIZED cookie
+// bytes (not just in-memory IsZero): with no TTL the session must not carry
+// iat/sexp at all, so lux/lectio/latere-ai cookies stay shape-identical. A
+// configured TTL must include sexp. Guards against the time.Time omitempty
+// no-op (omitzero is required, and IssuedAt must not be stamped for ttl<=0).
+func TestDefaultConfigSessionJSONOmitsTimeFields(t *testing.T) {
+	jwt := makeRichJWT(map[string]any{"sub": "u1"})
+
+	def, _ := json.Marshal(SessionFromToken(&oauth2.Token{AccessToken: jwt}, 0))
+	if s := string(def); strings.Contains(s, `"iat"`) || strings.Contains(s, `"sexp"`) {
+		t.Errorf("default-config session JSON must omit iat/sexp, got: %s", s)
+	}
+
+	conf, _ := json.Marshal(SessionFromToken(&oauth2.Token{AccessToken: jwt}, time.Hour))
+	if s := string(conf); !strings.Contains(s, `"sexp"`) || !strings.Contains(s, `"iat"`) {
+		t.Errorf("configured session JSON must include iat/sexp, got: %s", s)
 	}
 }
 

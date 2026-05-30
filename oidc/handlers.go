@@ -81,7 +81,6 @@ func SessionFromToken(token *oauth2.Token, ttl time.Duration) *Session {
 		AccessToken:  token.AccessToken,
 		RefreshToken: token.RefreshToken,
 		Expiry:       exp.UTC(),
-		IssuedAt:     now,
 		User: User{
 			Sub:          claims.Sub,
 			Email:        claims.Email,
@@ -96,7 +95,12 @@ func SessionFromToken(token *oauth2.Token, ttl time.Duration) *Session {
 			IsSuperadmin: claims.IsSuperadmin,
 		},
 	}
+	// IssuedAt/SessionExpiry exist for the dashboard-session-lifetime feature
+	// (SessionTTL > 0). Leaving them zero for the default config keeps the
+	// serialized cookie identical to the pre-feature shape (the json omitzero
+	// tag drops both), so lux/lectio/latere-ai cookies don't change.
 	if ttl > 0 {
+		sess.IssuedAt = now
 		sess.SessionExpiry = now.Add(ttl)
 	}
 	return sess
