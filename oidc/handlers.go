@@ -296,13 +296,27 @@ func (c *Client) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	if !isSafeRedirect(returnTo) {
 		returnTo = "/"
 	}
-	// Build an absolute URL so the auth service can redirect back.
+	// Build an absolute URL so the auth service can redirect back. Behind a
+	// TLS-terminating ingress (cella/lux/lectio) r.TLS is nil, so trust
+	// X-Forwarded-Proto first; fall back to r.TLS, then the localhost dev
+	// heuristic.
 	scheme := "https"
-	if r.TLS == nil && strings.HasPrefix(r.Host, "localhost") {
+	if xfp := r.Header.Get("X-Forwarded-Proto"); xfp != "" {
+		scheme = strings.TrimSpace(strings.Split(xfp, ",")[0])
+	} else if r.TLS == nil && strings.HasPrefix(r.Host, "localhost") {
 		scheme = "http"
 	}
 	postLogout := scheme + "://" + r.Host + returnTo
 	http.Redirect(w, r, c.AuthURL()+"/logout?post_logout_redirect_uri="+url.QueryEscape(postLogout), http.StatusFound)
+}
+
+// HandleLogoutNotify is the front-channel logout endpoint: the auth service
+// loads it in a hidden iframe when the user signs out elsewhere, so the local
+// session cookie is cleared and the next page load reflects the logged-out
+// state. It clears the session and returns 200.
+func (c *Client) HandleLogoutNotify(w http.ResponseWriter, r *http.Request) {
+	c.ClearSession(w)
+	w.WriteHeader(http.StatusOK)
 }
 
 // UserFromRequest extracts the authenticated user from the session
