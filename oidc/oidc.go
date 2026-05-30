@@ -47,20 +47,33 @@ const (
 // to the URL as avatar_url. Populated together by FetchUserInfo so a
 // caller can pick whichever name fits its template.
 type User struct {
-	Sub       string `json:"sub"`
-	Email     string `json:"email"`
-	Name      string `json:"name"`
-	Picture   string `json:"picture"`
-	OrgID     string `json:"org_id,omitempty"`     // active org for this session, "" for personal view
-	AvatarURL string `json:"avatar_url,omitempty"` // alias of Picture
+	Sub          string   `json:"sub"`
+	Email        string   `json:"email"`
+	Name         string   `json:"name"`
+	Picture      string   `json:"picture"`
+	OrgID        string   `json:"org_id,omitempty"`        // active org for this session, "" for personal view
+	AvatarURL    string   `json:"avatar_url,omitempty"`    // alias of Picture
+	DisplayName  string   `json:"display_name,omitempty"`  // preferred render name, falls back to Name
+	OrgRoles     []string `json:"org_roles,omitempty"`     // roles in the active org (owner/admin/member/viewer)
+	ClientID     string   `json:"client_id,omitempty"`     // oauth client the token was issued to (client_id or azp)
+	Scopes       []string `json:"scopes,omitempty"`        // granted scopes parsed from the access token
+	IsSuperadmin bool     `json:"is_superadmin,omitempty"` // mirrored from the JWT at login
 }
 
 // Session holds tokens and user info stored in the encrypted session cookie.
+//
+// Expiry is the access-token expiry. SessionExpiry is the (longer) dashboard
+// session lifetime — distinct from the access token, so the server can keep
+// reading the refresh token to renew access tokens until the session itself
+// lapses. SessionExpiry is only populated when the client sets Config.SessionTTL;
+// otherwise the cookie's MaxAge tracks SessionMaxAge as before.
 type Session struct {
-	AccessToken  string    `json:"at"`
-	RefreshToken string    `json:"rt"`
-	Expiry       time.Time `json:"exp"`
-	User         User      `json:"u"`
+	AccessToken   string    `json:"at"`
+	RefreshToken  string    `json:"rt"`
+	Expiry        time.Time `json:"exp"`
+	User          User      `json:"u"`
+	IssuedAt      time.Time `json:"iat,omitempty"`  // access-token issued-at
+	SessionExpiry time.Time `json:"sexp,omitempty"` // dashboard session expiry, distinct from Expiry
 }
 
 // FlowState holds PKCE and state params during the OAuth authorization flow.
@@ -91,6 +104,25 @@ type Config struct {
 	// request additional scopes (offline_access for refresh tokens,
 	// or product-specific scopes the relying party gates on).
 	Scopes []string
+
+	// CookieName overrides the session cookie name. Defaults to
+	// SessionCookieName ("__Host-latere-session"). Set this only when a
+	// relying party needs a non-default name (e.g. cella's
+	// "__cella_session"); note the "__Host-" prefix requires Secure cookies.
+	CookieName string
+
+	// SessionTTL sets the dashboard session lifetime. When zero (the
+	// default), the session cookie's MaxAge tracks SessionMaxAge and no
+	// SessionExpiry is stamped — byte-for-byte the legacy behavior. When
+	// positive, the cookie MaxAge derives from a SessionExpiry stamped at
+	// now+SessionTTL, so access tokens can be refreshed server-side until
+	// the longer session expires.
+	SessionTTL time.Duration
+
+	// InsecureCookies drops the Secure flag from cookies, for local/dev
+	// over plain HTTP. Defaults false (Secure stays set). Incompatible with
+	// a "__Host-" cookie name, which browsers reject without Secure.
+	InsecureCookies bool
 }
 
 // Client is the OIDC Relying Party for a latere-ai service.
@@ -146,6 +178,9 @@ func New(cfg Config) *Client {
 
 	if cfg.Audience == "" {
 		cfg.Audience = cfg.AuthURL
+	}
+	if cfg.CookieName == "" {
+		cfg.CookieName = SessionCookieName
 	}
 	scopes := cfg.Scopes
 	if len(scopes) == 0 {
@@ -384,14 +419,44 @@ func ClearFlowState(w http.ResponseWriter) {
 }
 
 // SetSession encrypts and writes the session cookie.
+//
+// With the default config (SessionTTL == 0) the cookie name is
+// SessionCookieName and MaxAge is SessionMaxAge — unchanged from before. When
+// SessionTTL is set, the cookie name is c.cfg.CookieName and MaxAge derives
+// from the session's SessionExpiry (stamped here if absent, preserved if
+// already set so a refresh never extends the window).
 func (c *Client) SetSession(w http.ResponseWriter, sess *Session) error {
-	return c.setCookie(w, SessionCookieName, sess, SessionMaxAge)
+	maxAge := SessionMaxAge
+	if c.cfg.SessionTTL > 0 {
+		now := time.Now().UTC()
+		exp := c.sessionExpiry(sess, now)
+		sess.SessionExpiry = exp
+		maxAge = int(exp.Sub(now).Seconds())
+		if maxAge < 1 {
+			maxAge = 1
+		}
+	}
+	return c.setCookie(w, c.cfg.CookieName, sess, maxAge)
+}
+
+// sessionExpiry returns the dashboard session expiry for sess, preserving an
+// already-stamped value so refreshes don't extend the window. Legacy sessions
+// without one are bounded by their IssuedAt (or now) plus SessionTTL.
+func (c *Client) sessionExpiry(sess *Session, now time.Time) time.Time {
+	if !sess.SessionExpiry.IsZero() {
+		return sess.SessionExpiry
+	}
+	base := sess.IssuedAt
+	if base.IsZero() {
+		base = now
+	}
+	return base.Add(c.cfg.SessionTTL)
 }
 
 // GetSession reads and decrypts the session cookie.
 func (c *Client) GetSession(r *http.Request) (*Session, error) {
 	var sess Session
-	if err := c.getCookie(r, SessionCookieName, &sess); err != nil {
+	if err := c.getCookie(r, c.cfg.CookieName, &sess); err != nil {
 		return nil, err
 	}
 	return &sess, nil
@@ -419,7 +484,7 @@ func (c *Client) setCookie(w http.ResponseWriter, name string, v any, maxAge int
 		Path:     "/",
 		MaxAge:   maxAge,
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   !c.cfg.InsecureCookies,
 		SameSite: http.SameSiteLaxMode,
 	})
 	return nil
