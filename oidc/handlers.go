@@ -9,13 +9,28 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"golang.org/x/oauth2"
 )
 
-// jwtClaims holds the subset of JWT access token claims we extract.
+// jwtClaims holds the JWT access-token claims we surface in the session. These
+// are identity hints for rendering — the access token itself remains the bearer
+// of authority for downstream API calls, so the signature is not verified here
+// (the token was just issued by our own auth service via a trusted exchange).
 type jwtClaims struct {
-	Sub   string `json:"sub"`
-	Email string `json:"email"`
-	OrgID string `json:"org_id"`
+	Sub             string   `json:"sub"`
+	Email           string   `json:"email"`
+	Name            string   `json:"name"`
+	DisplayName     string   `json:"display_name"`
+	Picture         string   `json:"picture"`
+	AvatarURL       string   `json:"avatar_url"`
+	OrgID           string   `json:"org_id"`
+	ClientID        string   `json:"client_id"`
+	AuthorizedParty string   `json:"azp"`
+	Scope           string   `json:"scope"`
+	Scopes          []string `json:"scopes"`
+	Roles           []string `json:"roles"`
+	IsSuperadmin    bool     `json:"is_superadmin"`
 }
 
 // decodeJWTClaims extracts claims from a JWT access token without
@@ -35,6 +50,90 @@ func decodeJWTClaims(accessToken string) (*jwtClaims, error) {
 		return nil, err
 	}
 	return &c, nil
+}
+
+// SessionFromToken builds a Session from a freshly issued token, decoding the
+// access token's JWT for identity hints (sub, email, name, org, roles, scopes,
+// client, superadmin). Identity hints in the cookie are UI-only; downstream API
+// calls always re-validate the access token. SessionExpiry is stamped at now+ttl
+// when ttl > 0 (the dashboard session lifetime), and left zero otherwise.
+func SessionFromToken(token *oauth2.Token, ttl time.Duration) *Session {
+	now := time.Now().UTC()
+	exp := token.Expiry
+	if exp.IsZero() {
+		exp = now.Add(15 * time.Minute)
+	}
+	claims, _ := decodeJWTClaims(token.AccessToken)
+	if claims == nil {
+		claims = &jwtClaims{}
+	}
+	sess := &Session{
+		AccessToken:  token.AccessToken,
+		RefreshToken: token.RefreshToken,
+		Expiry:       exp.UTC(),
+		IssuedAt:     now,
+		User: User{
+			Sub:          claims.Sub,
+			Email:        claims.Email,
+			Name:         claims.Name,
+			Picture:      claims.Picture,
+			AvatarURL:    firstNonEmpty(claims.AvatarURL, claims.Picture),
+			OrgID:        claims.OrgID,
+			DisplayName:  firstNonEmpty(claims.DisplayName, claims.Name),
+			OrgRoles:     claims.Roles,
+			ClientID:     firstNonEmpty(claims.ClientID, claims.AuthorizedParty),
+			Scopes:       scopesFromJWT(claims),
+			IsSuperadmin: claims.IsSuperadmin,
+		},
+	}
+	if ttl > 0 {
+		sess.SessionExpiry = now.Add(ttl)
+	}
+	return sess
+}
+
+// scopesFromJWT reads granted scopes from either the space-delimited "scope"
+// claim or the "scopes" array, normalizing to a deduped slice.
+func scopesFromJWT(c *jwtClaims) []string {
+	if c == nil {
+		return nil
+	}
+	if strings.TrimSpace(c.Scope) != "" {
+		return splitScopes(c.Scope)
+	}
+	if len(c.Scopes) > 0 {
+		return splitScopes(strings.Join(c.Scopes, " "))
+	}
+	return nil
+}
+
+// splitScopes splits a space/comma-delimited scope string into a deduped,
+// order-preserving slice.
+func splitScopes(s string) []string {
+	parts := strings.Fields(strings.ReplaceAll(s, ",", " "))
+	out := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, p := range parts {
+		if _, dup := seen[p]; dup {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// firstNonEmpty returns the first non-empty string, or "".
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // isSafeRedirect returns true when target is a relative path that won't
@@ -152,27 +251,17 @@ func (c *Client) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Decode claims from the JWT access token.
-	claims, err := decodeJWTClaims(token.AccessToken)
-	if err != nil {
+	// Validate the access token is a well-formed JWT before building a
+	// session from it. The full claim set (sub/email/org/roles/scopes/...)
+	// is decoded by SessionFromToken; name and picture not present in the
+	// token are filled by a follow-up /userinfo round-trip in UserFromRequest.
+	if _, err := decodeJWTClaims(token.AccessToken); err != nil {
 		slog.Error("oidc: decode JWT claims", "error", err)
 		http.Redirect(w, r, "/?auth_error=invalid_token", http.StatusFound)
 		return
 	}
 
-	// Store session with token + claims. JWT carries sub/email/org_id;
-	// name and picture aren't in the access token, so a follow-up
-	// /userinfo round-trip in UserFromRequest fills those in.
-	sess := &Session{
-		AccessToken:  token.AccessToken,
-		RefreshToken: token.RefreshToken,
-		Expiry:       token.Expiry,
-		User: User{
-			Sub:   claims.Sub,
-			Email: claims.Email,
-			OrgID: claims.OrgID,
-		},
-	}
+	sess := SessionFromToken(token, c.cfg.SessionTTL)
 	if err := c.SetSession(w, sess); err != nil {
 		slog.Error("oidc: set session", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
