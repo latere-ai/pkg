@@ -107,20 +107,9 @@ type Config struct {
 
 	// CookieName overrides the session cookie name. Defaults to
 	// SessionCookieName ("__Host-latere-session"). Set this only when a
-	// relying party needs a non-default name (e.g. cella's
-	// "__cella_session"); note the "__Host-" prefix requires Secure cookies.
+	// relying party needs a non-default name; note the "__Host-" prefix
+	// requires Secure cookies.
 	CookieName string
-
-	// LegacyCookieNames lists prior session cookie names this client should
-	// read but never write. Intended for cookie-name cutovers: a deploy that
-	// flips CookieName to the unified value can list the prior names here
-	// for one release so existing sessions survive. GetSession (and
-	// SessionFromRequest, including its refresh path) fall back to each
-	// entry in order when the primary cookie is absent or undecryptable;
-	// on a successful refresh the new session is written under the current
-	// CookieName, ratcheting users onto the unified name without an extra
-	// login. Empty by default.
-	LegacyCookieNames []string
 
 	// SessionTTL sets the dashboard session lifetime. When zero (the
 	// default), the session cookie's MaxAge tracks SessionMaxAge and no
@@ -467,29 +456,9 @@ func (c *Client) sessionExpiry(sess *Session, now time.Time) time.Time {
 }
 
 // GetSession reads and decrypts the session cookie at the client's
-// configured cookie name, falling back to each entry in
-// Config.LegacyCookieNames in order when the primary cookie is absent or
-// undecryptable. Returns the first successful read or the primary read's
-// error if every name misses.
-//
-// A legacy-name hit emits a single Warn log per request via slog with
-// key "oidc.cookie: legacy cookie hit" and the matched name; operators
-// can grep for that string to verify "zero legacy hits in the last 30
-// days" before retiring the LegacyCookieNames list. The log is at Warn
-// because the path itself is correct (the session resolves) but the
-// cookie name is expected to disappear after one release.
+// configured cookie name.
 func (c *Client) GetSession(r *http.Request) (*Session, error) {
-	sess, err := c.GetSessionByName(r, c.cfg.CookieName)
-	if err == nil && sess != nil {
-		return sess, nil
-	}
-	for _, name := range c.cfg.LegacyCookieNames {
-		if legacy, lerr := c.GetSessionByName(r, name); lerr == nil && legacy != nil {
-			slog.WarnContext(r.Context(), "oidc.cookie: legacy cookie hit", "name", name)
-			return legacy, nil
-		}
-	}
-	return sess, err
+	return c.GetSessionByName(r, c.cfg.CookieName)
 }
 
 // GetSessionByName reads and decrypts the session cookie at the given name,
