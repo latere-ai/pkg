@@ -15,13 +15,18 @@ import (
 )
 
 // ErrSessionExpired is returned by SessionFromRequest when the dashboard session
-// lifetime (SessionExpiry) has elapsed. The caller should clear the cookie and
-// redirect to login, the same as for a decrypt error.
+// lifetime has elapsed, or when the access token has expired and cannot be
+// refreshed. The caller should clear the cookie and redirect to login, the same
+// as for a decrypt error.
 var ErrSessionExpired = errors.New("oidc: session expired")
 
 // refreshLeeway is how far ahead of access-token expiry SessionFromRequest
 // proactively refreshes, so a request never races the expiry boundary.
 const refreshLeeway = 60 * time.Second
+
+func accessTokenExpired(sess *Session, now time.Time) bool {
+	return sess.Expiry.IsZero() || !sess.Expiry.After(now)
+}
 
 // jwtClaims holds the JWT access-token claims we surface in the session. These
 // are identity hints for rendering — the access token itself remains the bearer
@@ -334,11 +339,16 @@ func (c *Client) UserFromRequest(w http.ResponseWriter, r *http.Request) *User {
 		return nil
 	}
 
-	// If the access token is expired, try refreshing.
-	if sess.Expiry.Before(time.Now()) && sess.RefreshToken != "" {
+	// If the access token is expired, refresh it or clear the unusable session.
+	if accessTokenExpired(sess, time.Now()) {
+		if sess.RefreshToken == "" {
+			c.ClearSession(w)
+			return nil
+		}
 		token, err := c.RefreshToken(r, sess.RefreshToken)
 		if err != nil {
 			slog.Debug("oidc: token refresh failed", "error", err)
+			c.ClearSession(w)
 			return nil
 		}
 		sess.AccessToken = token.AccessToken
@@ -415,9 +425,14 @@ func (c *Client) SessionFromRequest(w http.ResponseWriter, r *http.Request) (*Se
 		return nil, ErrSessionExpired
 	}
 
+	if accessTokenExpired(sess, now) && sess.RefreshToken == "" {
+		return nil, ErrSessionExpired
+	}
+
 	// Proactively refresh when the access token is within the leeway of expiry
-	// (covers an already-expired token too). No refresh token → nothing to do.
-	if sess.RefreshToken == "" || sess.Expiry.IsZero() || !sess.Expiry.Add(-refreshLeeway).Before(now) {
+	// (covers an already-expired token too). No refresh token means the current
+	// access token is still usable until its expiry.
+	if sess.RefreshToken == "" || !sess.Expiry.Add(-refreshLeeway).Before(now) {
 		return sess, nil
 	}
 

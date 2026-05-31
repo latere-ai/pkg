@@ -35,6 +35,8 @@ func TestLoadConfig(t *testing.T) {
 	t.Setenv("AUTH_CLIENT_SECRET", "csec")
 	t.Setenv("AUTH_REDIRECT_URL", "https://app.test.com/cb")
 	t.Setenv("AUTH_COOKIE_KEY", "deadbeef")
+	t.Setenv("AUTH_AUDIENCE", "https://auth.test.com")
+	t.Setenv("AUTH_SCOPES", "openid,email profile offline_access")
 
 	cfg := LoadConfig()
 	if cfg.AuthURL != "https://auth.test.com" {
@@ -51,6 +53,12 @@ func TestLoadConfig(t *testing.T) {
 	}
 	if cfg.CookieKey != "deadbeef" {
 		t.Errorf("CookieKey = %q, want %q", cfg.CookieKey, "deadbeef")
+	}
+	if cfg.Audience != "https://auth.test.com" {
+		t.Errorf("Audience = %q, want %q", cfg.Audience, "https://auth.test.com")
+	}
+	if got := strings.Join(cfg.Scopes, " "); got != "openid email profile offline_access" {
+		t.Errorf("Scopes = %q, want openid email profile offline_access", got)
 	}
 }
 

@@ -634,6 +634,10 @@ func TestUserFromRequest_ExpiredTokenRefreshFail(t *testing.T) {
 	if u != nil {
 		t.Errorf("expected nil user when refresh fails, got %+v", u)
 	}
+	cookies := w.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != SessionCookieName || cookies[0].MaxAge != -1 {
+		t.Fatalf("session cookie not cleared after refresh failure: %+v", cookies)
+	}
 }
 
 func TestUserFromRequest_ExpiredNoRefreshToken(t *testing.T) {
@@ -654,11 +658,12 @@ func TestUserFromRequest_ExpiredNoRefreshToken(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	u := c.UserFromRequest(w, r)
-	// With no refresh token but expired access token, it should still
-	// try to decode the JWT (the expiry check is for refresh, not rejection).
-	// The JWT itself is decodable, so user is returned.
-	if u == nil {
-		t.Fatal("expected user (JWT is still decodable)")
+	if u != nil {
+		t.Fatalf("expected nil user for expired token without refresh token, got %+v", u)
+	}
+	cookies := w.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != SessionCookieName || cookies[0].MaxAge != -1 {
+		t.Fatalf("session cookie not cleared for expired token without refresh token: %+v", cookies)
 	}
 }
 
@@ -762,9 +767,9 @@ func TestHandleCallback_UnsafeReturnTo(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
-			"access_token":  jwt,
-			"token_type":    "Bearer",
-			"expires_in":    3600,
+			"access_token": jwt,
+			"token_type":   "Bearer",
+			"expires_in":   3600,
 		})
 	}))
 	defer ts.Close()

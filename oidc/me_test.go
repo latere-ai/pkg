@@ -26,7 +26,7 @@ func TestInitials(t *testing.T) {
 	}
 }
 
-func sessionRequest(t *testing.T, c *Client, sess *Session) (*http.Request, http.ResponseWriter) {
+func sessionRequest(t *testing.T, c *Client, sess *Session) (*http.Request, *httptest.ResponseRecorder) {
 	t.Helper()
 	ws := httptest.NewRecorder()
 	if err := c.SetSession(ws, sess); err != nil {
@@ -92,28 +92,26 @@ func TestBuildMe_Unauthenticated(t *testing.T) {
 	}
 }
 
-// TestBuildMe_ExpiredNoRefreshTolerated: an expired access token with NO
-// refresh token must NOT log the user out — Latere sessions are a short (15min)
-// access token inside a long-lived (24h) cookie, so the JWT is still decoded
-// for identity (the user stays logged in); only /userinfo + /me/orgs degrade.
-// Logging out here is the regression that booted lectio/latere-ai users 15min
-// after login. Mirrors handlers_test.go: TestUserFromRequest_ExpiredNoRefreshToken.
-func TestBuildMe_ExpiredNoRefreshTolerated(t *testing.T) {
+// TestBuildMe_ExpiredNoRefreshClearsSession: an expired access token with no
+// refresh token is not a live login. Returning a decoded JWT-only identity here
+// makes /api/me say "logged in" while token-backed calls fail as expired.
+func TestBuildMe_ExpiredNoRefreshClearsSession(t *testing.T) {
 	orig := httpDo
 	t.Cleanup(func() { httpDo = orig })
-	// /userinfo + /me/orgs 401 on the expired token; identity must still resolve.
 	httpDo = func(req *http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+		t.Fatalf("BuildMe must not call downstream endpoints for an expired unrefreshable token")
+		return nil, nil
 	}
 	c := testClient(t)
 	jwt := makeJWT(map[string]string{"sub": "u1", "email": "ada@latere.ai"})
 	r, w := sessionRequest(t, c, &Session{AccessToken: jwt, Expiry: time.Now().Add(-time.Hour)})
 	me, _ := c.BuildMe(w, r)
-	if me == nil {
-		t.Fatal("BuildMe(expired, no refresh) = nil; want the decoded user (logged in)")
+	if me != nil {
+		t.Fatalf("BuildMe(expired, no refresh) = %+v, want nil", me)
 	}
-	if me.Sub != "u1" {
-		t.Errorf("Sub = %q, want u1 (identity from the JWT)", me.Sub)
+	cookies := w.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != SessionCookieName || cookies[0].MaxAge != -1 {
+		t.Fatalf("session cookie not cleared: %+v", cookies)
 	}
 }
 

@@ -185,3 +185,16 @@ func TestSessionFromRequestRefreshFailure(t *testing.T) {
 		t.Fatal("expected refresh error")
 	}
 }
+
+func TestSessionFromRequestExpiredNoRefreshToken(t *testing.T) {
+	c := refreshClient(t, "unused")
+	r := seedCookie(t, c, &Session{
+		AccessToken:   "at",
+		Expiry:        time.Now().UTC().Add(-time.Minute),
+		SessionExpiry: time.Now().UTC().Add(48 * time.Hour),
+	})
+	_, err := c.SessionFromRequest(httptest.NewRecorder(), r)
+	if !errors.Is(err, ErrSessionExpired) {
+		t.Fatalf("err = %v, want ErrSessionExpired", err)
+	}
+}

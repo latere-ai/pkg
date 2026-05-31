@@ -43,18 +43,19 @@ func (c *Client) BuildMe(w http.ResponseWriter, r *http.Request) (*Me, error) {
 		return nil, nil // not authenticated
 	}
 
-	// Refresh once, up front, and reuse the single fresh token below. Only
-	// when a refresh token exists — Latere sessions are a short (15min) access
-	// token inside a long-lived (24h) cookie, and apps without offline_access
-	// have no refresh token. An expired token with no way to refresh is NOT a
-	// dead session: we still decode the JWT for identity (the user stays logged
-	// in for the cookie's life); only /userinfo + /me/orgs degrade until the
-	// next login. (Clearing the session here logged those apps' users out 15min
-	// after login — see the regression this restores.)
-	if sess.Expiry.Before(time.Now()) && sess.RefreshToken != "" {
+	// Refresh once, up front, and reuse the single fresh token below. If the
+	// access token has expired and there is no refresh token, the session can no
+	// longer authenticate downstream calls; clear it instead of returning a
+	// stale JWT-only identity.
+	if accessTokenExpired(sess, time.Now()) {
+		if sess.RefreshToken == "" {
+			c.ClearSession(w)
+			return nil, nil
+		}
 		token, rerr := c.RefreshToken(r, sess.RefreshToken)
 		if rerr != nil {
 			slog.Debug("oidc: token refresh failed for /me", "error", rerr)
+			c.ClearSession(w)
 			return nil, nil // had a refresh token but it failed → logged out
 		}
 		sess.AccessToken = token.AccessToken
