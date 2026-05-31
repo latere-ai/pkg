@@ -44,6 +44,11 @@ type jwtClaims struct {
 	AuthorizedParty string   `json:"azp"`
 	Scope           string   `json:"scope"`
 	Scopes          []string `json:"scopes"`
+	// SCP is the fosite-standard scope claim ("scp"). It is checked
+	// before Scope/Scopes by scopesFromJWT so tokens issued by fosite
+	// (the issuer the auth service uses) surface granted scopes
+	// correctly.
+	SCP             []string `json:"scp"`
 	Roles           []string `json:"roles"`
 	IsSuperadmin    bool     `json:"is_superadmin"`
 }
@@ -111,11 +116,16 @@ func SessionFromToken(token *oauth2.Token, ttl time.Duration) *Session {
 	return sess
 }
 
-// scopesFromJWT reads granted scopes from either the space-delimited "scope"
-// claim or the "scopes" array, normalizing to a deduped slice.
+// scopesFromJWT reads granted scopes from the fosite-standard "scp" array,
+// the space-delimited "scope" claim, or the "scopes" array, normalizing to
+// a deduped slice. "scp" wins because that is what the auth service (fosite)
+// actually emits; the others are kept for tokens issued by other authorities.
 func scopesFromJWT(c *jwtClaims) []string {
 	if c == nil {
 		return nil
+	}
+	if len(c.SCP) > 0 {
+		return splitScopes(strings.Join(c.SCP, " "))
 	}
 	if strings.TrimSpace(c.Scope) != "" {
 		return splitScopes(c.Scope)

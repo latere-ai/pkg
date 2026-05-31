@@ -18,6 +18,8 @@ func TestScopesFromJWT(t *testing.T) {
 		{"scope string", &jwtClaims{Scope: "openid email"}, []string{"openid", "email"}},
 		{"scopes array", &jwtClaims{Scopes: []string{"openid", "cella:run"}}, []string{"openid", "cella:run"}},
 		{"scope string wins over array", &jwtClaims{Scope: "a b", Scopes: []string{"c"}}, []string{"a", "b"}},
+		{"scp array", &jwtClaims{SCP: []string{"openid", "llm.read"}}, []string{"openid", "llm.read"}},
+		{"scp wins over scope and scopes", &jwtClaims{SCP: []string{"a"}, Scope: "b", Scopes: []string{"c"}}, []string{"a"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
