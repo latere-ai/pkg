@@ -48,7 +48,21 @@ type Identity struct {
 	// (OrgID, Sub).
 	Kind    string
 	ActorID string
+	// AuthMethod records which Authenticator resolved this Identity, for
+	// observability and conditional handler logic. Standard values are
+	// MethodBearer, MethodCookie, MethodStatic. Consumers may stamp
+	// additional method names. The zero value (empty string) means
+	// "unspecified".
+	AuthMethod string
 }
+
+// Standard AuthMethod values stamped by built-in Authenticators. Consumers
+// composing their own Authenticator implementations may add further values.
+const (
+	MethodBearer = "bearer"
+	MethodCookie = "cookie"
+	MethodStatic = "static"
+)
 
 // Authenticator validates an inbound HTTP request and returns the caller's
 // Identity.

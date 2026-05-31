@@ -65,4 +65,7 @@ func TestBearerTokenIdentityFields(t *testing.T) {
 	if !id.IsSuperadmin {
 		t.Fatal("IsSuperadmin must be true")
 	}
+	if id.AuthMethod != MethodBearer {
+		t.Fatalf("AuthMethod = %q, want %q", id.AuthMethod, MethodBearer)
+	}
 }

@@ -72,6 +72,7 @@ func (j *JWT) Authenticate(r *http.Request) (Identity, error) {
 			Scopes:        ti.Scopes,
 			ClientID:      firstNonEmpty(ti.ClientID, clientID),
 			TokenID:       ti.Sub,
+			AuthMethod:    MethodBearer,
 		}, nil
 	}
 	return Identity{
@@ -85,6 +86,7 @@ func (j *JWT) Authenticate(r *http.Request) (Identity, error) {
 		TokenID:       claims.Sub,
 		Kind:          claims.Kind,
 		ActorID:       claims.ActorID,
+		AuthMethod:    MethodBearer,
 	}, nil
 }
 

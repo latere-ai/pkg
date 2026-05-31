@@ -172,6 +172,9 @@ func TestJWTAuthenticateLocalToken(t *testing.T) {
 	if id.TokenID != "u-1" {
 		t.Fatalf("TokenID = %q, want u-1", id.TokenID)
 	}
+	if id.AuthMethod != MethodBearer {
+		t.Fatalf("AuthMethod = %q, want %q", id.AuthMethod, MethodBearer)
+	}
 }
 
 func TestJWTAuthenticateLocalTokenWithClientID(t *testing.T) {
@@ -242,6 +245,9 @@ func TestJWTAuthenticateStrictAgentWithTokenInfo(t *testing.T) {
 	}
 	if id.IsSuperadmin {
 		t.Fatal("IsSuperadmin must be false for strict agent via tokeninfo")
+	}
+	if id.AuthMethod != MethodBearer {
+		t.Fatalf("AuthMethod = %q, want %q", id.AuthMethod, MethodBearer)
 	}
 }
 
