@@ -471,6 +471,13 @@ func (c *Client) sessionExpiry(sess *Session, now time.Time) time.Time {
 // Config.LegacyCookieNames in order when the primary cookie is absent or
 // undecryptable. Returns the first successful read or the primary read's
 // error if every name misses.
+//
+// A legacy-name hit emits a single Warn log per request via slog with
+// key "oidc.cookie: legacy cookie hit" and the matched name; operators
+// can grep for that string to verify "zero legacy hits in the last 30
+// days" before retiring the LegacyCookieNames list. The log is at Warn
+// because the path itself is correct (the session resolves) but the
+// cookie name is expected to disappear after one release.
 func (c *Client) GetSession(r *http.Request) (*Session, error) {
 	sess, err := c.GetSessionByName(r, c.cfg.CookieName)
 	if err == nil && sess != nil {
@@ -478,6 +485,7 @@ func (c *Client) GetSession(r *http.Request) (*Session, error) {
 	}
 	for _, name := range c.cfg.LegacyCookieNames {
 		if legacy, lerr := c.GetSessionByName(r, name); lerr == nil && legacy != nil {
+			slog.WarnContext(r.Context(), "oidc.cookie: legacy cookie hit", "name", name)
 			return legacy, nil
 		}
 	}
