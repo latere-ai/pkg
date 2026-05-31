@@ -455,10 +455,20 @@ func (c *Client) sessionExpiry(sess *Session, now time.Time) time.Time {
 	return base.Add(c.cfg.SessionTTL)
 }
 
-// GetSession reads and decrypts the session cookie.
+// GetSession reads and decrypts the session cookie at the client's
+// configured cookie name.
 func (c *Client) GetSession(r *http.Request) (*Session, error) {
+	return c.GetSessionByName(r, c.cfg.CookieName)
+}
+
+// GetSessionByName reads and decrypts the session cookie at the given name,
+// ignoring the client's configured CookieName. Intended for cookie-name
+// migrations: a relying party can try GetSession first and fall back to
+// GetSessionByName for one or more legacy names during the cutover window,
+// without constructing a second *Client.
+func (c *Client) GetSessionByName(r *http.Request, name string) (*Session, error) {
 	var sess Session
-	if err := c.getCookie(r, c.cfg.CookieName, &sess); err != nil {
+	if err := c.getCookie(r, name, &sess); err != nil {
 		return nil, err
 	}
 	return &sess, nil
