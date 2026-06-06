@@ -541,6 +541,52 @@ func TestJWKSCacheErrorNoStale(t *testing.T) {
 	}
 }
 
+func TestJWKSCacheNon2xxStatus(t *testing.T) {
+	// A non-2xx response with a JSON-shaped body (e.g. {"keys":[]}) must not
+	// be parsed as a successful empty key set; with no cache it errors.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte(`{"keys":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	cache := &jwksCache{url: srv.URL, ttl: time.Hour}
+	if _, err := cache.getKeys(); err == nil {
+		t.Error("expected error on non-2xx JWKS status with no cache")
+	}
+}
+
+func TestJWKSCacheNon2xxStatusServesStale(t *testing.T) {
+	key := genKey(t)
+	first := true
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if first {
+			first = false
+			w.Write(jwksJSON(t, key))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte(`{"keys":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	now := time.Now()
+	orig := timeNow
+	timeNow = func() time.Time { return now }
+	t.Cleanup(func() { timeNow = orig })
+
+	cache := &jwksCache{url: srv.URL, ttl: time.Second}
+	if keys, err := cache.getKeys(); err != nil || len(keys) == 0 {
+		t.Fatal("first fetch should succeed")
+	}
+	now = now.Add(time.Minute) // expire TTL → refetch hits the 503
+	if keys, err := cache.getKeys(); err != nil || len(keys) == 0 {
+		t.Error("should return stale keys on non-2xx status")
+	}
+}
+
 func TestJWKSCacheSkipsNonRSA(t *testing.T) {
 	data := `{"keys":[{"kty":"EC","kid":"ec1","alg":"ES256","use":"sig","crv":"P-256","x":"abc","y":"def"}]}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

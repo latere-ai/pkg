@@ -413,6 +413,13 @@ func (c *jwksCache) getKeys() ([]jwkEntry, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		if len(c.keys) > 0 {
+			return c.keys, nil
+		}
+		return nil, fmt.Errorf("jwtauth: JWKS status %d", resp.StatusCode)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		if len(c.keys) > 0 {
