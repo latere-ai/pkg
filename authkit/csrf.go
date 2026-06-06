@@ -50,12 +50,12 @@ func CSRFValidate(r *http.Request, cookieName string) bool {
 		return false
 	}
 	if h := r.Header.Get(csrfHeader); h != "" {
-		return h == c.Value
+		return constantEq(h, c.Value)
 	}
 	if err := r.ParseForm(); err != nil {
 		return false
 	}
-	return r.PostFormValue(csrfField) == c.Value
+	return constantEq(r.PostFormValue(csrfField), c.Value)
 }
 
 // CSRFHeaderName returns the expected request header name ("X-CSRF-Token").
