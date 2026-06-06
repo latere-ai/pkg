@@ -28,6 +28,15 @@ func accessTokenExpired(sess *Session, now time.Time) bool {
 	return sess.Expiry.IsZero() || !sess.Expiry.After(now)
 }
 
+// sessionWindowElapsed reports whether the fixed dashboard-session lifetime
+// (SessionExpiry) has lapsed. A zero SessionExpiry means no fixed window is in
+// force (clients that leave Config.SessionTTL unset), so it never elapses.
+// Shared by SessionFromRequest, UserFromRequest, and BuildMe so the three
+// request-entry paths enforce the window identically.
+func sessionWindowElapsed(sess *Session, now time.Time) bool {
+	return !sess.SessionExpiry.IsZero() && !sess.SessionExpiry.After(now)
+}
+
 // jwtClaims holds the JWT access-token claims we surface in the session. These
 // are identity hints for rendering — the access token itself remains the bearer
 // of authority for downstream API calls, so the signature is not verified here
@@ -349,8 +358,17 @@ func (c *Client) UserFromRequest(w http.ResponseWriter, r *http.Request) *User {
 		return nil
 	}
 
+	now := time.Now()
+	// The fixed dashboard-session lifetime is independent of the access token:
+	// once it lapses, clear the cookie even if the access token is still
+	// refreshable, matching SessionFromRequest.
+	if sessionWindowElapsed(sess, now) {
+		c.ClearSession(w)
+		return nil
+	}
+
 	// If the access token is expired, refresh it or clear the unusable session.
-	if accessTokenExpired(sess, time.Now()) {
+	if accessTokenExpired(sess, now) {
 		if sess.RefreshToken == "" {
 			c.ClearSession(w)
 			return nil
@@ -431,7 +449,7 @@ func (c *Client) SessionFromRequest(w http.ResponseWriter, r *http.Request) (*Se
 	}
 
 	now := time.Now().UTC()
-	if !sess.SessionExpiry.IsZero() && !sess.SessionExpiry.After(now) {
+	if sessionWindowElapsed(sess, now) {
 		return nil, ErrSessionExpired
 	}
 

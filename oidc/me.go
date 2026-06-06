@@ -43,11 +43,20 @@ func (c *Client) BuildMe(w http.ResponseWriter, r *http.Request) (*Me, error) {
 		return nil, nil // not authenticated
 	}
 
+	now := time.Now()
+	// The fixed dashboard-session lifetime bounds the session independently of
+	// the access token: once it lapses, clear the cookie rather than keep
+	// refreshing indefinitely, matching SessionFromRequest.
+	if sessionWindowElapsed(sess, now) {
+		c.ClearSession(w)
+		return nil, nil
+	}
+
 	// Refresh once, up front, and reuse the single fresh token below. If the
 	// access token has expired and there is no refresh token, the session can no
 	// longer authenticate downstream calls; clear it instead of returning a
 	// stale JWT-only identity.
-	if accessTokenExpired(sess, time.Now()) {
+	if accessTokenExpired(sess, now) {
 		if sess.RefreshToken == "" {
 			c.ClearSession(w)
 			return nil, nil

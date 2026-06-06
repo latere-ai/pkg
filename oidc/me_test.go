@@ -118,6 +118,34 @@ func TestBuildMe_ExpiredNoRefreshClearsSession(t *testing.T) {
 // TestBuildMe_OrgsDegraded: a 401 on /me/orgs (e.g. aud mismatch) returns a
 // populated profile plus a non-nil error so the caller can log it, instead of
 // silently showing an empty switcher.
+// TestBuildMe_SessionWindowElapsedClearsSession: a still-refreshable access
+// token whose dashboard SessionExpiry has already lapsed must NOT keep the
+// session alive — the fixed window bounds it independently of the token.
+func TestBuildMe_SessionWindowElapsedClearsSession(t *testing.T) {
+	orig := httpDo
+	t.Cleanup(func() { httpDo = orig })
+	httpDo = func(req *http.Request) (*http.Response, error) {
+		t.Fatalf("BuildMe must not call downstream for an elapsed session window")
+		return nil, nil
+	}
+	c := testClient(t)
+	jwt := makeJWT(map[string]string{"sub": "u1"})
+	r, w := sessionRequest(t, c, &Session{
+		AccessToken:   jwt,
+		RefreshToken:  "rt", // still refreshable
+		Expiry:        time.Now().Add(time.Hour),
+		SessionExpiry: time.Now().Add(-time.Minute), // but the window lapsed
+	})
+	me, err := c.BuildMe(w, r)
+	if me != nil || err != nil {
+		t.Fatalf("BuildMe(elapsed window) = (%+v, %v), want (nil, nil)", me, err)
+	}
+	cookies := w.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].MaxAge != -1 {
+		t.Fatalf("session cookie not cleared: %+v", cookies)
+	}
+}
+
 func TestBuildMe_OrgsDegraded(t *testing.T) {
 	orig := httpDo
 	t.Cleanup(func() { httpDo = orig })

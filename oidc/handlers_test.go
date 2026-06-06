@@ -545,6 +545,31 @@ func TestUserFromRequest_ValidToken(t *testing.T) {
 	}
 }
 
+func TestUserFromRequest_SessionWindowElapsedClearsSession(t *testing.T) {
+	c := testClient(t)
+	jwt := makeJWT(map[string]string{"sub": "u1", "email": "a@b.com"})
+	wSetup := httptest.NewRecorder()
+	c.SetSession(wSetup, &Session{
+		AccessToken:   jwt,
+		RefreshToken:  "rt", // still refreshable
+		Expiry:        time.Now().Add(time.Hour),
+		SessionExpiry: time.Now().Add(-time.Minute), // but the window lapsed
+	})
+	r := httptest.NewRequest("GET", "/", nil)
+	for _, ck := range wSetup.Result().Cookies() {
+		r.AddCookie(ck)
+	}
+	w := httptest.NewRecorder()
+
+	if u := c.UserFromRequest(w, r); u != nil {
+		t.Fatalf("UserFromRequest(elapsed window) = %+v, want nil", u)
+	}
+	cookies := w.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].MaxAge != -1 {
+		t.Fatalf("session cookie not cleared: %+v", cookies)
+	}
+}
+
 func TestUserFromRequest_ExpiredTokenRefreshSuccess(t *testing.T) {
 	newJWT := makeJWT(map[string]string{"sub": "u1", "email": "refreshed@test.com"})
 
