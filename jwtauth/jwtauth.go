@@ -359,14 +359,14 @@ func (v *Validator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
 		if !strings.HasPrefix(auth, "Bearer ") {
-			writeError(w, http.StatusUnauthorized, ErrNoToken.Error())
+			WriteUnauthorized(w, ErrNoToken.Error())
 			return
 		}
 		token := auth[7:]
 
 		claims, err := v.Validate(token)
 		if err != nil {
-			writeError(w, http.StatusUnauthorized, err.Error())
+			WriteUnauthorized(w, err.Error())
 			return
 		}
 
@@ -608,8 +608,12 @@ func audMatch(tokenAud jsonAud, expected []string) bool {
 	return false
 }
 
-func writeError(w http.ResponseWriter, code int, msg string) {
+// WriteUnauthorized writes the standard 401 JSON envelope
+// ({"error":"unauthorized","message":<msg>}) used across Latere auth
+// middleware. Centralised here so the client-facing wire contract has a single
+// owner and cannot silently drift between packages.
+func WriteUnauthorized(w http.ResponseWriter, msg string) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
+	w.WriteHeader(http.StatusUnauthorized)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized", "message": msg})
 }

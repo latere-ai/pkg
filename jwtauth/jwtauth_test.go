@@ -829,9 +829,9 @@ func TestParseRSAPublicKeyInvalidE(t *testing.T) {
 
 // ── writeError test ─────────────────────────────────────────────────────────
 
-func TestWriteError(t *testing.T) {
+func TestWriteUnauthorized(t *testing.T) {
 	rr := httptest.NewRecorder()
-	writeError(rr, http.StatusUnauthorized, "test message")
+	WriteUnauthorized(rr, "test message")
 
 	if rr.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", rr.Code)
