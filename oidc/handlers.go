@@ -487,7 +487,11 @@ func (c *Client) SessionFromRequest(w http.ResponseWriter, r *http.Request) (*Se
 		refreshed.User.OrgRoles = sess.User.OrgRoles
 	}
 	// Profile fields aren't in the access token; keep the prior values rather
-	// than blanking the header on refresh.
+	// than blanking the header on refresh. Name/Picture are carried forward
+	// alongside their DisplayName/AvatarURL aliases so a caller keying off
+	// either name stays consistent across a silent refresh.
+	refreshed.User.Name = firstNonEmpty(refreshed.User.Name, sess.User.Name)
+	refreshed.User.Picture = firstNonEmpty(refreshed.User.Picture, sess.User.Picture)
 	refreshed.User.DisplayName = firstNonEmpty(refreshed.User.DisplayName, sess.User.DisplayName)
 	refreshed.User.AvatarURL = firstNonEmpty(refreshed.User.AvatarURL, sess.User.AvatarURL)
 	refreshed.User.Email = firstNonEmpty(refreshed.User.Email, sess.User.Email)

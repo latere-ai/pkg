@@ -97,6 +97,36 @@ func TestSessionFromRequestProactiveRefresh(t *testing.T) {
 	}
 }
 
+// TestSessionFromRequestRefreshPreservesNamePicture: the refreshed JWT omits
+// the profile claims, so User.Name and User.Picture must be carried forward
+// just like their DisplayName/AvatarURL aliases — otherwise a caller reading
+// User.Picture (vs AvatarURL) loses the avatar after the first silent refresh.
+func TestSessionFromRequestRefreshPreservesNamePicture(t *testing.T) {
+	newJWT := makeRichJWT(map[string]any{"sub": "u1", "email": "a@b.com"})
+	c := refreshClient(t, newJWT)
+
+	r := seedCookie(t, c, &Session{
+		AccessToken:   "old-at",
+		RefreshToken:  "rt-1",
+		Expiry:        time.Now().UTC().Add(-time.Minute), // expired → refresh
+		SessionExpiry: time.Now().UTC().Add(48 * time.Hour),
+		User:          User{Sub: "u1", Name: "Ada Lovelace", Picture: "https://pic/a"},
+	})
+
+	orig := httpDo
+	t.Cleanup(func() { httpDo = orig })
+	httpDo = func(*http.Request) (*http.Response, error) { return nil, errors.New("userinfo must not be called") }
+
+	w := httptest.NewRecorder()
+	got, err := c.SessionFromRequest(w, r)
+	if err != nil {
+		t.Fatalf("SessionFromRequest: %v", err)
+	}
+	if got.User.Name != "Ada Lovelace" || got.User.Picture != "https://pic/a" {
+		t.Errorf("Name/Picture not preserved across refresh: %+v", got.User)
+	}
+}
+
 func TestSessionFromRequestNoRefreshNeeded(t *testing.T) {
 	c := refreshClient(t, "unused")
 	r := seedCookie(t, c, &Session{
