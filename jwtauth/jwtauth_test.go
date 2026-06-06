@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 )
@@ -585,6 +586,51 @@ func TestJWKSCacheNon2xxStatusServesStale(t *testing.T) {
 	if keys, err := cache.getKeys(); err != nil || len(keys) == 0 {
 		t.Error("should return stale keys on non-2xx status")
 	}
+}
+
+func TestValidateForcesRefreshOnKidMiss(t *testing.T) {
+	key1 := genKey(t)
+	key2 := genKey(t)
+	var mu sync.Mutex
+	current := key1
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		k := current
+		mu.Unlock()
+		w.Write(jwksJSON(t, k))
+	}))
+	t.Cleanup(srv.Close)
+
+	v := New(Config{JWKSURL: srv.URL, CacheTTL: time.Hour})
+	// Warm the cache with key1.
+	if _, err := v.Validate(signToken(t, key1, defaultHeader(key1), defaultPayload())); err != nil {
+		t.Fatalf("key1 token: %v", err)
+	}
+	// Rotate to key2 (new kid) while the cache is still well within its TTL.
+	mu.Lock()
+	current = key2
+	mu.Unlock()
+	// The new kid is absent from the warm cache; validation must force a
+	// refetch rather than failing for up to CacheTTL.
+	if _, err := v.Validate(signToken(t, key2, defaultHeader(key2), defaultPayload())); err != nil {
+		t.Fatalf("rotated key2 token should validate via forced refresh: %v", err)
+	}
+}
+
+func TestValidateConcurrentKidMiss(t *testing.T) {
+	key := genKey(t)
+	v := testValidator(t, key)
+	hdr := defaultHeader(key)
+	hdr["kid"] = "absent-kid" // never present in the served JWKS
+	tok := signToken(t, key, hdr, defaultPayload())
+
+	var wg sync.WaitGroup
+	for range 20 {
+		wg.Go(func() {
+			_, _ = v.Validate(tok)
+		})
+	}
+	wg.Wait()
 }
 
 func TestJWKSCacheSkipsNonRSA(t *testing.T) {

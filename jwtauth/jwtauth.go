@@ -230,7 +230,7 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 		return nil, ErrMalformedToken
 	}
 
-	keys, err := v.cache.getKeys()
+	keys, err := v.cache.getKeysForKid(header.Kid)
 	if err != nil {
 		return nil, fmt.Errorf("jwtauth: fetch JWKS: %w", err)
 	}
@@ -388,19 +388,62 @@ type jwkEntry struct {
 	pub *rsa.PublicKey
 }
 
+// minForcedRefreshInterval bounds how often a kid miss may force a JWKS
+// refetch, so a flood of tokens carrying unknown kids cannot hammer the
+// endpoint.
+const minForcedRefreshInterval = 15 * time.Second
+
 type jwksCache struct {
-	url      string
-	ttl      time.Duration
-	mu       sync.Mutex
-	cachedAt time.Time
-	keys     []jwkEntry
+	url        string
+	ttl        time.Duration
+	mu         sync.Mutex
+	cachedAt   time.Time
+	lastForced time.Time
+	keys       []jwkEntry
 }
 
+// getKeys returns the cached JWKS, refetching only when the TTL has elapsed.
 func (c *jwksCache) getKeys() ([]jwkEntry, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.load(false)
+}
 
-	if timeNow().Sub(c.cachedAt) < c.ttl && len(c.keys) > 0 {
+// getKeysForKid returns the cached JWKS but, when no cached key matches kid,
+// forces a single TTL-bypassing refetch (rate-limited by
+// minForcedRefreshInterval) so a freshly rotated signing key is picked up
+// without waiting out the whole CacheTTL.
+func (c *jwksCache) getKeysForKid(kid string) ([]jwkEntry, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	keys, err := c.load(false)
+	if err != nil {
+		return keys, err
+	}
+	if kid == "" || hasKid(keys, kid) {
+		return keys, nil
+	}
+	if timeNow().Sub(c.lastForced) < minForcedRefreshInterval {
+		return keys, nil
+	}
+	c.lastForced = timeNow()
+	return c.load(true)
+}
+
+func hasKid(keys []jwkEntry, kid string) bool {
+	for _, k := range keys {
+		if k.kid == kid {
+			return true
+		}
+	}
+	return false
+}
+
+// load fetches and parses the JWKS. The caller must hold c.mu. When force is
+// false a still-fresh cache is returned without a network call.
+func (c *jwksCache) load(force bool) ([]jwkEntry, error) {
+	if !force && timeNow().Sub(c.cachedAt) < c.ttl && len(c.keys) > 0 {
 		return c.keys, nil
 	}
 
