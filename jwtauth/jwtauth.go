@@ -153,6 +153,7 @@ var (
 	ErrMalformedToken   = errors.New("jwtauth: malformed token")
 	ErrInvalidSignature = errors.New("jwtauth: invalid signature")
 	ErrTokenExpired     = errors.New("jwtauth: token expired")
+	ErrTokenNotValidYet = errors.New("jwtauth: token not valid yet")
 	ErrInvalidIssuer    = errors.New("jwtauth: invalid issuer")
 	ErrInvalidAudience  = errors.New("jwtauth: invalid audience")
 	ErrUnsupportedAlg   = errors.New("jwtauth: unsupported algorithm")
@@ -255,6 +256,12 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 	exp := time.Unix(int64(raw.Exp), 0)
 	if timeNow().After(exp) {
 		return nil, ErrTokenExpired
+	}
+
+	// Validate nbf (RFC 7519 §4.1.5): reject a token used before its
+	// not-before instant. Tokens that omit nbf are unaffected.
+	if raw.Nbf != 0 && timeNow().Before(time.Unix(int64(raw.Nbf), 0)) {
+		return nil, ErrTokenNotValidYet
 	}
 
 	// Validate iss.
@@ -501,6 +508,7 @@ type rawPayload struct {
 	Iss             string     `json:"iss"`
 	Aud             jsonAud    `json:"aud"`
 	Exp             float64    `json:"exp"`
+	Nbf             float64    `json:"nbf"`
 	PrincipalType   string     `json:"principal_type"`
 	Email           string     `json:"email"`
 	OrgID           string     `json:"org_id"`

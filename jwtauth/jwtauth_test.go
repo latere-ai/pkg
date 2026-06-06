@@ -249,6 +249,31 @@ func TestValidateExpiredToken(t *testing.T) {
 	}
 }
 
+func TestValidateNotYetValidToken(t *testing.T) {
+	key := genKey(t)
+	v := testValidator(t, key)
+	payload := defaultPayload()
+	payload["nbf"] = float64(time.Now().Add(time.Hour).Unix())
+	token := signToken(t, key, defaultHeader(key), payload)
+
+	_, err := v.Validate(token)
+	if err != ErrTokenNotValidYet {
+		t.Errorf("err = %v, want ErrTokenNotValidYet", err)
+	}
+}
+
+func TestValidatePastNbfAccepted(t *testing.T) {
+	key := genKey(t)
+	v := testValidator(t, key)
+	payload := defaultPayload()
+	payload["nbf"] = float64(time.Now().Add(-time.Hour).Unix())
+	token := signToken(t, key, defaultHeader(key), payload)
+
+	if _, err := v.Validate(token); err != nil {
+		t.Errorf("past-nbf token rejected: %v", err)
+	}
+}
+
 func TestValidateInvalidSignature(t *testing.T) {
 	key := genKey(t)
 	wrongKey := genKey(t)
