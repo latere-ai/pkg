@@ -5,12 +5,28 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 )
+
+// recordingSpanExporter records whether Shutdown was invoked, so a test can
+// assert the trace provider was given a live context to flush through.
+type recordingSpanExporter struct {
+	shutdownCalled atomic.Bool
+}
+
+func (e *recordingSpanExporter) ExportSpans(context.Context, []trace.ReadOnlySpan) error {
+	return nil
+}
+
+func (e *recordingSpanExporter) Shutdown(ctx context.Context) error {
+	e.shutdownCalled.Store(true)
+	return ctx.Err()
+}
 
 func otlpServer(t *testing.T) *httptest.Server {
 	t.Helper()
@@ -66,6 +82,32 @@ func TestSetup_MetricExporterError(t *testing.T) {
 	}
 	shutdown := Setup(context.Background(), "svc", "0.1.0")
 	shutdown()
+}
+
+// TestSetup_MetricErrorShutdownFlushesTraces: when the metric exporter fails,
+// the returned shutdown must still flush the already-live trace provider on a
+// fresh context, not the (possibly cancelled) caller context.
+func TestSetup_MetricErrorShutdownFlushesTraces(t *testing.T) {
+	srv := otlpServer(t)
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", srv.URL)
+
+	exp := &recordingSpanExporter{}
+	origT, origM := newTraceExporter, newMetricExporter
+	t.Cleanup(func() { newTraceExporter, newMetricExporter = origT, origM })
+	newTraceExporter = func(context.Context) (trace.SpanExporter, error) { return exp, nil }
+	newMetricExporter = func(context.Context) (metric.Exporter, error) {
+		return nil, errors.New("injected")
+	}
+
+	// Caller context is already cancelled — the shutdown must not depend on it.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	shutdown := Setup(ctx, "svc", "0.1.0")
+	shutdown()
+
+	if !exp.shutdownCalled.Load() {
+		t.Error("trace exporter Shutdown not invoked: metric-error branch tied shutdown to the cancelled caller context")
+	}
 }
 
 func TestSetup_ShutdownIdempotent(t *testing.T) {

@@ -104,7 +104,14 @@ func Setup(ctx context.Context, serviceName, serviceVersion string) func() {
 	metricExp, err := newMetricExporter(ctx)
 	if err != nil {
 		log.Printf("telemetry: metric exporter error: %v", err)
-		return func() { tp.Shutdown(ctx) }
+		// The trace provider is already live with a background batcher; flush
+		// it on a fresh timeout context, not the caller ctx (which may be
+		// cancelled), mirroring the happy-path shutdown's flush budget.
+		return func() {
+			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			tp.Shutdown(shutCtx)
+		}
 	}
 
 	mp := metric.NewMeterProvider(
