@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -158,11 +159,12 @@ func (c *Client) BuildMeFromToken(ctx context.Context, accessToken string) (*Me,
 // identically. `returnTo` is where login should land after the switch.
 func SwitchOrgRedirect(w http.ResponseWriter, orgID, returnTo string) string {
 	ClearSession(w)
-	url := "/login?return_to=" + returnTo
+	q := url.Values{}
+	q.Set("return_to", returnTo)
 	if orgID != "" {
-		url += "&org_id=" + orgID
+		q.Set("org_id", orgID)
 	}
-	return url
+	return "/login?" + q.Encode()
 }
 
 // Initials derives a two-letter avatar monogram from a display name, falling

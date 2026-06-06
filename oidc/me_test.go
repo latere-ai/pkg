@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -180,11 +181,21 @@ func TestBuildMe_OrgsDegraded(t *testing.T) {
 func TestSwitchOrgRedirect(t *testing.T) {
 	w := httptest.NewRecorder()
 	got := SwitchOrgRedirect(w, "org-9", "/playground")
-	if got != "/login?return_to=/playground&org_id=org-9" {
+	if got != "/login?org_id=org-9&return_to=%2Fplayground" {
 		t.Errorf("url = %q", got)
 	}
-	if personal := SwitchOrgRedirect(httptest.NewRecorder(), "", "/x"); personal != "/login?return_to=/x" {
+	if personal := SwitchOrgRedirect(httptest.NewRecorder(), "", "/x"); personal != "/login?return_to=%2Fx" {
 		t.Errorf("personal url = %q", personal)
+	}
+	// A request-controlled orgID containing query metacharacters must be
+	// percent-encoded, not injected as extra query parameters.
+	inj := SwitchOrgRedirect(httptest.NewRecorder(), "a&return_to=//evil.com", "/p")
+	if q, err := url.ParseQuery(strings.TrimPrefix(inj, "/login?")); err != nil {
+		t.Fatalf("malformed query %q: %v", inj, err)
+	} else if got := q.Get("org_id"); got != "a&return_to=//evil.com" {
+		t.Errorf("org_id not preserved/escaped: %q (full %q)", got, inj)
+	} else if rt := q["return_to"]; len(rt) != 1 || rt[0] != "/p" {
+		t.Errorf("return_to corrupted by injection: %v (full %q)", rt, inj)
 	}
 	// session cookie must be cleared (Max-Age<=0).
 	var cleared bool
