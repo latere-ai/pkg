@@ -323,6 +323,30 @@ func TestRedactJSONMarshalErrorFallback(t *testing.T) {
 	}
 }
 
+func TestRedactJSONPreservesLargeIntegers(t *testing.T) {
+	// Integers above 2^53 (snowflake-style IDs, unix-ns timestamps) must
+	// survive the redaction round-trip without precision loss. The naive
+	// decode-into-any path turns every JSON number into a float64 and
+	// silently truncates the trailing digits.
+	in := `{"id":1717000000000000123,"big":12345678901234567890,"ratio":1.5}`
+	out := string(RedactJSON([]byte(in)))
+	for _, want := range []string{"1717000000000000123", "12345678901234567890", "1.5"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("number %q corrupted in round-trip: %s", want, out)
+		}
+	}
+}
+
+func TestRedactJSONTrailingDataFallback(t *testing.T) {
+	// A valid JSON value followed by trailing bytes must fall back to the
+	// whole-string scrub rather than silently dropping the trailing data.
+	in := []byte(`{"a":1} GITHUB_TOKEN=ghp_0123456789abcdef0123456789abcdef0123`)
+	out := string(RedactJSON(in))
+	if strings.Contains(out, "ghp_0123456789abcdef0123456789abcdef0123") {
+		t.Errorf("trailing credential not scrubbed: %s", out)
+	}
+}
+
 func TestLooksLikeCredentialKeyCases(t *testing.T) {
 	for _, k := range []string{"apiKey", "API_KEY", "token", "TOKEN", "secret", "SECRET", "password", "Passwd", "credential"} {
 		if !looksLikeCredentialKey(k) {

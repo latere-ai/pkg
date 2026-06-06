@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"bytes"
 	"encoding/json"
 	"regexp"
 )
@@ -32,7 +33,17 @@ func Redact(s string) string {
 // arbitrary blobs.
 func RedactJSON(b []byte) []byte {
 	var v any
-	if err := json.Unmarshal(b, &v); err != nil {
+	// UseNumber so integers above 2^53 (snowflake IDs, unix-ns timestamps)
+	// survive as json.Number instead of being mangled by a float64 round-trip.
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	if err := dec.Decode(&v); err != nil {
+		return []byte(Redact(string(b)))
+	}
+	// Reject trailing data so a blob like `{"a":1}garbage` falls back to the
+	// whole-string scrub instead of silently dropping the trailing bytes
+	// (json.Unmarshal rejected this; the streaming decoder does not).
+	if dec.More() {
 		return []byte(Redact(string(b)))
 	}
 	cleaned := walk(v)
@@ -81,6 +92,9 @@ func walk(v any) any {
 	switch t := v.(type) {
 	case string:
 		return Redact(t)
+	case json.Number:
+		// A numeric leaf (from UseNumber); not a credential string.
+		return t
 	case map[string]any:
 		for k, val := range t {
 			if looksLikeCredentialKey(k) {
