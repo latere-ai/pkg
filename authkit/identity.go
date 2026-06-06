@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 )
 
@@ -104,11 +105,15 @@ func Middleware(next http.Handler, a Authenticator) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, err := a.Authenticate(r)
 		if err != nil {
+			// Log the detailed error server-side but return a generic body:
+			// authenticator errors can wrap internal detail (tokeninfo HTTP
+			// responses, backend topology) we must not disclose to clients.
+			slog.Debug("authkit: authentication failed", "error", err)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			_ = json.NewEncoder(w).Encode(map[string]string{
 				"error":   "unauthorized",
-				"message": err.Error(),
+				"message": "unauthorized",
 			})
 			return
 		}

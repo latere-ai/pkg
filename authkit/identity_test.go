@@ -74,6 +74,29 @@ func TestMiddlewareUnauthorized(t *testing.T) {
 	}
 }
 
+func TestMiddlewareDoesNotLeakInternalError(t *testing.T) {
+	// Authenticator errors can wrap internal detail (tokeninfo HTTP bodies,
+	// backend topology). The 401 body must not echo that to the client.
+	secret := "tokeninfo: 500 upstream: db-host-7 connection refused"
+	h := Middleware(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
+		&fixedAuth{err: errors.New(secret)},
+	)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "db-host-7") || strings.Contains(body, "tokeninfo") {
+		t.Errorf("401 body leaked internal error detail: %s", body)
+	}
+	if !strings.Contains(body, "unauthorized") {
+		t.Errorf("401 body missing generic code: %s", body)
+	}
+}
+
 // ── Chain ────────────────────────────────────────────────────────────────────
 
 func TestChainEmptyReturnsErrUnauthenticated(t *testing.T) {
