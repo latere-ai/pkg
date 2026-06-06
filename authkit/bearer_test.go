@@ -35,6 +35,22 @@ func TestBearerTokenAuth(t *testing.T) {
 	}
 }
 
+func TestBearerTokenEmptyTokenFailsClosed(t *testing.T) {
+	// A BearerToken configured with an empty secret must reject every request
+	// — including the degenerate "Bearer " header with an empty credential,
+	// which constantEq("","") would otherwise accept and grant superadmin.
+	a := NewBearerToken("", "dev-user")
+	for _, h := range []string{"Bearer ", "Bearer anything", ""} {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		if h != "" {
+			r.Header.Set("Authorization", h)
+		}
+		if _, err := a.Authenticate(r); err == nil {
+			t.Fatalf("empty-token authenticator accepted header %q", h)
+		}
+	}
+}
+
 func TestNewBearerTokenDefaultDevSub(t *testing.T) {
 	a := NewBearerToken("secret", "")
 	if a.id.Sub != "dev-local" {

@@ -33,6 +33,12 @@ func NewBearerToken(token, devSub string) *BearerToken {
 }
 
 func (b *BearerToken) Authenticate(r *http.Request) (Identity, error) {
+	// Fail closed on an empty configured secret: constantEq("","") is true, so
+	// without this guard a zero-value or empty-token BearerToken would accept
+	// any request bearing an empty credential and return a superadmin identity.
+	if b.token == "" {
+		return Identity{}, ErrUnauthenticated
+	}
 	h := r.Header.Get("Authorization")
 	const p = "Bearer "
 	if !strings.HasPrefix(h, p) {
