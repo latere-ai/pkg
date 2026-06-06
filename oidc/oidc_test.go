@@ -27,6 +27,25 @@ func testClient(t *testing.T) *Client {
 	return c
 }
 
+func TestGetCookieWrapsUnmarshalError(t *testing.T) {
+	c := testClient(t)
+	// A decryptable cookie whose plaintext is not valid JSON must surface a
+	// wrapped, cookie-attributed error like every other getCookie failure.
+	ct, err := aesGCMEncrypt(c.cookieKey[:], []byte("not json"))
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	r := httptest.NewRequest("GET", "/", nil)
+	r.AddCookie(&http.Cookie{
+		Name:  SessionCookieName,
+		Value: base64.RawURLEncoding.EncodeToString(ct),
+	})
+	_, err = c.GetSession(r)
+	if err == nil || !strings.Contains(err.Error(), "unmarshal cookie") {
+		t.Fatalf("err = %v, want wrapped \"unmarshal cookie\"", err)
+	}
+}
+
 // --- Config ---
 
 func TestLoadConfig(t *testing.T) {

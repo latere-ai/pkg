@@ -531,7 +531,10 @@ func (c *Client) getCookie(r *http.Request, name string, v any) error {
 		return fmt.Errorf("decrypt cookie %s: %w", name, err)
 	}
 
-	return json.Unmarshal(plaintext, v)
+	if err := json.Unmarshal(plaintext, v); err != nil {
+		return fmt.Errorf("unmarshal cookie %s: %w", name, err)
+	}
+	return nil
 }
 
 func clearCookie(w http.ResponseWriter, name string, secure bool) {
