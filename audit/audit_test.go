@@ -337,6 +337,24 @@ func TestRedactJSONPreservesLargeIntegers(t *testing.T) {
 	}
 }
 
+func TestRedactJSONAuthorizationKey(t *testing.T) {
+	// Serialized HTTP headers put the opaque credential in the value with no
+	// "authorization:" prefix, so the bearer value-rule never fires; the key
+	// itself must trigger blanking.
+	in := `{"headers":{"Authorization":"Bearer opaquetokenvalue1234567890"},"auth":"Basic dXNlcjpwYXNz"}`
+	out := string(RedactJSON([]byte(in)))
+	for _, bad := range []string{"opaquetokenvalue1234567890", "dXNlcjpwYXNz"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("credential %q leaked through auth key: %s", bad, out)
+		}
+	}
+	// The "$" anchor must not blank a benign "author" field.
+	keep := `{"author":"Ada Lovelace"}`
+	if got := string(RedactJSON([]byte(keep))); !strings.Contains(got, "Ada Lovelace") {
+		t.Errorf("benign author field scrubbed: %s", got)
+	}
+}
+
 func TestRedactJSONTrailingDataFallback(t *testing.T) {
 	// A valid JSON value followed by trailing bytes must fall back to the
 	// whole-string scrub rather than silently dropping the trailing data.

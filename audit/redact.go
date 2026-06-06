@@ -114,7 +114,10 @@ func walk(v any) any {
 	}
 }
 
-var credentialKeyRe = regexp.MustCompile(`(?i)(key|secret|token|password|passwd|credential)$`)
+// credentialKeyRe matches JSON keys whose values are credentials. The trailing
+// "$" anchor keeps "authorization"/"auth" scoped to real auth fields (and to
+// "oauth"-style suffixes) without blanking a benign "author" field.
+var credentialKeyRe = regexp.MustCompile(`(?i)(key|secret|token|password|passwd|credential|authorization|auth)$`)
 
 func looksLikeCredentialKey(k string) bool {
 	return credentialKeyRe.MatchString(k)
