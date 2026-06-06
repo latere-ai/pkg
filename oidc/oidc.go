@@ -141,7 +141,7 @@ func LoadConfig() Config {
 		RedirectURL:  os.Getenv("AUTH_REDIRECT_URL"),
 		CookieKey:    os.Getenv("AUTH_COOKIE_KEY"),
 		Audience:     os.Getenv("AUTH_AUDIENCE"),
-		Scopes:       splitScopes(os.Getenv("AUTH_SCOPES")),
+		Scopes:       SplitScopes(os.Getenv("AUTH_SCOPES")),
 	}
 }
 

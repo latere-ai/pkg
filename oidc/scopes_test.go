@@ -43,8 +43,8 @@ func TestSplitScopes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
-			if got := splitScopes(tt.in); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("splitScopes(%q) = %v, want %v", tt.in, got, tt.want)
+			if got := SplitScopes(tt.in); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("SplitScopes(%q) = %v, want %v", tt.in, got, tt.want)
 			}
 		})
 	}

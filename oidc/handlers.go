@@ -134,20 +134,21 @@ func scopesFromJWT(c *jwtClaims) []string {
 		return nil
 	}
 	if len(c.SCP) > 0 {
-		return splitScopes(strings.Join(c.SCP, " "))
+		return SplitScopes(strings.Join(c.SCP, " "))
 	}
 	if strings.TrimSpace(c.Scope) != "" {
-		return splitScopes(c.Scope)
+		return SplitScopes(c.Scope)
 	}
 	if len(c.Scopes) > 0 {
-		return splitScopes(strings.Join(c.Scopes, " "))
+		return SplitScopes(strings.Join(c.Scopes, " "))
 	}
 	return nil
 }
 
-// splitScopes splits a space/comma-delimited scope string into a deduped,
-// order-preserving slice.
-func splitScopes(s string) []string {
+// SplitScopes splits a space/comma-delimited scope string into a deduped,
+// order-preserving slice. Exported so callers that load the same AUTH_SCOPES
+// env-var format (e.g. authkit.LoadConfigWithPrefix) share one implementation.
+func SplitScopes(s string) []string {
 	parts := strings.Fields(strings.ReplaceAll(s, ",", " "))
 	out := make([]string, 0, len(parts))
 	seen := map[string]struct{}{}

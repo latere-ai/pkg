@@ -111,27 +111,3 @@ func TestLoadConfigWithPrefix_AllFieldsCovered(t *testing.T) {
 		t.Errorf("Scopes = %v, want %v (deduped)", cfg.Scopes, want)
 	}
 }
-
-func TestSplitConfigScopes(t *testing.T) {
-	cases := []struct {
-		in   string
-		want []string
-	}{
-		{"", []string{}},
-		{"a", []string{"a"}},
-		{"a b c", []string{"a", "b", "c"}},
-		{"a,b,c", []string{"a", "b", "c"}},
-		{" a , b , c ", []string{"a", "b", "c"}},
-		{"a a b", []string{"a", "b"}}, // dedupe
-		{"a,b a", []string{"a", "b"}},
-	}
-	for _, tc := range cases {
-		got := splitConfigScopes(tc.in)
-		if len(got) == 0 && len(tc.want) == 0 {
-			continue
-		}
-		if !reflect.DeepEqual(got, tc.want) {
-			t.Errorf("splitConfigScopes(%q) = %v, want %v", tc.in, got, tc.want)
-		}
-	}
-}

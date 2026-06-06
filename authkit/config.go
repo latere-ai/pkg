@@ -2,7 +2,6 @@ package authkit
 
 import (
 	"os"
-	"strings"
 
 	"latere.ai/x/pkg/oidc"
 )
@@ -44,24 +43,7 @@ func LoadConfigWithPrefix(prefix string) oidc.Config {
 		base.Audience = v
 	}
 	if v := os.Getenv(p + "AUTH_SCOPES"); v != "" {
-		base.Scopes = splitConfigScopes(v)
+		base.Scopes = oidc.SplitScopes(v)
 	}
 	return base
-}
-
-// splitConfigScopes splits the AUTH_SCOPES env-var format the same way
-// pkg/oidc.LoadConfig does (comma or whitespace separated, deduped).
-// Duplicated here because the helper inside pkg/oidc is unexported.
-func splitConfigScopes(s string) []string {
-	parts := strings.Fields(strings.ReplaceAll(s, ",", " "))
-	out := make([]string, 0, len(parts))
-	seen := map[string]struct{}{}
-	for _, p := range parts {
-		if _, dup := seen[p]; dup {
-			continue
-		}
-		seen[p] = struct{}{}
-		out = append(out, p)
-	}
-	return out
 }
