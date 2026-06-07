@@ -251,6 +251,37 @@ func TestJWTAuthenticateStrictAgentWithTokenInfo(t *testing.T) {
 	}
 }
 
+func TestJWTAuthenticateStrictAgentPreservesActorClaims(t *testing.T) {
+	// The strict path rebuilds Identity from /tokeninfo (which has no
+	// Kind/ActorID), but the actor binding lives in the signature-verified JWT
+	// and must survive — matching the non-strict path.
+	claims := &jwtauth.Claims{
+		Sub:           "agent-1",
+		PrincipalType: jwtauth.PrincipalAgent,
+		Validation:    jwtauth.ValidationStrict,
+		Kind:          "sandbox",
+		ActorID:       "sb-abc123",
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"sub":"agent-1","principal_type":"agent","org_id":"org-1","scopes":["read:x"]}`))
+	}))
+	defer srv.Close()
+
+	ti := NewTokenInfoClient(srv.URL)
+	j := newJWTWithFakeValidator(&fakeValidator{claims: claims}, ti)
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"agent-1"}`))
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Authorization", "Bearer hdr."+payload+".sig")
+	id, err := j.Authenticate(r)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id.Kind != "sandbox" || id.ActorID != "sb-abc123" {
+		t.Fatalf("strict path dropped actor binding: Kind=%q ActorID=%q", id.Kind, id.ActorID)
+	}
+}
+
 func TestJWTAuthenticateStrictAgentTokenInfoError(t *testing.T) {
 	claims := &jwtauth.Claims{
 		Sub:           "agent-1",

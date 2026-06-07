@@ -72,7 +72,13 @@ func (j *JWT) Authenticate(r *http.Request) (Identity, error) {
 			Scopes:        ti.Scopes,
 			ClientID:      firstNonEmpty(ti.ClientID, clientID),
 			TokenID:       ti.Sub,
-			AuthMethod:    MethodBearer,
+			// Preserve the actor binding from the signature-verified JWT:
+			// tokeninfo re-authorizes the revocable fields (Sub/OrgID/Scopes)
+			// but carries no Kind/ActorID, so taking them from the verified
+			// claims keeps the strict path consistent with the non-strict one.
+			Kind:       claims.Kind,
+			ActorID:    claims.ActorID,
+			AuthMethod: MethodBearer,
 		}, nil
 	}
 	return Identity{
