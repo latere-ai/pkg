@@ -357,3 +357,30 @@ func TestJWTAuthenticateCarriesActorClaims(t *testing.T) {
 		t.Fatalf("attribution changed: %+v", id)
 	}
 }
+
+func TestJWTAuthenticateCarriesGrantorID(t *testing.T) {
+	// A delegated agent/actor token carries the RFC 8693 grantor (the
+	// owner who delegated). It flows onto Identity.GrantorID so a
+	// consumer (Cella) can mint an owner-scoped downstream token, while
+	// THIS token's attribution stays (OrgID, Sub).
+	claims := &jwtauth.Claims{
+		Sub:           "agent-1",
+		OrgID:         "org-1",
+		PrincipalType: jwtauth.PrincipalType("agent"),
+		GrantorID:     "owner-9",
+	}
+	j := newJWTWithFakeValidator(&fakeValidator{claims: claims}, nil)
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"agent-1"}`))
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Authorization", "Bearer hdr."+payload+".sig")
+	id, err := j.Authenticate(r)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id.GrantorID != "owner-9" {
+		t.Fatalf("GrantorID = %q, want owner-9", id.GrantorID)
+	}
+	if id.Sub != "agent-1" || id.OrgID != "org-1" {
+		t.Fatalf("attribution of the delegated token changed: %+v", id)
+	}
+}

@@ -133,6 +133,11 @@ type Claims struct {
 	Validation   ValidationStrategy // "local" or "strict"; empty for non-agents
 	DelegationID string
 	Act          *ActClaims // delegator identity (RFC 8693)
+	// GrantorID is the RFC 8693 delegator's principal sub as emitted by
+	// the auth service's flat "grantor_id" claim on agent/actor tokens
+	// (the owner who delegated to the agent). Empty for non-delegated
+	// tokens. Same delegator concept as Act.Sub, different wire shape.
+	GrantorID string
 }
 
 // ActClaims carries the RFC 8693 "act" delegator identity.
@@ -308,9 +313,15 @@ func claimsFromRawPayload(raw rawPayload) *Claims {
 		ActorID:       raw.ActorID,
 		Validation:    ValidationStrategy(raw.Validation),
 		DelegationID:  raw.DelegationID,
+		GrantorID:     raw.GrantorID,
 	}
 	if raw.Act != nil {
 		claims.Act = &ActClaims{Sub: raw.Act.Sub}
+		// A nested act.sub is the same delegator; prefer the flat
+		// grantor_id when both are present, fall back to act.sub.
+		if claims.GrantorID == "" {
+			claims.GrantorID = raw.Act.Sub
+		}
 	}
 	return claims
 }
@@ -571,6 +582,7 @@ type rawPayload struct {
 	AuthorizedParty string     `json:"azp"`
 	Validation      string     `json:"validation"`
 	DelegationID    string     `json:"delegation_id"`
+	GrantorID       string     `json:"grantor_id"`
 	Act             *rawActSub `json:"act"`
 }
 

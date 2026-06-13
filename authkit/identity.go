@@ -50,6 +50,13 @@ type Identity struct {
 	// (OrgID, Sub).
 	Kind    string
 	ActorID string
+	// GrantorID is the RFC 8693 delegator's principal sub (the owner who
+	// delegated to an agent), from the token's "grantor_id" claim. Empty
+	// for non-delegated tokens. It does not affect tenancy of THIS token
+	// (attribution stays (OrgID, Sub)); a consumer that mints an
+	// owner-scoped downstream token (e.g. Cella resolving the sandbox
+	// owner) reads it to set that token's subject to the owner.
+	GrantorID string
 	// AuthMethod records which Authenticator resolved this Identity, for
 	// observability and conditional handler logic. Standard values are
 	// MethodBearer, MethodCookie, MethodStatic. Consumers may declare

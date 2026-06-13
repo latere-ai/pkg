@@ -46,6 +46,34 @@ func TestParseUnverified_HappyPath(t *testing.T) {
 	}
 }
 
+func TestParseUnverified_GrantorID(t *testing.T) {
+	// Flat grantor_id (auth's agent/actor wire shape) maps to Claims.
+	c, err := ParseUnverified(unsignedToken(map[string]any{
+		"sub":            "agent-1",
+		"principal_type": "agent",
+		"grantor_id":     "owner-9",
+		"exp":            float64(time.Now().Add(time.Hour).Unix()),
+	}))
+	if err != nil {
+		t.Fatalf("ParseUnverified: %v", err)
+	}
+	if c.GrantorID != "owner-9" {
+		t.Errorf("GrantorID = %q, want owner-9", c.GrantorID)
+	}
+	// Nested act.sub also populates GrantorID when grantor_id is absent.
+	c2, err := ParseUnverified(unsignedToken(map[string]any{
+		"sub": "agent-1",
+		"act": map[string]any{"sub": "owner-7"},
+		"exp": float64(time.Now().Add(time.Hour).Unix()),
+	}))
+	if err != nil {
+		t.Fatalf("ParseUnverified act: %v", err)
+	}
+	if c2.GrantorID != "owner-7" {
+		t.Errorf("GrantorID from act.sub = %q, want owner-7", c2.GrantorID)
+	}
+}
+
 func TestParseUnverified_Malformed(t *testing.T) {
 	cases := map[string]string{
 		"not three segments": "a.b",

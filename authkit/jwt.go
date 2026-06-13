@@ -78,6 +78,7 @@ func (j *JWT) Authenticate(r *http.Request) (Identity, error) {
 			// claims keeps the strict path consistent with the non-strict one.
 			Kind:       claims.Kind,
 			ActorID:    claims.ActorID,
+			GrantorID:  claims.GrantorID,
 			AuthMethod: MethodBearer,
 		}, nil
 	}
@@ -92,6 +93,7 @@ func (j *JWT) Authenticate(r *http.Request) (Identity, error) {
 		TokenID:       claims.Sub,
 		Kind:          claims.Kind,
 		ActorID:       claims.ActorID,
+		GrantorID:     claims.GrantorID,
 		AuthMethod:    MethodBearer,
 	}, nil
 }
