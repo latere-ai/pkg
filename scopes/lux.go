@@ -4,9 +4,11 @@ package scopes
 // the console read surface (usage analytics, request feed, model
 // catalog, settings reads); invoke is the day-to-day grant: proxy an
 // upstream provider plus manage your own provider keys, virtual keys,
-// access profile, and hooks; admin is org-wide custody: platform /
-// org / env-source provider keys, model-catalog writes, org settings,
-// and other principals' access profiles.
+// access profile, and hooks; serve lets an identity expose a local model
+// runtime through Lux (the reverse-tunnel serve side, GET /lux/v1/tunnel,
+// spec 18), a distinct act from invoking; admin is org-wide custody:
+// platform / org / env-source provider keys, model-catalog writes, org
+// settings, and other principals' access profiles.
 //
 // Wire names keep lux's `llm.<verb>` form (dot, not the `verb:resource`
 // colon other services use) because luxd already gates ~30 call sites
@@ -15,7 +17,8 @@ package scopes
 var (
 	LuxRead   = Scope{Name: "llm.read", Description: "Read LLM gateway usage, request feed, model catalog, and settings.", Category: "Lux"}
 	LuxInvoke = Scope{Name: "llm.invoke", Description: "Proxy upstream providers and manage your own provider keys, virtual keys, access profile, and hooks.", Category: "Lux"}
+	LuxServe  = Scope{Name: "llm.serve", Description: "Expose a local model runtime (Ollama, vLLM, LM Studio, llama.cpp, MLX) through Lux over a reverse tunnel.", Category: "Lux"}
 	LuxAdmin  = Scope{Name: "llm.admin", Description: "Org-wide LLM gateway custody: platform/org/env provider keys, model-catalog writes, org settings, other principals' profiles.", Category: "Lux"}
 )
 
-func lux() []Scope { return []Scope{LuxRead, LuxInvoke, LuxAdmin} }
+func lux() []Scope { return []Scope{LuxRead, LuxInvoke, LuxServe, LuxAdmin} }
