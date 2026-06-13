@@ -79,6 +79,7 @@ func (j *JWT) Authenticate(r *http.Request) (Identity, error) {
 			Kind:       claims.Kind,
 			ActorID:    claims.ActorID,
 			GrantorID:  claims.GrantorID,
+			AgentID:    claims.AgentID,
 			AuthMethod: MethodBearer,
 		}, nil
 	}
@@ -94,6 +95,7 @@ func (j *JWT) Authenticate(r *http.Request) (Identity, error) {
 		Kind:          claims.Kind,
 		ActorID:       claims.ActorID,
 		GrantorID:     claims.GrantorID,
+		AgentID:       claims.AgentID,
 		AuthMethod:    MethodBearer,
 	}, nil
 }

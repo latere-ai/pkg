@@ -384,3 +384,31 @@ func TestJWTAuthenticateCarriesGrantorID(t *testing.T) {
 		t.Fatalf("attribution of the delegated token changed: %+v", id)
 	}
 }
+
+func TestJWTAuthenticateCarriesAgentID(t *testing.T) {
+	// On an owner-pays autonomous run the token's Sub is the OWNER (after
+	// the grantor swap) and agent_id rides alongside as a reporting
+	// dimension. It flows onto Identity.AgentID without touching tenancy.
+	claims := &jwtauth.Claims{
+		Sub:           "owner-9",
+		OrgID:         "org-1",
+		PrincipalType: jwtauth.PrincipalType("agent"),
+		GrantorID:     "owner-9",
+		AgentID:       "pr-agent-1",
+	}
+	j := newJWTWithFakeValidator(&fakeValidator{claims: claims}, nil)
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"owner-9"}`))
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Authorization", "Bearer hdr."+payload+".sig")
+	id, err := j.Authenticate(r)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id.AgentID != "pr-agent-1" {
+		t.Fatalf("AgentID = %q, want pr-agent-1", id.AgentID)
+	}
+	// Tenancy stays the owner; agent_id is a dimension, not the subject.
+	if id.Sub != "owner-9" || id.OrgID != "org-1" {
+		t.Fatalf("attribution must stay the owner: %+v", id)
+	}
+}

@@ -138,6 +138,12 @@ type Claims struct {
 	// (the owner who delegated to the agent). Empty for non-delegated
 	// tokens. Same delegator concept as Act.Sub, different wire shape.
 	GrantorID string
+	// AgentID is the acting agent's principal id, from the flat "agent_id"
+	// claim on a delegated (autonomous-run) token. It is a REPORTING
+	// dimension, never tenancy: the token's Sub is the owner (after the
+	// grantor swap), and AgentID rides alongside so downstream metering can
+	// group spend by agent. Empty for non-agent tokens.
+	AgentID string
 }
 
 // ActClaims carries the RFC 8693 "act" delegator identity.
@@ -314,6 +320,7 @@ func claimsFromRawPayload(raw rawPayload) *Claims {
 		Validation:    ValidationStrategy(raw.Validation),
 		DelegationID:  raw.DelegationID,
 		GrantorID:     raw.GrantorID,
+		AgentID:       raw.AgentID,
 	}
 	if raw.Act != nil {
 		claims.Act = &ActClaims{Sub: raw.Act.Sub}
@@ -583,6 +590,7 @@ type rawPayload struct {
 	Validation      string     `json:"validation"`
 	DelegationID    string     `json:"delegation_id"`
 	GrantorID       string     `json:"grantor_id"`
+	AgentID         string     `json:"agent_id"`
 	Act             *rawActSub `json:"act"`
 }
 

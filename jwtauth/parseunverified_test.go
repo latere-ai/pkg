@@ -74,6 +74,35 @@ func TestParseUnverified_GrantorID(t *testing.T) {
 	}
 }
 
+func TestParseUnverified_AgentID(t *testing.T) {
+	// The flat agent_id claim (the reporting dimension on a delegated run)
+	// maps to Claims.AgentID, distinct from the owner-bearing grantor_id.
+	c, err := ParseUnverified(unsignedToken(map[string]any{
+		"sub":            "owner-9",
+		"principal_type": "agent",
+		"grantor_id":     "owner-9",
+		"agent_id":       "pr-agent-1",
+		"exp":            float64(time.Now().Add(time.Hour).Unix()),
+	}))
+	if err != nil {
+		t.Fatalf("ParseUnverified: %v", err)
+	}
+	if c.AgentID != "pr-agent-1" {
+		t.Errorf("AgentID = %q, want pr-agent-1", c.AgentID)
+	}
+	// Ordinary tokens carry no agent_id.
+	c2, err := ParseUnverified(unsignedToken(map[string]any{
+		"sub": "user-1",
+		"exp": float64(time.Now().Add(time.Hour).Unix()),
+	}))
+	if err != nil {
+		t.Fatalf("ParseUnverified plain: %v", err)
+	}
+	if c2.AgentID != "" {
+		t.Errorf("AgentID = %q, want empty for a non-agent token", c2.AgentID)
+	}
+}
+
 func TestParseUnverified_Malformed(t *testing.T) {
 	cases := map[string]string{
 		"not three segments": "a.b",
