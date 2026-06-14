@@ -310,6 +310,12 @@ func mapperForProvider(provider string) (ClaimsMapper, error) {
 	switch provider {
 	case "", "latere":
 		return latereMapper{}, nil
+	case "keycloak":
+		return KeycloakMapper{}, nil
+	case "google":
+		return GoogleMapper{}, nil
+	case "cognito":
+		return CognitoMapper{}, nil
 	default:
 		return nil, fmt.Errorf("oidclogin: unknown provider %q", provider)
 	}
