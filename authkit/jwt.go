@@ -1,8 +1,6 @@
 package authkit
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -50,11 +48,9 @@ func (j *JWT) Authenticate(r *http.Request) (Identity, error) {
 	if err != nil {
 		return Identity{}, err
 	}
-	// pkg/jwtauth.Claims doesn't currently surface the "client_id"
-	// claim. Pull it locally from the already-validated token so
-	// per-OAuth-client resolution works without a pkg release.
-	// Safe: V.Validate verified the signature above.
-	clientID := clientIDFromJWT(raw)
+	// jwtauth.Claims surfaces the originating OAuth client (client_id, azp
+	// fallback) from the signature-verified token — no second decode needed.
+	clientID := claims.ClientID
 	if claims.NeedsTokenInfo() {
 		if j.TokenInfo == nil {
 			return Identity{}, errors.New("strict agent token but tokeninfo client not configured")
@@ -98,29 +94,6 @@ func (j *JWT) Authenticate(r *http.Request) (Identity, error) {
 		AgentID:       claims.AgentID,
 		AuthMethod:    MethodBearer,
 	}, nil
-}
-
-// clientIDFromJWT base64-decodes the JWT payload segment and returns the
-// "client_id" claim. Caller must have already verified the signature —
-// we skip validation here because jwtauth.Validator did it. Returns
-// "" if the claim is absent or the token is malformed (in which case the
-// token would already have been rejected upstream).
-func clientIDFromJWT(raw string) string {
-	parts := strings.SplitN(raw, ".", 3)
-	if len(parts) != 3 {
-		return ""
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return ""
-	}
-	var m struct {
-		ClientID string `json:"client_id"`
-	}
-	if err := json.Unmarshal(payload, &m); err != nil {
-		return ""
-	}
-	return m.ClientID
 }
 
 func firstNonEmpty(ss ...string) string {

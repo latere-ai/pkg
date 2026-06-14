@@ -11,56 +11,6 @@ import (
 	"latere.ai/x/pkg/jwtauth"
 )
 
-// ── clientIDFromJWT ──────────────────────────────────────────────────────────
-
-func encodePayload(t *testing.T, payload string) string {
-	t.Helper()
-	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256"}`))
-	body := base64.RawURLEncoding.EncodeToString([]byte(payload))
-	sig := base64.RawURLEncoding.EncodeToString([]byte("sig"))
-	return header + "." + body + "." + sig
-}
-
-func TestClientIDFromJWTHappyPath(t *testing.T) {
-	tok := encodePayload(t, `{"client_id":"agent-client"}`)
-	if got := clientIDFromJWT(tok); got != "agent-client" {
-		t.Fatalf("got %q", got)
-	}
-}
-
-func TestClientIDFromJWTMissingClaim(t *testing.T) {
-	tok := encodePayload(t, `{"sub":"u"}`)
-	if got := clientIDFromJWT(tok); got != "" {
-		t.Fatalf("got %q", got)
-	}
-}
-
-func TestClientIDFromJWTNotThreeParts(t *testing.T) {
-	if got := clientIDFromJWT("not.a.valid.token.at.all"); got != "" {
-		t.Fatalf("got %q", got)
-	}
-	if got := clientIDFromJWT("only"); got != "" {
-		t.Fatalf("got %q", got)
-	}
-	if got := clientIDFromJWT(""); got != "" {
-		t.Fatalf("got %q", got)
-	}
-}
-
-func TestClientIDFromJWTBadBase64(t *testing.T) {
-	if got := clientIDFromJWT("a.!!notbase64!!.c"); got != "" {
-		t.Fatalf("got %q", got)
-	}
-}
-
-func TestClientIDFromJWTBadJSON(t *testing.T) {
-	body := base64.RawURLEncoding.EncodeToString([]byte("{not json"))
-	tok := strings.Join([]string{"hdr", body, "sig"}, ".")
-	if got := clientIDFromJWT(tok); got != "" {
-		t.Fatalf("got %q", got)
-	}
-}
-
 // ── firstNonEmpty ────────────────────────────────────────────────────────────
 
 func TestFirstNonEmpty(t *testing.T) {
@@ -178,15 +128,16 @@ func TestJWTAuthenticateLocalToken(t *testing.T) {
 }
 
 func TestJWTAuthenticateLocalTokenWithClientID(t *testing.T) {
+	// jwtauth.Validator populates Claims.ClientID from the verified token; the
+	// authenticator reads it directly (no second decode).
 	claims := &jwtauth.Claims{
 		Sub:           "u-1",
 		PrincipalType: jwtauth.PrincipalUser,
+		ClientID:      "cli-abc",
 	}
 	j := newJWTWithFakeValidator(&fakeValidator{claims: claims}, nil)
-	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"u-1","client_id":"cli-abc"}`))
-	raw := "hdr." + payload + ".sig"
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.Header.Set("Authorization", "Bearer "+raw)
+	r.Header.Set("Authorization", "Bearer hdr.payload.sig")
 	id, err := j.Authenticate(r)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -303,34 +254,6 @@ func TestJWTAuthenticateStrictAgentTokenInfoError(t *testing.T) {
 	if !errors.Is(err, ErrRevoked) && !strings.Contains(err.Error(), "tokeninfo") {
 		t.Fatalf("expected tokeninfo error, got %v", err)
 	}
-}
-
-// ── Fuzz ─────────────────────────────────────────────────────────────────────
-
-func FuzzClientIDFromJWT(f *testing.F) {
-	// Seed corpus.
-	f.Add("")
-	f.Add("only")
-	f.Add("a.b")
-	f.Add("a.b.c.d")
-	f.Add(encodePayloadFuzz(`{"client_id":"x"}`))
-	f.Add(encodePayloadFuzz(`{"sub":"u"}`))
-	f.Add("a.!!notbase64!!.c")
-	f.Add(encodePayloadFuzz(`{not json`))
-	f.Add(encodePayloadFuzz(`null`))
-	f.Add(encodePayloadFuzz(`[]`))
-
-	f.Fuzz(func(t *testing.T, input string) {
-		// Must not panic; return value is always a string (possibly empty).
-		_ = clientIDFromJWT(input)
-	})
-}
-
-func encodePayloadFuzz(payload string) string {
-	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256"}`))
-	body := base64.RawURLEncoding.EncodeToString([]byte(payload))
-	sig := base64.RawURLEncoding.EncodeToString([]byte("sig"))
-	return header + "." + body + "." + sig
 }
 
 func TestJWTAuthenticateCarriesActorClaims(t *testing.T) {
