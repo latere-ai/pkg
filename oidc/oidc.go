@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -133,16 +134,31 @@ type Client struct {
 }
 
 // LoadConfig reads auth configuration from environment variables.
+//
+// AUTH_INSECURE_COOKIES drops the Secure flag (and lets a non-"__Host-" cookie
+// name work) for local development of a service pointed at a remote IDP over
+// plain HTTP. It must never be set in production.
 func LoadConfig() Config {
 	return Config{
-		AuthURL:      getenv("AUTH_URL", "https://auth.latere.ai"),
-		ClientID:     os.Getenv("AUTH_CLIENT_ID"),
-		ClientSecret: os.Getenv("AUTH_CLIENT_SECRET"),
-		RedirectURL:  os.Getenv("AUTH_REDIRECT_URL"),
-		CookieKey:    os.Getenv("AUTH_COOKIE_KEY"),
-		Audience:     os.Getenv("AUTH_AUDIENCE"),
-		Scopes:       SplitScopes(os.Getenv("AUTH_SCOPES")),
+		AuthURL:         getenv("AUTH_URL", "https://auth.latere.ai"),
+		ClientID:        os.Getenv("AUTH_CLIENT_ID"),
+		ClientSecret:    os.Getenv("AUTH_CLIENT_SECRET"),
+		RedirectURL:     os.Getenv("AUTH_REDIRECT_URL"),
+		CookieKey:       os.Getenv("AUTH_COOKIE_KEY"),
+		Audience:        os.Getenv("AUTH_AUDIENCE"),
+		Scopes:          SplitScopes(os.Getenv("AUTH_SCOPES")),
+		InsecureCookies: envTrue(os.Getenv("AUTH_INSECURE_COOKIES")),
 	}
+}
+
+// envTrue reports whether an env var spells an affirmative ("1", "true",
+// "yes", "on"; case-insensitive).
+func envTrue(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 func getenv(key, fallback string) string {

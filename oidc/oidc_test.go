@@ -58,6 +58,7 @@ func TestLoadConfig(t *testing.T) {
 	t.Setenv("AUTH_COOKIE_KEY", "deadbeef")
 	t.Setenv("AUTH_AUDIENCE", "https://auth.test.com")
 	t.Setenv("AUTH_SCOPES", "openid,email profile offline_access")
+	t.Setenv("AUTH_INSECURE_COOKIES", "true")
 
 	cfg := LoadConfig()
 	if cfg.AuthURL != "https://auth.test.com" {
@@ -80,6 +81,9 @@ func TestLoadConfig(t *testing.T) {
 	}
 	if got := strings.Join(cfg.Scopes, " "); got != "openid email profile offline_access" {
 		t.Errorf("Scopes = %q, want openid email profile offline_access", got)
+	}
+	if !cfg.InsecureCookies {
+		t.Error("InsecureCookies = false, want true from AUTH_INSECURE_COOKIES")
 	}
 }
 
