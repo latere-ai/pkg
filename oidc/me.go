@@ -161,9 +161,11 @@ func SwitchOrgRedirect(w http.ResponseWriter, orgID, returnTo string) string {
 	ClearSession(w)
 	q := url.Values{}
 	q.Set("return_to", returnTo)
-	if orgID != "" {
-		q.Set("org_id", orgID)
-	}
+	// org_id is presence-sensitive on the /login -> /authorize forward
+	// (forwardedAuthorizeParams): a present-but-empty `org_id=` is the
+	// clear-to-personal signal, while an absent one keeps the current org.
+	// Always set it, so switching to Personal is not a silent no-op.
+	q.Set("org_id", orgID)
 	return "/login?" + q.Encode()
 }
 

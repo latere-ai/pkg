@@ -184,7 +184,9 @@ func TestSwitchOrgRedirect(t *testing.T) {
 	if got != "/login?org_id=org-9&return_to=%2Fplayground" {
 		t.Errorf("url = %q", got)
 	}
-	if personal := SwitchOrgRedirect(httptest.NewRecorder(), "", "/x"); personal != "/login?return_to=%2Fx" {
+	// Personal must carry a present-but-empty org_id (the clear-to-personal
+	// signal), not omit it — omitting kept the current org.
+	if personal := SwitchOrgRedirect(httptest.NewRecorder(), "", "/x"); personal != "/login?org_id=&return_to=%2Fx" {
 		t.Errorf("personal url = %q", personal)
 	}
 	// A request-controlled orgID containing query metacharacters must be
