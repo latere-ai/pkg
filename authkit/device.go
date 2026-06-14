@@ -80,7 +80,15 @@ func (d *DeviceCodeClient) Login(ctx context.Context) error {
 	if uri == "" {
 		uri = da.VerificationURI
 	}
-	fmt.Fprintf(out, "\nTo sign in, visit:\n\n  %s\n\nand enter the code:\n\n  %s\n\n", uri, da.UserCode)
+	// When the provider returns a verification_uri_complete, the user code is
+	// already encoded in the link (and the CLI tries to open it in a browser),
+	// so asking the user to "enter the code" too is redundant and confusing.
+	// Only the bare-URI fallback needs manual code entry.
+	if da.VerificationURIComplete != "" {
+		fmt.Fprintf(out, "\nTo sign in, open this link (code %s is already filled in):\n\n  %s\n\nWaiting for you to approve in the browser...\n", da.UserCode, da.VerificationURIComplete)
+	} else {
+		fmt.Fprintf(out, "\nTo sign in, visit:\n\n  %s\n\nand enter this code:\n\n  %s\n\nWaiting for you to approve...\n", da.VerificationURI, da.UserCode)
+	}
 
 	openFn := d.OpenBrowser
 	if openFn == nil {
