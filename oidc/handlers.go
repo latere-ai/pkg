@@ -57,9 +57,9 @@ type jwtClaims struct {
 	// before Scope/Scopes by scopesFromJWT so tokens issued by fosite
 	// (the issuer the auth service uses) surface granted scopes
 	// correctly.
-	SCP             []string `json:"scp"`
-	Roles           []string `json:"roles"`
-	IsSuperadmin    bool     `json:"is_superadmin"`
+	SCP          []string `json:"scp"`
+	Roles        []string `json:"roles"`
+	IsSuperadmin bool     `json:"is_superadmin"`
 }
 
 // decodeJWTClaims extracts claims from a JWT access token without
@@ -272,7 +272,7 @@ func (c *Client) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusFound)
 		return
 	}
-	ClearFlowState(w)
+	c.clearFlowState(w)
 
 	// Verify state.
 	if r.URL.Query().Get("state") != flow.State {

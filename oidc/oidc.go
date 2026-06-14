@@ -519,10 +519,32 @@ func ClearSession(w http.ResponseWriter) {
 // name and Secure setting — the form a relying party with a custom CookieName
 // (e.g. cella's __cella_session) must use.
 func (c *Client) ClearSession(w http.ResponseWriter) {
-	clearCookie(w, c.cfg.CookieName, !c.cfg.InsecureCookies)
+	clearCookie(w, c.effectiveCookieName(c.cfg.CookieName), !c.cfg.InsecureCookies)
+}
+
+// clearFlowState expires the flow cookie honoring the client's InsecureCookies
+// setting, the method-based companion to the package-level ClearFlowState. The
+// browser flow over plain HTTP renames the cookie (see effectiveCookieName), so
+// the callback must clear the same name it set.
+func (c *Client) clearFlowState(w http.ResponseWriter) {
+	clearCookie(w, c.effectiveCookieName(FlowCookieName), !c.cfg.InsecureCookies)
+}
+
+// effectiveCookieName drops the "__Host-"/"__Secure-" prefix when cookies are
+// served insecurely (plain HTTP, local development). Browsers reject a cookie
+// carrying those prefixes unless the Secure attribute is set, so a prefixed
+// name under InsecureCookies would be silently discarded and break the flow.
+func (c *Client) effectiveCookieName(name string) string {
+	if !c.cfg.InsecureCookies {
+		return name
+	}
+	name = strings.TrimPrefix(name, "__Host-")
+	name = strings.TrimPrefix(name, "__Secure-")
+	return name
 }
 
 func (c *Client) setCookie(w http.ResponseWriter, name string, v any, maxAge int) error {
+	name = c.effectiveCookieName(name)
 	data, err := json.Marshal(v)
 	if err != nil {
 		return fmt.Errorf("marshal cookie %s: %w", name, err)
@@ -546,6 +568,7 @@ func (c *Client) setCookie(w http.ResponseWriter, name string, v any, maxAge int
 }
 
 func (c *Client) getCookie(r *http.Request, name string, v any) error {
+	name = c.effectiveCookieName(name)
 	cookie, err := r.Cookie(name)
 	if err != nil {
 		if errors.Is(err, http.ErrNoCookie) {
