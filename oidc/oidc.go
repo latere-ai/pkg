@@ -154,27 +154,23 @@ func getenv(key, fallback string) string {
 
 // Enabled returns true if the required configuration is present.
 //
-// ClientID + ClientSecret + RedirectURL are the trio needed for the
-// browser-based authorization-code + PKCE flow. Public clients that
-// only want the RFC 8628 device-code flow can leave ClientSecret and
-// RedirectURL empty — DeviceAuth and DeviceAccessToken work without
-// either; the cookie helpers and HandleLogin will fail loudly at use
-// time if called against such a client.
+// ClientID is always required. The browser-based authorization-code + PKCE
+// flow needs a RedirectURL; the client secret is OPTIONAL because PKCE (S256)
+// secures the code exchange — a public client sends no secret, a confidential
+// client sends one when present. A client with neither RedirectURL nor secret
+// is device-code-only (RFC 8628): DeviceAuth and DeviceAccessToken work without
+// either; the cookie helpers and HandleLogin fail loudly at use time if called
+// against such a client.
 func (c Config) Enabled() bool {
-	if c.ClientID == "" {
-		return false
-	}
-	if c.ClientSecret == "" && c.RedirectURL == "" {
-		// Device-code-only client.
-		return true
-	}
-	return c.ClientSecret != "" && c.RedirectURL != ""
+	return c.ClientID != ""
 }
 
-// New creates a new OIDC Client. Returns nil if the config is not enabled.
+// New creates a new OIDC Client. Returns nil if the config is not enabled, or
+// if a browser-mode public client (no client secret) is configured without an
+// AUTH_COOKIE_KEY — see the cookie-key handling below.
 func New(cfg Config) *Client {
 	if !cfg.Enabled() {
-		slog.Info("oidc: disabled (AUTH_CLIENT_ID, AUTH_CLIENT_SECRET, or AUTH_REDIRECT_URL not set)")
+		slog.Info("oidc: disabled (AUTH_CLIENT_ID not set)")
 		return nil
 	}
 
@@ -189,6 +185,17 @@ func New(cfg Config) *Client {
 		scopes = []string{"openid", "email", "profile"}
 	}
 
+	// Public clients (no secret) authenticate to the token endpoint by sending
+	// client_id in the request body and no Authorization header. AuthStyleInHeader
+	// would emit "Basic base64(client_id:)" — an empty-secret client_secret_basic
+	// attempt the auth server treats as a (failed) confidential auth. Confidential
+	// clients keep client_secret_basic (set auth style explicitly, never
+	// AuthStyleAutoDetect — see INTEGRATION.md).
+	authStyle := oauth2.AuthStyleInHeader
+	if cfg.ClientSecret == "" {
+		authStyle = oauth2.AuthStyleInParams
+	}
+
 	c := &Client{
 		cfg: cfg,
 		oauthCfg: oauth2.Config{
@@ -199,7 +206,7 @@ func New(cfg Config) *Client {
 				AuthURL:       cfg.AuthURL + "/authorize",
 				TokenURL:      cfg.AuthURL + "/token",
 				DeviceAuthURL: cfg.AuthURL + "/device/code",
-				AuthStyle:     oauth2.AuthStyleInHeader,
+				AuthStyle:     authStyle,
 			},
 			Scopes: scopes,
 		},
@@ -211,17 +218,27 @@ func New(cfg Config) *Client {
 	// warning + info line on every run.
 	browserMode := cfg.RedirectURL != ""
 	if browserMode {
-		if cfg.CookieKey != "" {
+		switch {
+		case cfg.CookieKey != "":
 			if key, err := hex.DecodeString(cfg.CookieKey); err == nil && len(key) >= 16 {
 				c.cookieKey = sha256.Sum256(key)
 			} else {
 				c.cookieKey = sha256.Sum256([]byte(cfg.CookieKey))
 			}
-		} else {
-			slog.Warn("oidc: AUTH_COOKIE_KEY not set, falling back to client secret — set AUTH_COOKIE_KEY for production")
+		case cfg.ClientSecret != "":
+			// Confidential client without an explicit cookie key: derive from the
+			// secret for backward compatibility, but warn — AUTH_COOKIE_KEY should
+			// be set explicitly.
+			slog.Warn("oidc: AUTH_COOKIE_KEY not set, deriving cookie key from client secret — set AUTH_COOKIE_KEY explicitly")
 			c.cookieKey = sha256.Sum256([]byte(cfg.ClientSecret))
+		default:
+			// Public client with no cookie key: refuse. There is no secret to
+			// derive from, and proceeding would encrypt every session cookie
+			// under sha256("") — a fixed, publicly-known key. Fail closed.
+			slog.Error("oidc: browser mode requires AUTH_COOKIE_KEY for a public client (no client secret to derive a key from)")
+			return nil
 		}
-		slog.Info("oidc: enabled", "auth_url", cfg.AuthURL, "client_id", cfg.ClientID)
+		slog.Info("oidc: enabled", "auth_url", cfg.AuthURL, "client_id", cfg.ClientID, "public", cfg.ClientSecret == "")
 	}
 	return c
 }

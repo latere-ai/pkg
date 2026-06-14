@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/oauth2"
 )
 
 func testClient(t *testing.T) *Client {
@@ -97,8 +99,9 @@ func TestConfigEnabled(t *testing.T) {
 	}{
 		{"all set", Config{ClientID: "a", ClientSecret: "b", RedirectURL: "c"}, true},
 		{"missing client_id", Config{ClientSecret: "b", RedirectURL: "c"}, false},
-		{"missing secret", Config{ClientID: "a", RedirectURL: "c"}, false},
-		{"missing redirect", Config{ClientID: "a", ClientSecret: "b"}, false},
+		{"public browser (no secret)", Config{ClientID: "a", RedirectURL: "c"}, true},
+		{"confidential cc (no redirect)", Config{ClientID: "a", ClientSecret: "b"}, true},
+		{"device-only (id only)", Config{ClientID: "a"}, true},
 		{"empty", Config{}, false},
 	}
 	for _, tt := range tests {
@@ -178,6 +181,62 @@ func TestNewNoCookieKey(t *testing.T) {
 	c := New(cfg)
 	if c == nil {
 		t.Fatal("New returned nil")
+	}
+}
+
+// TestNewPublicClientNoCookieKey: a browser-mode public client (no secret) with
+// no AUTH_COOKIE_KEY must be refused — proceeding would encrypt session cookies
+// under sha256(""), a fixed publicly-known key.
+func TestNewPublicClientNoCookieKey(t *testing.T) {
+	cfg := Config{
+		AuthURL:     "https://auth.example.com",
+		ClientID:    "cid",
+		RedirectURL: "https://app.example.com/cb",
+		// no ClientSecret, no CookieKey
+	}
+	if c := New(cfg); c != nil {
+		t.Error("New should return nil for a public browser client without AUTH_COOKIE_KEY")
+	}
+}
+
+// TestNewPublicClientWithCookieKey: a public client with a cookie key is valid,
+// gets a non-zero key, and uses the in-params auth style (client_id in body, no
+// secret) so the token endpoint does not see an empty client_secret_basic.
+func TestNewPublicClientWithCookieKey(t *testing.T) {
+	cfg := Config{
+		AuthURL:     "https://auth.example.com",
+		ClientID:    "cid",
+		RedirectURL: "https://app.example.com/cb",
+		CookieKey:   "0123456789abcdef0123456789abcdef",
+	}
+	c := New(cfg)
+	if c == nil {
+		t.Fatal("New returned nil for public client with cookie key")
+	}
+	if c.cookieKey == [32]byte{} {
+		t.Error("cookie key should not be zero")
+	}
+	if c.oauthCfg.Endpoint.AuthStyle != oauth2.AuthStyleInParams {
+		t.Errorf("public client AuthStyle = %v, want AuthStyleInParams", c.oauthCfg.Endpoint.AuthStyle)
+	}
+}
+
+// TestNewConfidentialClientAuthStyle: a confidential client keeps
+// client_secret_basic (auth style in header).
+func TestNewConfidentialClientAuthStyle(t *testing.T) {
+	cfg := Config{
+		AuthURL:      "https://auth.example.com",
+		ClientID:     "cid",
+		ClientSecret: "sec",
+		RedirectURL:  "https://app.example.com/cb",
+		CookieKey:    "0123456789abcdef0123456789abcdef",
+	}
+	c := New(cfg)
+	if c == nil {
+		t.Fatal("New returned nil")
+	}
+	if c.oauthCfg.Endpoint.AuthStyle != oauth2.AuthStyleInHeader {
+		t.Errorf("confidential client AuthStyle = %v, want AuthStyleInHeader", c.oauthCfg.Endpoint.AuthStyle)
 	}
 }
 
