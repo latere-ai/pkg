@@ -127,7 +127,8 @@ func TestSplitFrontmatterUnclosed(t *testing.T) {
 }
 
 func TestSplitFrontmatterNoTrailingNewline(t *testing.T) {
-	src := []byte("---\ntitle: test\n---body right after")
+	// Closing fence on its own line at EOF, with no trailing newline.
+	src := []byte("---\ntitle: test\n---")
 	front, body, err := Parse(src)
 	if err != nil {
 		t.Fatal(err)
@@ -135,8 +136,65 @@ func TestSplitFrontmatterNoTrailingNewline(t *testing.T) {
 	if front["title"] != "test" {
 		t.Errorf("title = %v, want test", front["title"])
 	}
-	if string(body) != "body right after" {
-		t.Errorf("body = %q, want 'body right after'", body)
+	if string(body) != "" {
+		t.Errorf("body = %q, want empty", body)
+	}
+}
+
+// TestSplitFrontmatterInteriorTripleDash is a regression test: a "---"
+// embedded inside a quoted YAML value must not be treated as the closing
+// fence (which previously truncated the block and lost data).
+func TestSplitFrontmatterInteriorTripleDash(t *testing.T) {
+	src := []byte("---\ntitle: \"a --- b\"\nslug: x\n---\n# Body\n")
+	front, body, err := Parse(src)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if front["title"] != "a --- b" {
+		t.Errorf("title = %v, want 'a --- b'", front["title"])
+	}
+	if front["slug"] != "x" {
+		t.Errorf("slug = %v, want x", front["slug"])
+	}
+	if string(body) != "# Body\n" {
+		t.Errorf("body = %q, want '# Body\\n'", body)
+	}
+}
+
+// TestSplitFrontmatterLooseOpening covers openings that look like a fence but
+// are not their own line: they must not be treated as frontmatter.
+func TestSplitFrontmatterLooseOpening(t *testing.T) {
+	for _, src := range []string{
+		"----\ntitle: test\n---\nbody\n", // "----" opening
+		"---foo\ntitle: test\n---\nbody\n", // "---foo" opening
+		"---",                              // bare opening at EOF, no body
+	} {
+		front, body, err := Parse([]byte(src))
+		if err != nil {
+			t.Fatalf("unexpected error for %q: %v", src, err)
+		}
+		if front != nil {
+			t.Errorf("front should be nil for %q, got %v", src, front)
+		}
+		if string(body) != src {
+			t.Errorf("body should equal source for %q, got %q", src, body)
+		}
+	}
+}
+
+// TestSplitFrontmatterClosingFenceWithSpaces confirms the closing fence is
+// matched on trimmed line content.
+func TestSplitFrontmatterClosingFenceWithSpaces(t *testing.T) {
+	src := []byte("---\ntitle: test\n  ---  \nbody\n")
+	front, body, err := Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if front["title"] != "test" {
+		t.Errorf("title = %v, want test", front["title"])
+	}
+	if string(body) != "body\n" {
+		t.Errorf("body = %q, want 'body\\n'", body)
 	}
 }
 

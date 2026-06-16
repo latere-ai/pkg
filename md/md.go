@@ -65,30 +65,56 @@ func Render(src []byte) ([]byte, error) {
 // splitFrontmatter extracts YAML frontmatter from src.
 // Returns (body, yamlBytes, true) if frontmatter was found,
 // or (src, nil, false) if not.
+//
+// Both fences must be their own lines. The opening "---" must be followed by
+// a newline or end-of-input (so "----" or "---foo" are not fences), and the
+// closing fence is a line whose trimmed content is exactly "---". This keeps
+// an interior "---" inside a YAML value (e.g. `title: "a --- b"`) from
+// prematurely closing the block.
 func splitFrontmatter(src []byte) (body, front []byte, ok bool) {
 	delim := []byte("---")
 	src = bytes.TrimLeft(src, "\n")
 	if !bytes.HasPrefix(src, delim) {
 		return src, nil, false
 	}
-
-	// Find closing delimiter.
-	rest := src[len(delim):]
-	// Skip the newline after opening delimiter.
-	if idx := bytes.IndexByte(rest, '\n'); idx >= 0 {
-		rest = rest[idx+1:]
-	}
-
-	idx := bytes.Index(rest, delim)
-	if idx < 0 {
+	// The opening "---" must be its own line: followed by '\n' or EOF.
+	afterOpen := src[len(delim):]
+	if len(afterOpen) > 0 && afterOpen[0] != '\n' {
 		return src, nil, false
 	}
 
-	front = rest[:idx]
-	body = rest[idx+len(delim):]
-	// Trim the newline right after the closing delimiter.
-	if len(body) > 0 && body[0] == '\n' {
-		body = body[1:]
+	// rest holds everything after the opening fence's terminating newline.
+	rest := afterOpen
+	if idx := bytes.IndexByte(rest, '\n'); idx >= 0 {
+		rest = rest[idx+1:]
+	} else {
+		// Opening fence at EOF with no body: no closing fence possible.
+		return src, nil, false
 	}
-	return body, front, true
+
+	// Scan line by line for a closing fence: a line whose trimmed content
+	// is exactly "---".
+	for pos := 0; pos <= len(rest); {
+		nl := bytes.IndexByte(rest[pos:], '\n')
+		var line []byte
+		var next int
+		if nl < 0 {
+			line = rest[pos:]
+			next = len(rest)
+		} else {
+			line = rest[pos : pos+nl]
+			next = pos + nl + 1
+		}
+		if string(bytes.TrimSpace(line)) == "---" {
+			front = rest[:pos]
+			body = rest[next:]
+			return body, front, true
+		}
+		if nl < 0 {
+			break
+		}
+		pos = next
+	}
+	// Unclosed frontmatter.
+	return src, nil, false
 }
