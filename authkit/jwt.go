@@ -1,6 +1,7 @@
 package authkit
 
 import (
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"net/http"
@@ -106,12 +107,7 @@ func firstNonEmpty(ss ...string) string {
 }
 
 func constantEq(a, b string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	var v byte
-	for i := range a {
-		v |= a[i] ^ b[i]
-	}
-	return v == 0
+	// subtle.ConstantTimeCompare returns 0 on length mismatch, so the
+	// length-leak property matches the previous hand-rolled check.
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
