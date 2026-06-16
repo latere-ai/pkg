@@ -32,6 +32,8 @@ import (
 	"time"
 
 	"golang.org/x/oauth2"
+
+	"latere.ai/x/pkg/internal/envutil"
 )
 
 const (
@@ -147,18 +149,8 @@ func LoadConfig() Config {
 		CookieKey:       os.Getenv("AUTH_COOKIE_KEY"),
 		Audience:        os.Getenv("AUTH_AUDIENCE"),
 		Scopes:          SplitScopes(os.Getenv("AUTH_SCOPES")),
-		InsecureCookies: envTrue(os.Getenv("AUTH_INSECURE_COOKIES")),
+		InsecureCookies: envutil.IsTruthy(os.Getenv("AUTH_INSECURE_COOKIES")),
 	}
-}
-
-// envTrue reports whether an env var spells an affirmative ("1", "true",
-// "yes", "on"; case-insensitive).
-func envTrue(v string) bool {
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "1", "true", "yes", "on":
-		return true
-	}
-	return false
 }
 
 func getenv(key, fallback string) string {

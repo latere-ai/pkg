@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"latere.ai/x/pkg/internal/envutil"
 )
 
 // MethodDev marks an Identity synthesized by the dev-bypass authenticator.
@@ -107,7 +109,7 @@ func NewDevAuthenticator(cfg DevConfig) (*DevAuthenticator, error) {
 //
 // The posture host is taken from AUTH_REDIRECT_URL (preferred) or AUTH_URL.
 func DevAuthenticatorFromEnv() (*DevAuthenticator, error) {
-	if !envTrue(os.Getenv("AUTH_DEV_BYPASS")) {
+	if !envutil.IsTruthy(os.Getenv("AUTH_DEV_BYPASS")) {
 		return nil, nil
 	}
 	return NewDevAuthenticator(DevConfig{
@@ -115,9 +117,9 @@ func DevAuthenticatorFromEnv() (*DevAuthenticator, error) {
 		Email:        os.Getenv("AUTH_DEV_EMAIL"),
 		Org:          os.Getenv("AUTH_DEV_ORG"),
 		Scopes:       splitList(os.Getenv("AUTH_DEV_SCOPES")),
-		IsSuperadmin: envTrue(os.Getenv("AUTH_DEV_SUPERADMIN")),
+		IsSuperadmin: envutil.IsTruthy(os.Getenv("AUTH_DEV_SUPERADMIN")),
 		PostureHost:  postureHostFromEnv(),
-		Insecure:     envTrue(os.Getenv("AUTH_DEV_BYPASS_INSECURE")),
+		Insecure:     envutil.IsTruthy(os.Getenv("AUTH_DEV_BYPASS_INSECURE")),
 	})
 }
 
@@ -162,14 +164,6 @@ func isLoopbackHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
-}
-
-func envTrue(v string) bool {
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "1", "true", "yes", "on":
-		return true
-	}
-	return false
 }
 
 // splitList splits a comma- or space-separated list, dropping empties.
