@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"latere.ai/x/pkg/internal/envutil"
+	"latere.ai/x/pkg/oidc"
 )
 
 // MethodDev marks an Identity synthesized by the dev-bypass authenticator.
@@ -116,7 +117,7 @@ func DevAuthenticatorFromEnv() (*DevAuthenticator, error) {
 		Subject:      os.Getenv("AUTH_DEV_SUBJECT"),
 		Email:        os.Getenv("AUTH_DEV_EMAIL"),
 		Org:          os.Getenv("AUTH_DEV_ORG"),
-		Scopes:       splitList(os.Getenv("AUTH_DEV_SCOPES")),
+		Scopes:       oidc.SplitScopes(os.Getenv("AUTH_DEV_SCOPES")),
 		IsSuperadmin: envutil.IsTruthy(os.Getenv("AUTH_DEV_SUPERADMIN")),
 		PostureHost:  postureHostFromEnv(),
 		Insecure:     envutil.IsTruthy(os.Getenv("AUTH_DEV_BYPASS_INSECURE")),
@@ -166,11 +167,3 @@ func isLoopbackHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// splitList splits a comma- or space-separated list, dropping empties.
-func splitList(v string) []string {
-	fields := strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' })
-	if len(fields) == 0 {
-		return nil
-	}
-	return fields
-}

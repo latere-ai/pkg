@@ -106,6 +106,28 @@ func TestDevAuthenticatorFromEnv_LoopbackFromRedirect(t *testing.T) {
 	}
 }
 
+func TestDevAuthenticatorFromEnv_DedupesScopes(t *testing.T) {
+	// AUTH_DEV_SCOPES is parsed by the shared oidc.SplitScopes, which (unlike
+	// the old local splitList) drops duplicate scopes order-preservingly.
+	t.Setenv("AUTH_DEV_BYPASS", "true")
+	t.Setenv("AUTH_REDIRECT_URL", "http://localhost:3000/callback")
+	t.Setenv("AUTH_DEV_SCOPES", "read:x write:y read:x")
+	d, err := DevAuthenticatorFromEnv()
+	if err != nil || d == nil {
+		t.Fatalf("DevAuthenticatorFromEnv: d=%v err=%v", d, err)
+	}
+	id, _ := d.Authenticate(httptest.NewRequest("GET", "/", nil))
+	want := []string{"read:x", "write:y"}
+	if len(id.Scopes) != len(want) {
+		t.Fatalf("Scopes = %v, want %v (deduped)", id.Scopes, want)
+	}
+	for i, s := range want {
+		if id.Scopes[i] != s {
+			t.Errorf("Scopes[%d] = %q, want %q", i, id.Scopes[i], s)
+		}
+	}
+}
+
 func TestDevAuthenticatorFromEnv_NonLoopbackFailsClosed(t *testing.T) {
 	t.Setenv("AUTH_DEV_BYPASS", "true")
 	t.Setenv("AUTH_REDIRECT_URL", "https://app.example.com/callback")
