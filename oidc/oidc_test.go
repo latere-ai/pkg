@@ -3,6 +3,7 @@ package oidc
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -939,4 +940,34 @@ func FuzzAESGCMRoundTrip(f *testing.F) {
 			t.Errorf("round-trip mismatch")
 		}
 	})
+}
+
+func TestDeviceOnlyClientCookieHelpersFailClosed(t *testing.T) {
+	// A device-only client (no RedirectURL) never derives a cookie key, so the
+	// browser cookie helpers must fail closed rather than seal a session under
+	// the all-zero, publicly-known AES key.
+	c := New(Config{ClientID: "cli"})
+	if c == nil {
+		t.Fatal("device-only client should be constructed")
+	}
+	if c.cookieKeyConfigured() {
+		t.Fatal("device-only client must not have a configured cookie key")
+	}
+
+	w := httptest.NewRecorder()
+	if err := c.SetSession(w, &Session{AccessToken: "x"}); !errors.Is(err, errNoCookieKey) {
+		t.Errorf("SetSession err = %v, want errNoCookieKey", err)
+	}
+	if err := c.SetFlowState(w, &FlowState{}); !errors.Is(err, errNoCookieKey) {
+		t.Errorf("SetFlowState err = %v, want errNoCookieKey", err)
+	}
+	if got := len(w.Result().Cookies()); got != 0 {
+		t.Errorf("fail-closed path must emit no cookies, got %d", got)
+	}
+
+	// Reading also fails closed.
+	r := httptest.NewRequest("GET", "/", nil)
+	if _, err := c.GetFlowState(r); !errors.Is(err, errNoCookieKey) {
+		t.Errorf("GetFlowState err = %v, want errNoCookieKey", err)
+	}
 }

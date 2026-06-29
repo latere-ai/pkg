@@ -532,7 +532,23 @@ func (c *Client) effectiveCookieName(name string) string {
 	return name
 }
 
+// errNoCookieKey is returned by the cookie helpers when the client's cookie key
+// was never derived (a device-only client built without a RedirectURL leaves it
+// the all-zero array). Sealing a session under a fixed, publicly-known key must
+// fail closed rather than mint a forgeable cookie.
+var errNoCookieKey = errors.New("oidc: cookie helpers require a configured cookie key (client built without a RedirectURL)")
+
+// cookieKeyConfigured reports whether a real cookie key was derived. A
+// sha256-derived key is never all-zero, so the zero array unambiguously means
+// "never configured".
+func (c *Client) cookieKeyConfigured() bool {
+	return c.cookieKey != [32]byte{}
+}
+
 func (c *Client) setCookie(w http.ResponseWriter, name string, v any, maxAge int) error {
+	if !c.cookieKeyConfigured() {
+		return errNoCookieKey
+	}
 	name = c.effectiveCookieName(name)
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -557,6 +573,9 @@ func (c *Client) setCookie(w http.ResponseWriter, name string, v any, maxAge int
 }
 
 func (c *Client) getCookie(r *http.Request, name string, v any) error {
+	if !c.cookieKeyConfigured() {
+		return errNoCookieKey
+	}
 	name = c.effectiveCookieName(name)
 	cookie, err := r.Cookie(name)
 	if err != nil {
