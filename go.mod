@@ -4,6 +4,7 @@ go 1.26
 
 require (
 	github.com/goccy/go-yaml v1.19.2
+	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/yuin/goldmark v1.8.2
 	go.opentelemetry.io/contrib/bridges/otelslog v0.18.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.67.0
