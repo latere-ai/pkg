@@ -1,6 +1,7 @@
 package oidc
 
 import (
+	"cmp"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -105,11 +106,11 @@ func SessionFromToken(token *oauth2.Token, ttl time.Duration) *Session {
 			Email:        claims.Email,
 			Name:         claims.Name,
 			Picture:      claims.Picture,
-			AvatarURL:    firstNonEmpty(claims.AvatarURL, claims.Picture),
+			AvatarURL:    cmp.Or(claims.AvatarURL, claims.Picture),
 			OrgID:        claims.OrgID,
-			DisplayName:  firstNonEmpty(claims.DisplayName, claims.Name),
+			DisplayName:  cmp.Or(claims.DisplayName, claims.Name),
 			OrgRoles:     claims.Roles,
-			ClientID:     firstNonEmpty(claims.ClientID, claims.AuthorizedParty),
+			ClientID:     cmp.Or(claims.ClientID, claims.AuthorizedParty),
 			Scopes:       scopesFromJWT(claims),
 			IsSuperadmin: claims.IsSuperadmin,
 		},
@@ -163,16 +164,6 @@ func SplitScopes(s string) []string {
 		return nil
 	}
 	return out
-}
-
-// firstNonEmpty returns the first non-empty string, or "".
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // isSafeRedirect returns true when target is a relative path that won't
@@ -491,11 +482,11 @@ func (c *Client) SessionFromRequest(w http.ResponseWriter, r *http.Request) (*Se
 	// than blanking the header on refresh. Name/Picture are carried forward
 	// alongside their DisplayName/AvatarURL aliases so a caller keying off
 	// either name stays consistent across a silent refresh.
-	refreshed.User.Name = firstNonEmpty(refreshed.User.Name, sess.User.Name)
-	refreshed.User.Picture = firstNonEmpty(refreshed.User.Picture, sess.User.Picture)
-	refreshed.User.DisplayName = firstNonEmpty(refreshed.User.DisplayName, sess.User.DisplayName)
-	refreshed.User.AvatarURL = firstNonEmpty(refreshed.User.AvatarURL, sess.User.AvatarURL)
-	refreshed.User.Email = firstNonEmpty(refreshed.User.Email, sess.User.Email)
+	refreshed.User.Name = cmp.Or(refreshed.User.Name, sess.User.Name)
+	refreshed.User.Picture = cmp.Or(refreshed.User.Picture, sess.User.Picture)
+	refreshed.User.DisplayName = cmp.Or(refreshed.User.DisplayName, sess.User.DisplayName)
+	refreshed.User.AvatarURL = cmp.Or(refreshed.User.AvatarURL, sess.User.AvatarURL)
+	refreshed.User.Email = cmp.Or(refreshed.User.Email, sess.User.Email)
 
 	if err := c.SetSession(w, refreshed); err != nil {
 		slog.Warn("oidc: failed to persist refreshed session", "error", err)

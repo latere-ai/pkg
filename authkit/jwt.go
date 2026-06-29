@@ -1,6 +1,7 @@
 package authkit
 
 import (
+	"cmp"
 	"crypto/subtle"
 	"errors"
 	"fmt"
@@ -67,7 +68,7 @@ func (j *JWT) Authenticate(r *http.Request) (Identity, error) {
 			PrincipalType: ti.PrincipalType,
 			IsSuperadmin:  false, // superadmin is not re-asserted via tokeninfo
 			Scopes:        ti.Scopes,
-			ClientID:      firstNonEmpty(ti.ClientID, clientID),
+			ClientID:      cmp.Or(ti.ClientID, clientID),
 			TokenID:       ti.Sub,
 			// Preserve the actor binding from the signature-verified JWT:
 			// tokeninfo re-authorizes the revocable fields (Sub/OrgID/Scopes)
@@ -95,15 +96,6 @@ func (j *JWT) Authenticate(r *http.Request) (Identity, error) {
 		AgentID:       claims.AgentID,
 		AuthMethod:    MethodBearer,
 	}, nil
-}
-
-func firstNonEmpty(ss ...string) string {
-	for _, s := range ss {
-		if s != "" {
-			return s
-		}
-	}
-	return ""
 }
 
 func constantEq(a, b string) bool {

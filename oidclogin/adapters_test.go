@@ -66,15 +66,6 @@ func TestCognitoMapper(t *testing.T) {
 	}
 }
 
-func TestFirstNonEmpty(t *testing.T) {
-	if got := firstNonEmpty("", "", "x"); got != "x" {
-		t.Errorf("= %q, want x", got)
-	}
-	if got := firstNonEmpty("", ""); got != "" {
-		t.Errorf("= %q, want empty", got)
-	}
-}
-
 // TestProviderEndToEnd_Keycloak runs a Keycloak login through the full verify
 // surface, proving the adapter wiring resolves realm roles from a verified
 // access token.

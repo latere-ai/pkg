@@ -11,23 +11,6 @@ import (
 	"latere.ai/x/pkg/jwtauth"
 )
 
-// ── firstNonEmpty ────────────────────────────────────────────────────────────
-
-func TestFirstNonEmpty(t *testing.T) {
-	if got := firstNonEmpty(); got != "" {
-		t.Fatalf("empty input: %q", got)
-	}
-	if got := firstNonEmpty("", "", ""); got != "" {
-		t.Fatalf("all empty: %q", got)
-	}
-	if got := firstNonEmpty("", "a", "b"); got != "a" {
-		t.Fatalf("first non-empty: %q", got)
-	}
-	if got := firstNonEmpty("only"); got != "only" {
-		t.Fatalf("single: %q", got)
-	}
-}
-
 // ── constantEq ───────────────────────────────────────────────────────────────
 
 func TestConstantEq(t *testing.T) {

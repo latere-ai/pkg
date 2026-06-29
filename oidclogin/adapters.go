@@ -1,5 +1,7 @@
 package oidclogin
 
+import "cmp"
+
 // Built-in ClaimsMapper adapters for the IDPs latere services deploy against.
 // Each maps an IDP's identity and (where available) role/group claims onto the
 // portable Identity. Authentication is portable; these adapters localise the
@@ -20,7 +22,7 @@ func (KeycloakMapper) Map(idClaims, accessClaims map[string]any) (Identity, erro
 	return Identity{
 		Subject: stringClaim(idClaims["sub"]),
 		Email:   stringClaim(idClaims["email"]),
-		Name:    firstNonEmpty(stringClaim(idClaims["name"]), stringClaim(idClaims["preferred_username"])),
+		Name:    cmp.Or(stringClaim(idClaims["name"]), stringClaim(idClaims["preferred_username"])),
 		Roles:   roles,
 	}, nil
 }
@@ -63,17 +65,7 @@ func (CognitoMapper) Map(idClaims, accessClaims map[string]any) (Identity, error
 	return Identity{
 		Subject: stringClaim(idClaims["sub"]),
 		Email:   stringClaim(idClaims["email"]),
-		Name:    firstNonEmpty(stringClaim(idClaims["name"]), stringClaim(idClaims["cognito:username"])),
+		Name:    cmp.Or(stringClaim(idClaims["name"]), stringClaim(idClaims["cognito:username"])),
 		Roles:   roles,
 	}, nil
-}
-
-// firstNonEmpty returns the first non-empty string.
-func firstNonEmpty(vs ...string) string {
-	for _, v := range vs {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
