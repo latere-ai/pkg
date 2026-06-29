@@ -86,6 +86,9 @@ func SetupLogs(ctx context.Context, cfg LogsConfig) (*slog.Logger, func(context.
 	}
 	res, err := newLogResource(ctx, cfg.ServiceName, cfg.Version)
 	if err != nil {
+		// The exporter was constructed successfully; reclaim it (it holds an
+		// http client) before falling back to the local-only logger.
+		_ = exp.Shutdown(ctx)
 		return loggerWith(cfg.Stdout, base), noopShutdown, err
 	}
 	provider := sdklog.NewLoggerProvider(

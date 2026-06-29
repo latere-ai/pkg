@@ -159,6 +159,38 @@ func TestSetupLogs_ResourceError_FallsBackToStdout(t *testing.T) {
 	}
 }
 
+// shutdownRecorder is a sdklog.Exporter that records whether Shutdown ran.
+type shutdownRecorder struct {
+	sdklog.Exporter
+	shutdown bool
+}
+
+func (r *shutdownRecorder) Shutdown(context.Context) error {
+	r.shutdown = true
+	return nil
+}
+
+func TestSetupLogs_ResourceError_ShutsDownExporter(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
+	rec := &shutdownRecorder{}
+	origExp := newLogExporter
+	t.Cleanup(func() { newLogExporter = origExp })
+	newLogExporter = func(ctx context.Context, endpoint string) (sdklog.Exporter, error) {
+		return rec, nil
+	}
+	origRes := newLogResource
+	t.Cleanup(func() { newLogResource = origRes })
+	newLogResource = func(ctx context.Context, name, version string) (*resource.Resource, error) {
+		return nil, errors.New("injected resource failure")
+	}
+	if _, _, err := SetupLogs(context.Background(), LogsConfig{ServiceName: "svc", Version: "v1"}); err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !rec.shutdown {
+		t.Error("exporter was leaked: Shutdown not called on resource-error path")
+	}
+}
+
 func TestStripScheme(t *testing.T) {
 	cases := map[string]string{
 		"http://x:1":  "x:1",
