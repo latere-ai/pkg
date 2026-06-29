@@ -91,6 +91,23 @@ func TestNew_AudienceExplicit(t *testing.T) {
 // missing the issued JWT lands with aud:[] (the JWT strategy always
 // materialises the claim from the granted audience set, even when
 // empty), and downstream JWT-protected calls then 401.
+func TestAuthCodeURLWithOpts_IncludesAudience(t *testing.T) {
+	c := New(Config{
+		AuthURL:      "https://auth.example.com",
+		ClientID:     "cid",
+		ClientSecret: "sec",
+		RedirectURL:  "https://app.example.com/cb",
+	})
+	authURL := c.AuthCodeURLWithOpts("state", "verifier", nil)
+	parsed, err := url.Parse(authURL)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got := parsed.Query().Get("audience"); got != "https://auth.example.com" {
+		t.Errorf("audience param = %q, want issuer URL", got)
+	}
+}
+
 func TestAuthURLParams_PreservesPresentEmptyKeys(t *testing.T) {
 	// A present-but-empty value (org_id="") must round-trip — it is the auth
 	// service's switch-to-personal signal. A key present with a nil value slice
@@ -118,23 +135,6 @@ func TestAuthURLParams_PreservesPresentEmptyKeys(t *testing.T) {
 	}
 	if got := q.Get("scope"); got != "a" {
 		t.Errorf("scope = %q, want a", got)
-	}
-}
-
-func TestAuthCodeURLWithOpts_IncludesAudience(t *testing.T) {
-	c := New(Config{
-		AuthURL:      "https://auth.example.com",
-		ClientID:     "cid",
-		ClientSecret: "sec",
-		RedirectURL:  "https://app.example.com/cb",
-	})
-	authURL := c.AuthCodeURLWithOpts("state", "verifier", nil)
-	parsed, err := url.Parse(authURL)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	if got := parsed.Query().Get("audience"); got != "https://auth.example.com" {
-		t.Errorf("audience param = %q, want issuer URL", got)
 	}
 }
 
@@ -313,4 +313,3 @@ func TestHandleCallback_StoresOrgIDFromJWT(t *testing.T) {
 		t.Errorf("session.User.OrgID = %q, want org-42 (from JWT)", sess.User.OrgID)
 	}
 }
-
