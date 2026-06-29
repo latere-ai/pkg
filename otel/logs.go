@@ -10,8 +10,6 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/log/global"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
-	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
 // LogsConfig configures SetupLogs.
@@ -38,14 +36,9 @@ var (
 			otlploghttp.WithInsecure(),
 		)
 	}
-	newLogResource = func(ctx context.Context, name, version string) (*resource.Resource, error) {
-		return resource.New(ctx,
-			resource.WithAttributes(
-				semconv.ServiceName(name),
-				semconv.ServiceVersion(version),
-			),
-		)
-	}
+	// newLogResource shares serviceResource so log records carry the same
+	// service + deployment.environment attributes as traces and metrics.
+	newLogResource = serviceResource
 )
 
 // SetupLogs returns a logger that fans records into a local slog handler

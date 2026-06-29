@@ -47,20 +47,26 @@ func samplerFromEnv() trace.Sampler {
 	return trace.ParentBased(trace.TraceIDRatioBased(ratio))
 }
 
-var (
-	newResource = func(ctx context.Context, name, version string) (*resource.Resource, error) {
-		env := os.Getenv("LATERE_ENV")
-		if env == "" {
-			env = "production"
-		}
-		return resource.New(ctx,
-			resource.WithAttributes(
-				semconv.ServiceName(name),
-				semconv.ServiceVersion(version),
-				attribute.String("deployment.environment", env),
-			),
-		)
+// serviceResource builds the OTel resource shared by every signal (traces,
+// metrics, and logs) so all three carry identical service and environment
+// attributes and correlate per-environment in the backend. The environment
+// comes from LATERE_ENV, defaulting to "production".
+func serviceResource(ctx context.Context, name, version string) (*resource.Resource, error) {
+	env := os.Getenv("LATERE_ENV")
+	if env == "" {
+		env = "production"
 	}
+	return resource.New(ctx,
+		resource.WithAttributes(
+			semconv.ServiceName(name),
+			semconv.ServiceVersion(version),
+			attribute.String("deployment.environment", env),
+		),
+	)
+}
+
+var (
+	newResource      = serviceResource
 	newTraceExporter = func(ctx context.Context) (trace.SpanExporter, error) {
 		return otlptracehttp.New(ctx)
 	}

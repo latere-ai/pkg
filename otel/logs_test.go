@@ -191,6 +191,32 @@ func TestSetupLogs_ResourceError_ShutsDownExporter(t *testing.T) {
 	}
 }
 
+func TestNewLogResource_CarriesEnvironment(t *testing.T) {
+	t.Setenv("LATERE_ENV", "staging")
+	res, err := newLogResource(context.Background(), "svc", "v1")
+	if err != nil {
+		t.Fatalf("newLogResource err = %v", err)
+	}
+	var gotEnv, gotName bool
+	for _, kv := range res.Attributes() {
+		switch string(kv.Key) {
+		case "deployment.environment":
+			gotEnv = true
+			if kv.Value.AsString() != "staging" {
+				t.Errorf("deployment.environment = %q, want staging", kv.Value.AsString())
+			}
+		case "service.name":
+			gotName = true
+		}
+	}
+	if !gotEnv {
+		t.Error("log resource missing deployment.environment (traces/metrics carry it)")
+	}
+	if !gotName {
+		t.Error("log resource missing service.name")
+	}
+}
+
 func TestStripScheme(t *testing.T) {
 	cases := map[string]string{
 		"http://x:1":  "x:1",
