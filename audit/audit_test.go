@@ -366,14 +366,30 @@ func TestRedactJSONTrailingDataFallback(t *testing.T) {
 }
 
 func TestLooksLikeCredentialKeyCases(t *testing.T) {
-	for _, k := range []string{"apiKey", "API_KEY", "token", "TOKEN", "secret", "SECRET", "password", "Passwd", "credential"} {
+	for _, k := range []string{
+		"apiKey", "API_KEY", "token", "TOKEN", "secret", "SECRET", "password", "Passwd", "credential",
+		// Plural field names carry credentials just as often as singular ones.
+		"keys", "api_keys", "tokens", "secrets", "credentials", "passwords",
+	} {
 		if !looksLikeCredentialKey(k) {
 			t.Errorf("%q should match", k)
 		}
 	}
-	for _, k := range []string{"image", "name", "tier", "duration"} {
+	for _, k := range []string{"image", "name", "tier", "duration", "author", "authors"} {
 		if looksLikeCredentialKey(k) {
 			t.Errorf("%q should not match", k)
+		}
+	}
+}
+
+func TestRedactJSONPluralCredentialKeys(t *testing.T) {
+	// Opaque values under plural credential field names must be blanked; only
+	// shape-matching rules protect them otherwise, which an opaque blob evades.
+	in := `{"api_keys":"opaqueblob1","tokens":"opaqueblob2","secrets":"opaqueblob3"}`
+	out := string(RedactJSON([]byte(in)))
+	for _, bad := range []string{"opaqueblob1", "opaqueblob2", "opaqueblob3"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("plural credential value %q leaked: %s", bad, out)
 		}
 	}
 }

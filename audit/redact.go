@@ -15,7 +15,7 @@ import (
 //
 // RedactJSON walks a JSON value and calls Redact on every string leaf, and
 // blanks the value of any field whose key ends in
-// key/secret/token/password/credential.
+// key/secret/token/password/credential (singular or plural).
 func Redact(s string) string {
 	if s == "" {
 		return s
@@ -114,10 +114,13 @@ func walk(v any) any {
 	}
 }
 
-// credentialKeyRe matches JSON keys whose values are credentials. The trailing
-// "$" anchor keeps "authorization"/"auth" scoped to real auth fields (and to
-// "oauth"-style suffixes) without blanking a benign "author" field.
-var credentialKeyRe = regexp.MustCompile(`(?i)(key|secret|token|password|passwd|credential|authorization|auth)$`)
+// credentialKeyRe matches JSON keys whose values are credentials. The optional
+// trailing "s" catches plural field names (keys/tokens/secrets/...), which carry
+// credentials as often as the singular form. The "$" anchor keeps
+// "authorization"/"auth" scoped to real auth fields (and to "oauth"-style
+// suffixes) without blanking a benign "author"/"authors" field (the trailing
+// "or" defeats the anchor).
+var credentialKeyRe = regexp.MustCompile(`(?i)(key|secret|token|password|passwd|credential|authorization|auth)s?$`)
 
 func looksLikeCredentialKey(k string) bool {
 	return credentialKeyRe.MatchString(k)
