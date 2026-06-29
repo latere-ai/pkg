@@ -414,7 +414,8 @@ const minForcedRefreshInterval = 15 * time.Second
 type jwksCache struct {
 	url        string
 	ttl        time.Duration
-	mu         sync.Mutex
+	mu         sync.Mutex // guards cachedAt, lastForced, keys; never held across I/O
+	fetchMu    sync.Mutex // serializes JWKS fetches so only one goroutine hits the network
 	cachedAt   time.Time
 	lastForced time.Time
 	keys       []jwkEntry
@@ -422,8 +423,6 @@ type jwksCache struct {
 
 // getKeys returns the cached JWKS, refetching only when the TTL has elapsed.
 func (c *jwksCache) getKeys() ([]jwkEntry, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	return c.load(false)
 }
 
@@ -432,9 +431,6 @@ func (c *jwksCache) getKeys() ([]jwkEntry, error) {
 // minForcedRefreshInterval) so a freshly rotated signing key is picked up
 // without waiting out the whole CacheTTL.
 func (c *jwksCache) getKeysForKid(kid string) ([]jwkEntry, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	keys, err := c.load(false)
 	if err != nil {
 		return keys, err
@@ -442,10 +438,17 @@ func (c *jwksCache) getKeysForKid(kid string) ([]jwkEntry, error) {
 	if kid == "" || hasKid(keys, kid) {
 		return keys, nil
 	}
+
+	// Claim the forced-refresh window atomically: a flood of unknown-kid tokens
+	// triggers at most one refetch per minForcedRefreshInterval.
+	c.mu.Lock()
 	if timeNow().Sub(c.lastForced) < minForcedRefreshInterval {
+		c.mu.Unlock()
 		return keys, nil
 	}
 	c.lastForced = timeNow()
+	c.mu.Unlock()
+
 	return c.load(true)
 }
 
@@ -458,45 +461,46 @@ func hasKid(keys []jwkEntry, kid string) bool {
 	return false
 }
 
-// load fetches and parses the JWKS. The caller must hold c.mu. When force is
-// false a still-fresh cache is returned without a network call.
+// load returns the cached JWKS, fetching from the network only when the cache
+// is stale (or force is set). The blocking HTTP fetch runs WITHOUT c.mu held —
+// fetchMu serializes fetchers instead — so a concurrent validation whose kid is
+// already cached is served from the fast path rather than blocking behind the
+// round-trip. The stale-on-error fallback is preserved: any fetch/parse failure
+// (or an empty key set) returns the previously cached keys when present.
 func (c *jwksCache) load(force bool) ([]jwkEntry, error) {
-	if !force && timeNow().Sub(c.cachedAt) < c.ttl && len(c.keys) > 0 {
-		return c.keys, nil
+	if keys, ok := c.freshKeys(force); ok {
+		return keys, nil
+	}
+
+	// Only one goroutine fetches at a time; the rest wait here, not on c.mu.
+	c.fetchMu.Lock()
+	defer c.fetchMu.Unlock()
+
+	// A fetch we queued behind may have refreshed the cache while we waited.
+	if keys, ok := c.freshKeys(force); ok {
+		return keys, nil
 	}
 
 	resp, err := httpGet(c.url)
 	if err != nil {
-		if len(c.keys) > 0 {
-			return c.keys, nil
-		}
-		return nil, err
+		return c.cachedOr(err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		if len(c.keys) > 0 {
-			return c.keys, nil
-		}
-		return nil, fmt.Errorf("jwtauth: JWKS status %d", resp.StatusCode)
+		return c.cachedOr(fmt.Errorf("jwtauth: JWKS status %d", resp.StatusCode))
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		if len(c.keys) > 0 {
-			return c.keys, nil
-		}
-		return nil, err
+		return c.cachedOr(err)
 	}
 
 	var jwks struct {
 		Keys []jwkRaw `json:"keys"`
 	}
 	if err := json.Unmarshal(body, &jwks); err != nil {
-		if len(c.keys) > 0 {
-			return c.keys, nil
-		}
-		return nil, err
+		return c.cachedOr(err)
 	}
 
 	var keys []jwkEntry
@@ -513,17 +517,41 @@ func (c *jwksCache) load(force bool) ([]jwkEntry, error) {
 
 	if len(keys) == 0 {
 		// A well-formed 200 that yields no usable RSA keys must not discard a
-		// still-valid cache: keep serving c.keys and leave cachedAt untouched so
-		// the next request retries the fetch (mirrors the error-path fallback).
-		if len(c.keys) > 0 {
-			return c.keys, nil
+		// still-valid cache: keep serving the cache and leave cachedAt untouched
+		// so the next request retries (mirrors the error-path fallback).
+		if cached, _ := c.cachedOr(nil); len(cached) > 0 {
+			return cached, nil
 		}
 		return keys, nil
 	}
 
+	c.mu.Lock()
 	c.keys = keys
 	c.cachedAt = timeNow()
+	c.mu.Unlock()
 	return keys, nil
+}
+
+// freshKeys returns the cached keys when they are still within TTL and force is
+// not set; ok is false when a fetch is required. Held briefly under c.mu.
+func (c *jwksCache) freshKeys(force bool) ([]jwkEntry, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !force && timeNow().Sub(c.cachedAt) < c.ttl && len(c.keys) > 0 {
+		return c.keys, true
+	}
+	return nil, false
+}
+
+// cachedOr returns the cached keys when present (the stale-on-error fallback),
+// otherwise the supplied error. Held briefly under c.mu.
+func (c *jwksCache) cachedOr(err error) ([]jwkEntry, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.keys) > 0 {
+		return c.keys, nil
+	}
+	return nil, err
 }
 
 type jwkRaw struct {

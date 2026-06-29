@@ -565,6 +565,58 @@ func TestJWKSCacheEmptyKeysServesStale(t *testing.T) {
 	}
 }
 
+func TestJWKSCacheCachedReadNotBlockedByInflightFetch(t *testing.T) {
+	// A forced refetch (kid miss) must not stall concurrent validations whose
+	// key is already cached: the blocking JWKS round-trip runs without c.mu
+	// held, so a fresh-cache read returns immediately instead of queuing behind
+	// the network call. With the old single-lock design this read deadlocked
+	// behind the in-flight fetch and timed out.
+	keyA := genKey(t)
+	release := make(chan struct{})
+	var once sync.Once
+	started := make(chan struct{})
+	var mu sync.Mutex
+	reqs := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		reqs++
+		cur := reqs
+		mu.Unlock()
+		if cur >= 2 { // the forced refetch: signal, then block until released
+			once.Do(func() { close(started) })
+			<-release
+		}
+		w.Write(jwksJSON(t, keyA))
+	}))
+	t.Cleanup(srv.Close)
+
+	cache := &jwksCache{url: srv.URL, ttl: time.Hour}
+	if keys, err := cache.getKeys(); err != nil || len(keys) == 0 {
+		t.Fatal("prime fetch should succeed")
+	}
+
+	fetchDone := make(chan struct{})
+	go func() {
+		cache.getKeysForKid("absent-kid") // kid miss -> forced refetch, blocks in handler
+		close(fetchDone)
+	}()
+	<-started // the forced fetch is now blocked mid-round-trip
+
+	read := make(chan struct{})
+	go func() {
+		cache.getKeys() // fresh cache: must return without waiting on the fetch
+		close(read)
+	}()
+	select {
+	case <-read:
+	case <-time.After(2 * time.Second):
+		t.Error("cached read blocked behind in-flight JWKS fetch")
+	}
+
+	close(release)
+	<-fetchDone
+}
+
 func TestJWKSCacheErrorNoStale(t *testing.T) {
 	orig := httpGet
 	httpGet = func(url string) (*http.Response, error) {
