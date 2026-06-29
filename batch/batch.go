@@ -36,6 +36,10 @@ type Config[T any] struct {
 	// Flush hands one batch to the caller. It is never called with an empty
 	// batch. The context is Run's context (already cancelled during the final
 	// drain); the callback decides how to handle that.
+	//
+	// The batch slice is only valid for the duration of the call: Run reuses
+	// its backing array for the next batch. A Flush that retains the slice
+	// beyond the call (e.g. hands it to a goroutine) must copy it first.
 	Flush func(ctx context.Context, batch []T)
 }
 

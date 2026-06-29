@@ -13,11 +13,12 @@ type Emitter interface {
 }
 
 // MultiEmitter fans an event into N emitters. All are always called even when
-// one returns an error; the first error is returned.
+// one returns an error; every error is collected and returned joined via
+// errors.Join (use errors.Is/As to inspect them).
 type MultiEmitter []Emitter
 
-// Emit calls every non-nil child Emit and returns the first error, joined
-// with subsequent ones via errors.Join so callers can recover the full set.
+// Emit calls every non-nil child Emit and returns all of their errors joined
+// via errors.Join so callers can recover the full set with errors.Is/As.
 func (m MultiEmitter) Emit(ctx context.Context, ev Event) error {
 	var errs []error
 	for _, e := range m {
