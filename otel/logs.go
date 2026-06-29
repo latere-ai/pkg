@@ -31,10 +31,16 @@ type LogsConfig struct {
 
 var (
 	newLogExporter = func(ctx context.Context, endpoint string) (sdklog.Exporter, error) {
-		return otlploghttp.New(ctx,
-			otlploghttp.WithEndpoint(endpoint),
-			otlploghttp.WithInsecure(),
-		)
+		opts := []otlploghttp.Option{otlploghttp.WithEndpoint(stripScheme(endpoint))}
+		// Honor the endpoint scheme like the trace/metric exporters instead of
+		// always forcing plaintext: an https:// endpoint keeps TLS. Only an
+		// explicit http:// (or scheme-less) endpoint stays insecure, so this
+		// cannot break a plaintext in-cluster collector while it fixes silent
+		// log loss against a TLS gateway.
+		if useInsecure(endpoint) {
+			opts = append(opts, otlploghttp.WithInsecure())
+		}
+		return otlploghttp.New(ctx, opts...)
 	}
 	// newLogResource shares serviceResource so log records carry the same
 	// service + deployment.environment attributes as traces and metrics.
@@ -73,7 +79,7 @@ func SetupLogs(ctx context.Context, cfg LogsConfig) (*slog.Logger, func(context.
 		return loggerWith(cfg.Stdout, base), noopShutdown, nil
 	}
 
-	exp, err := newLogExporter(ctx, stripScheme(endpoint))
+	exp, err := newLogExporter(ctx, endpoint)
 	if err != nil {
 		return loggerWith(cfg.Stdout, base), noopShutdown, err
 	}
@@ -104,6 +110,14 @@ func loggerWith(h slog.Handler, attrs []slog.Attr) *slog.Logger {
 }
 
 func noopShutdown(context.Context) error { return nil }
+
+// useInsecure reports whether the log exporter should force a plaintext
+// connection to endpoint. Only an explicit https:// endpoint keeps TLS;
+// http:// and scheme-less endpoints stay insecure, preserving the historical
+// plaintext behavior for in-cluster collectors.
+func useInsecure(endpoint string) bool {
+	return !strings.HasPrefix(endpoint, "https://")
+}
 
 // stripScheme drops a leading http:// or https:// from s. The OTLP/HTTP
 // exporter accepts the bare authority (host:port) and rejects the scheme.

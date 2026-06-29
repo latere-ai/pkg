@@ -217,6 +217,20 @@ func TestNewLogResource_CarriesEnvironment(t *testing.T) {
 	}
 }
 
+func TestUseInsecure(t *testing.T) {
+	cases := map[string]bool{
+		"https://gateway.grafana.net/otlp": false, // TLS gateway must keep TLS
+		"http://localhost:4318":            true,  // explicit plaintext
+		"localhost:4318":                   true,  // scheme-less stays plaintext
+		"":                                 true,
+	}
+	for in, want := range cases {
+		if got := useInsecure(in); got != want {
+			t.Errorf("useInsecure(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
 func TestStripScheme(t *testing.T) {
 	cases := map[string]string{
 		"http://x:1":  "x:1",
