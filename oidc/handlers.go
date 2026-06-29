@@ -360,27 +360,8 @@ func (c *Client) UserFromRequest(w http.ResponseWriter, r *http.Request) *User {
 	}
 
 	// If the access token is expired, refresh it or clear the unusable session.
-	if accessTokenExpired(sess, now) {
-		if sess.RefreshToken == "" {
-			c.ClearSession(w)
-			return nil
-		}
-		token, err := c.RefreshToken(r, sess.RefreshToken)
-		if err != nil {
-			slog.Debug("oidc: token refresh failed", "error", err)
-			c.ClearSession(w)
-			return nil
-		}
-		sess.AccessToken = token.AccessToken
-		sess.Expiry = token.Expiry
-		if token.RefreshToken != "" {
-			sess.RefreshToken = token.RefreshToken
-		}
-		// Persist the refreshed session so the next request doesn't
-		// need to refresh again.
-		if err := c.SetSession(w, sess); err != nil {
-			slog.Warn("oidc: failed to persist refreshed session", "error", err)
-		}
+	if !c.refreshExpiredSession(w, r, sess, now) {
+		return nil
 	}
 
 	// Decode sub + email from the JWT — available without a round-trip
@@ -422,6 +403,40 @@ func (c *Client) UserFromRequest(w http.ResponseWriter, r *http.Request) *User {
 			"error", err, "sub", u.Sub)
 	}
 	return u
+}
+
+// refreshExpiredSession refreshes sess's access token when it has expired,
+// mutating sess in place and persisting the new token to the cookie via w. It
+// reports whether the session is still usable: false (after clearing the
+// cookie) when the token is expired and cannot be refreshed — no refresh token,
+// or the refresh call failed — and true otherwise (including when the token was
+// not expired and so left untouched). Shared by UserFromRequest and BuildMe so
+// the two request-entry auth paths cannot drift on refresh/clear/persist.
+func (c *Client) refreshExpiredSession(w http.ResponseWriter, r *http.Request, sess *Session, now time.Time) bool {
+	if !accessTokenExpired(sess, now) {
+		return true
+	}
+	if sess.RefreshToken == "" {
+		c.ClearSession(w)
+		return false
+	}
+	token, err := c.RefreshToken(r, sess.RefreshToken)
+	if err != nil {
+		slog.Debug("oidc: token refresh failed", "error", err)
+		c.ClearSession(w)
+		return false
+	}
+	sess.AccessToken = token.AccessToken
+	sess.Expiry = token.Expiry
+	if token.RefreshToken != "" {
+		sess.RefreshToken = token.RefreshToken
+	}
+	// Persist the refreshed session so the next request doesn't need to refresh
+	// again.
+	if err := c.SetSession(w, sess); err != nil {
+		slog.Warn("oidc: failed to persist refreshed session", "error", err)
+	}
+	return true
 }
 
 // SessionFromRequest decrypts the session cookie and returns the session,

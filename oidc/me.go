@@ -54,28 +54,11 @@ func (c *Client) BuildMe(w http.ResponseWriter, r *http.Request) (*Me, error) {
 	}
 
 	// Refresh once, up front, and reuse the single fresh token below. If the
-	// access token has expired and there is no refresh token, the session can no
-	// longer authenticate downstream calls; clear it instead of returning a
-	// stale JWT-only identity.
-	if accessTokenExpired(sess, now) {
-		if sess.RefreshToken == "" {
-			c.ClearSession(w)
-			return nil, nil
-		}
-		token, rerr := c.RefreshToken(r, sess.RefreshToken)
-		if rerr != nil {
-			slog.Debug("oidc: token refresh failed for /me", "error", rerr)
-			c.ClearSession(w)
-			return nil, nil // had a refresh token but it failed → logged out
-		}
-		sess.AccessToken = token.AccessToken
-		sess.Expiry = token.Expiry
-		if token.RefreshToken != "" {
-			sess.RefreshToken = token.RefreshToken
-		}
-		if serr := c.SetSession(w, sess); serr != nil {
-			slog.Warn("oidc: failed to persist refreshed /me session", "error", serr)
-		}
+	// access token has expired and cannot be refreshed, the session can no
+	// longer authenticate downstream calls; refreshExpiredSession clears it and
+	// reports false instead of returning a stale JWT-only identity.
+	if !c.refreshExpiredSession(w, r, sess, now) {
+		return nil, nil
 	}
 
 	return c.BuildMeFromToken(r.Context(), sess.AccessToken)
