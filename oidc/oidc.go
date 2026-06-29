@@ -306,12 +306,19 @@ func (c *Client) AuthCodeURLWithOpts(state, verifier string, extra url.Values) s
 	if c.cfg.Audience != "" {
 		opts = append(opts, oauth2.SetAuthURLParam("audience", c.cfg.Audience))
 	}
+	opts = append(opts, authURLParams(extra)...)
+	return c.oauthCfg.AuthCodeURL(state, opts...)
+}
+
+// authURLParams converts extra query values into oauth2 auth-URL options. It
+// forwards every present key, including empty-string values: callers rely on
+// passing signals like org_id="" which the auth service interprets as "clear
+// the active org" — silently dropping it would turn the switch-to-personal UX
+// into a no-op. Shared by AuthCodeURLWithOpts and DeviceAuth so the two flows
+// cannot drift on this presence-sensitive handling.
+func authURLParams(extra url.Values) []oauth2.AuthCodeOption {
+	var opts []oauth2.AuthCodeOption
 	for k, vs := range extra {
-		// Forward every key that's present in extra, including
-		// empty-string values. Callers rely on this to pass signals
-		// like org_id="" which the auth service interprets as
-		// "clear the active org" — silently dropping it would
-		// turn the switch-to-personal UX into a no-op.
 		if len(vs) == 0 {
 			opts = append(opts, oauth2.SetAuthURLParam(k, ""))
 			continue
@@ -320,7 +327,7 @@ func (c *Client) AuthCodeURLWithOpts(state, verifier string, extra url.Values) s
 			opts = append(opts, oauth2.SetAuthURLParam(k, v))
 		}
 	}
-	return c.oauthCfg.AuthCodeURL(state, opts...)
+	return opts
 }
 
 // Exchange trades an authorization code for tokens using the PKCE verifier.
@@ -384,17 +391,7 @@ func (c *Client) FetchUserInfoContext(ctx context.Context, accessToken string) (
 // Use this for headless / CLI flows. Browser-based clients should
 // use HandleLogin instead.
 func (c *Client) DeviceAuth(ctx context.Context, extra url.Values) (*oauth2.DeviceAuthResponse, error) {
-	var opts []oauth2.AuthCodeOption
-	for k, vs := range extra {
-		if len(vs) == 0 {
-			opts = append(opts, oauth2.SetAuthURLParam(k, ""))
-			continue
-		}
-		for _, v := range vs {
-			opts = append(opts, oauth2.SetAuthURLParam(k, v))
-		}
-	}
-	return c.oauthCfg.DeviceAuth(ctx, opts...)
+	return c.oauthCfg.DeviceAuth(ctx, authURLParams(extra)...)
 }
 
 // DeviceAccessToken polls the token endpoint with the device-code
