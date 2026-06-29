@@ -91,6 +91,36 @@ func TestNew_AudienceExplicit(t *testing.T) {
 // missing the issued JWT lands with aud:[] (the JWT strategy always
 // materialises the claim from the granted audience set, even when
 // empty), and downstream JWT-protected calls then 401.
+func TestAuthURLParams_PreservesPresentEmptyKeys(t *testing.T) {
+	// A present-but-empty value (org_id="") must round-trip — it is the auth
+	// service's switch-to-personal signal. A key present with a nil value slice
+	// (the defensive len(vs)==0 branch) must also forward as an empty param.
+	c := New(Config{
+		AuthURL:     "https://auth.example.com",
+		ClientID:    "cid",
+		RedirectURL: "https://app.example.com/cb",
+		CookieKey:   "0123456789abcdef0123456789abcdef",
+	})
+	authURL := c.AuthCodeURLWithOpts("state", "verifier", url.Values{
+		"org_id": {""},  // present-but-empty value
+		"empty":  nil,   // present key, no values -> len(vs)==0 branch
+		"scope":  {"a"}, // ordinary value
+	})
+	parsed, err := url.Parse(authURL)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	q := parsed.Query()
+	for _, k := range []string{"org_id", "empty", "scope"} {
+		if !q.Has(k) {
+			t.Errorf("param %q dropped from authorize URL: %s", k, authURL)
+		}
+	}
+	if got := q.Get("scope"); got != "a" {
+		t.Errorf("scope = %q, want a", got)
+	}
+}
+
 func TestAuthCodeURLWithOpts_IncludesAudience(t *testing.T) {
 	c := New(Config{
 		AuthURL:      "https://auth.example.com",
