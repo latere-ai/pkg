@@ -511,11 +511,18 @@ func (c *jwksCache) load(force bool) ([]jwkEntry, error) {
 		keys = append(keys, jwkEntry{kid: k.Kid, pub: pub})
 	}
 
-	if len(keys) > 0 {
-		c.keys = keys
-		c.cachedAt = timeNow()
+	if len(keys) == 0 {
+		// A well-formed 200 that yields no usable RSA keys must not discard a
+		// still-valid cache: keep serving c.keys and leave cachedAt untouched so
+		// the next request retries the fetch (mirrors the error-path fallback).
+		if len(c.keys) > 0 {
+			return c.keys, nil
+		}
+		return keys, nil
 	}
 
+	c.keys = keys
+	c.cachedAt = timeNow()
 	return keys, nil
 }
 

@@ -528,6 +528,43 @@ func TestJWKSCacheStaleOnError(t *testing.T) {
 	}
 }
 
+func TestJWKSCacheEmptyKeysServesStale(t *testing.T) {
+	// A 200 whose key set yields no usable RSA keys after a prior successful
+	// fetch must keep serving the cached key and must not advance cachedAt
+	// (so the next request retries rather than caching the empty result).
+	key := genKey(t)
+	first := true
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if first {
+			first = false
+			w.Write(jwksJSON(t, key))
+			return
+		}
+		w.Write([]byte(`{"keys":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	now := time.Now()
+	orig := timeNow
+	timeNow = func() time.Time { return now }
+	t.Cleanup(func() { timeNow = orig })
+
+	cache := &jwksCache{url: srv.URL, ttl: time.Second}
+	if keys, err := cache.getKeys(); err != nil || len(keys) == 0 {
+		t.Fatal("first fetch should succeed")
+	}
+	cachedAt := cache.cachedAt
+
+	now = now.Add(time.Minute) // expire TTL so the empty response is fetched
+	keys, err := cache.getKeys()
+	if err != nil || len(keys) == 0 {
+		t.Errorf("should serve stale key on empty JWKS, got keys=%d err=%v", len(keys), err)
+	}
+	if cache.cachedAt != cachedAt {
+		t.Errorf("cachedAt advanced on empty JWKS: %v -> %v", cachedAt, cache.cachedAt)
+	}
+}
+
 func TestJWKSCacheErrorNoStale(t *testing.T) {
 	orig := httpGet
 	httpGet = func(url string) (*http.Response, error) {
