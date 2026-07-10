@@ -110,8 +110,8 @@ func TestDecodeRequestSystemBlocksAndCacheControl(t *testing.T) {
 	if !req.Messages[0].Blocks[0].CacheHint {
 		t.Fatal("message cache hint missing")
 	}
-	if want := []string{"system.search_result"}; !reflect.DeepEqual(req.Loss.Fields(), want) {
-		t.Fatalf("loss = %v want %v", req.Loss.Fields(), want)
+	if want := []string{"system.search_result"}; !reflect.DeepEqual(req.Loss.Strings(), want) {
+		t.Fatalf("loss = %v want %v", req.Loss.Strings(), want)
 	}
 }
 
@@ -156,7 +156,7 @@ func TestDecodeRequestThinkingBlocksAndUnknowns(t *testing.T) {
 		t.Fatalf("unknown block should be skipped, got %d blocks", len(blocks))
 	}
 	loss := req.Loss.Fields()
-	for _, want := range []string{"service_tier", "content.server_tool_use", "citations"} {
+	for _, want := range []ir.LossField{"service_tier", "content.server_tool_use", "citations"} {
 		if !contains(loss, want) {
 			t.Fatalf("loss %v missing %q", loss, want)
 		}
@@ -177,7 +177,7 @@ func TestDecodeRequestToolVariants(t *testing.T) {
 		t.Fatalf("tools wrong: %+v", req.Tools)
 	}
 	loss := req.Loss.Fields()
-	for _, want := range []string{"tools.cache_control", "tools.bash_20250124"} {
+	for _, want := range []ir.LossField{"tools.cache_control", "tools.bash_20250124"} {
 		if !contains(loss, want) {
 			t.Fatalf("loss %v missing %q", loss, want)
 		}
@@ -409,7 +409,7 @@ func TestEventEncoderErrors(t *testing.T) {
 	}
 }
 
-func contains(ss []string, want string) bool {
+func contains(ss []ir.LossField, want ir.LossField) bool {
 	for _, s := range ss {
 		if s == want {
 			return true

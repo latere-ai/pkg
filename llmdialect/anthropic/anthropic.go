@@ -17,9 +17,8 @@ import (
 	"latere.ai/x/pkg/llmdialect/ir"
 )
 
-// DialectName identifies this dialect; it matches the spec-18/25
-// descriptor vocabulary.
-const DialectName = "anthropic-messages"
+// DialectName identifies this dialect.
+const DialectName = ir.DialectAnthropicMessages
 
 // Frontend is the caller-side Messages codec.
 type Frontend struct{}
@@ -28,7 +27,7 @@ type Frontend struct{}
 func NewFrontend() *Frontend { return &Frontend{} }
 
 // Name returns the dialect name.
-func (*Frontend) Name() string { return DialectName }
+func (*Frontend) Name() ir.Dialect { return DialectName }
 
 // requestKeys are the top-level Messages request fields the decoder
 // understands. Anything else lands in the loss report.
@@ -48,7 +47,7 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	req := &ir.Request{}
 	for k := range top {
 		if !requestKeys[k] {
-			req.Loss.Add(k)
+			req.Loss.Add(ir.LossRequestFieldOf(k))
 		}
 	}
 
@@ -111,11 +110,11 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	}
 	for _, t := range wire.Tools {
 		if t.Type != "" && t.Type != "custom" {
-			req.Loss.Add("tools." + t.Type)
+			req.Loss.Add(ir.LossToolTypeOf(t.Type))
 			continue
 		}
 		if len(t.CacheControl) > 0 {
-			req.Loss.Add("tools.cache_control")
+			req.Loss.Add(ir.LossToolCacheControl)
 		}
 		req.Tools = append(req.Tools, ir.Tool{
 			Name:        t.Name,
@@ -199,7 +198,7 @@ func decodeSystem(raw json.RawMessage, loss *ir.Loss) ([]ir.Block, error) {
 	var out []ir.Block
 	for _, b := range blocks {
 		if b.Type != "text" {
-			loss.Add("system." + b.Type)
+			loss.Add(ir.LossSystemTypeOf(b.Type))
 			continue
 		}
 		out = append(out, ir.Block{Type: ir.BlockText, Text: b.Text, CacheHint: len(b.CacheControl) > 0})
@@ -251,7 +250,7 @@ func decodeContent(raw json.RawMessage, loss *ir.Loss) ([]ir.Block, error) {
 func decodeBlock(b wireBlock, loss *ir.Loss) (ir.Block, bool, error) {
 	cache := len(b.CacheControl) > 0
 	if len(b.Citations) > 0 && string(b.Citations) != "null" {
-		loss.Add("citations")
+		loss.Add(ir.LossCitations)
 	}
 	switch b.Type {
 	case "text":
@@ -285,7 +284,7 @@ func decodeBlock(b wireBlock, loss *ir.Loss) (ir.Block, bool, error) {
 	case "redacted_thinking":
 		return ir.Block{Type: ir.BlockRedactedThinking, Redacted: b.Data}, true, nil
 	default:
-		loss.Add("content." + b.Type)
+		loss.Add(ir.LossContentTypeOf(b.Type))
 		return ir.Block{}, false, nil
 	}
 }

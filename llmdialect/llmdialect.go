@@ -22,17 +22,21 @@ import (
 	"latere.ai/x/pkg/llmdialect/ir"
 )
 
-// Dialect names, matching the spec-18/25 descriptor vocabulary.
+// Dialect names an LLM inference wire dialect, matching the
+// spec-18/25 descriptor vocabulary.
+type Dialect = ir.Dialect
+
+// Dialects.
 const (
-	DialectAnthropicMessages = "anthropic-messages"
-	DialectOpenAIChat        = "openai-chat"
-	DialectOpenAIResponses   = "openai-responses"
+	DialectAnthropicMessages = ir.DialectAnthropicMessages
+	DialectOpenAIChat        = ir.DialectOpenAIChat
+	DialectOpenAIResponses   = ir.DialectOpenAIResponses
 )
 
 // Frontend is the caller-side codec of a dialect: it decodes what the
 // client sent and encodes what the client gets back.
 type Frontend interface {
-	Name() string
+	Name() Dialect
 	DecodeRequest(body []byte) (*ir.Request, error)
 	EncodeResponse(resp *ir.Response) ([]byte, error)
 	NewEventEncoder(w io.Writer) EventEncoder
@@ -41,7 +45,7 @@ type Frontend interface {
 // Backend is the upstream-side codec of a dialect: it encodes what the
 // model server receives and decodes what it returned.
 type Backend interface {
-	Name() string
+	Name() Dialect
 	EncodeRequest(req *ir.Request) ([]byte, error)
 	DecodeResponse(body []byte) (*ir.Response, error)
 	NewEventDecoder(r io.Reader) EventDecoder

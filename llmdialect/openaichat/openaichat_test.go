@@ -168,7 +168,7 @@ func TestEncodeRequestLossyParams(t *testing.T) {
 	if stop := got["stop"].([]any); len(stop) != 4 {
 		t.Fatalf("stop should truncate to 4, got %v", stop)
 	}
-	for _, want := range []string{"top_k", "stop_sequences"} {
+	for _, want := range []ir.LossField{"top_k", "stop_sequences"} {
 		if !contains(req.Loss.Fields(), want) {
 			t.Fatalf("loss %v missing %q", req.Loss.Fields(), want)
 		}
@@ -258,7 +258,7 @@ func TestEncodeRequestToolResultLosses(t *testing.T) {
 	if tool["content"] != "boom" {
 		t.Fatalf("tool content wrong: %v", tool)
 	}
-	for _, want := range []string{"tool_result.image", "tool_result.is_error"} {
+	for _, want := range []ir.LossField{"tool_result.image", "tool_result.is_error"} {
 		if !contains(req.Loss.Fields(), want) {
 			t.Fatalf("loss %v missing %q", req.Loss.Fields(), want)
 		}
@@ -501,7 +501,7 @@ func TestEventDecoderUsageOnlyStream(t *testing.T) {
 	}
 }
 
-func contains(ss []string, want string) bool {
+func contains(ss []ir.LossField, want ir.LossField) bool {
 	for _, s := range ss {
 		if s == want {
 			return true

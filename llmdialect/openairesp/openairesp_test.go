@@ -90,7 +90,7 @@ func TestDecodeRequestCodexShape(t *testing.T) {
 		t.Fatalf("tool choice wrong: %+v", req.ToolChoice)
 	}
 	loss := req.Loss.Fields()
-	for _, want := range []string{"reasoning", "reasoning.summary", "tools.strict", "tools.web_search"} {
+	for _, want := range []ir.LossField{"reasoning", "reasoning.summary", "tools.strict", "tools.web_search"} {
 		if !contains(loss, want) {
 			t.Fatalf("loss %v missing %q", loss, want)
 		}
@@ -354,7 +354,7 @@ func TestEventEncoderErrors(t *testing.T) {
 	}
 }
 
-func contains(ss []string, want string) bool {
+func contains(ss []ir.LossField, want ir.LossField) bool {
 	for _, s := range ss {
 		if s == want {
 			return true

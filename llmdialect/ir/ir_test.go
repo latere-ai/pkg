@@ -10,11 +10,14 @@ func TestLossAddDedup(t *testing.T) {
 	if got := l.Fields(); got != nil {
 		t.Fatalf("empty loss should have nil fields, got %v", got)
 	}
-	l.Add("top_k")
-	l.Add("cache_control")
-	l.Add("top_k")
-	want := []string{"top_k", "cache_control"}
+	l.Add(LossTopK)
+	l.Add(LossCacheControl)
+	l.Add(LossTopK)
+	want := []LossField{LossTopK, LossCacheControl}
 	if !reflect.DeepEqual(l.Fields(), want) {
 		t.Fatalf("got %v want %v", l.Fields(), want)
+	}
+	if !reflect.DeepEqual(l.Strings(), []string{"top_k", "cache_control"}) {
+		t.Fatalf("strings = %v", l.Strings())
 	}
 }

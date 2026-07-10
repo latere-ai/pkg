@@ -147,7 +147,7 @@ func TestBackendEncodeThinkingBudget(t *testing.T) {
 		t.Fatal("explicit budget must not record an effort loss")
 	}
 	// Effort bands, and is a recorded approximation.
-	for effort, want := range map[string]float64{"low": 2048, "medium": 8192, "high": 16384} {
+	for effort, want := range map[ir.Effort]float64{ir.EffortLow: 2048, ir.EffortMedium: 8192, ir.EffortHigh: 16384} {
 		req := base(&ir.Reasoning{Effort: effort}, 32000)
 		got := encodeBack(t, req, BackendOptions{})
 		if b := got["thinking"].(map[string]any)["budget_tokens"].(float64); b != want {

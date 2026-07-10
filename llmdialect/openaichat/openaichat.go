@@ -20,9 +20,9 @@ import (
 	"latere.ai/x/pkg/llmdialect/ir"
 )
 
-// DialectName identifies this dialect; it matches the spec-18/25
-// descriptor vocabulary ("openai-compat" runtimes speak it).
-const DialectName = "openai-chat"
+// DialectName identifies this dialect ("openai-compat" runtimes
+// speak it).
+const DialectName = ir.DialectOpenAIChat
 
 // maxStopSequences is the Chat Completions `stop` limit.
 const maxStopSequences = 4
@@ -44,7 +44,7 @@ type Backend struct {
 func NewBackend(opts BackendOptions) *Backend { return &Backend{opts: opts} }
 
 // Name returns the dialect name.
-func (*Backend) Name() string { return DialectName }
+func (*Backend) Name() ir.Dialect { return DialectName }
 
 // EncodeRequest renders the IR request as a Chat Completions body.
 // Unrepresentable fields are recorded in req.Loss.
@@ -111,13 +111,13 @@ func (b *Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 		body["top_p"] = *req.TopP
 	}
 	if req.TopK != nil {
-		req.Loss.Add("top_k")
+		req.Loss.Add(ir.LossTopK)
 	}
 	if n := len(req.StopSequences); n > 0 {
 		stop := req.StopSequences
 		if n > maxStopSequences {
 			stop = stop[:maxStopSequences]
-			req.Loss.Add("stop_sequences")
+			req.Loss.Add(ir.LossStopSequences)
 		}
 		body["stop"] = stop
 	}
@@ -146,23 +146,29 @@ func (b *Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 	return json.Marshal(body)
 }
 
+// Effort banding thresholds for Anthropic-style token budgets.
+const (
+	effortLowMaxBudget    = 2048
+	effortMediumMaxBudget = 8192
+)
+
 // reasoningEffort maps an IR reasoning config to the OpenAI effort
-// scale. Anthropic-style token budgets band as: <=2048 low, <=8192
-// medium, above high. The banding is an approximation, so the budget
-// is recorded as a loss.
+// scale. Anthropic-style token budgets band by the thresholds above.
+// The banding is an approximation, so the budget is recorded as a
+// loss.
 func reasoningEffort(req *ir.Request) string {
 	r := req.Reasoning
 	if r.Effort != "" {
-		return r.Effort
+		return string(r.Effort)
 	}
-	req.Loss.Add("thinking.budget_tokens")
+	req.Loss.Add(ir.LossThinkingBudget)
 	switch {
-	case r.BudgetTokens <= 2048:
-		return "low"
-	case r.BudgetTokens <= 8192:
-		return "medium"
+	case r.BudgetTokens <= effortLowMaxBudget:
+		return string(ir.EffortLow)
+	case r.BudgetTokens <= effortMediumMaxBudget:
+		return string(ir.EffortMedium)
 	default:
-		return "high"
+		return string(ir.EffortHigh)
 	}
 }
 
@@ -171,7 +177,7 @@ func encodeSystem(req *ir.Request) map[string]any {
 	var parts []string
 	for _, blk := range req.System {
 		if blk.CacheHint {
-			req.Loss.Add("cache_control")
+			req.Loss.Add(ir.LossCacheControl)
 		}
 		if blk.Type == ir.BlockText {
 			parts = append(parts, blk.Text)
@@ -195,7 +201,7 @@ func encodeMessage(m ir.Message, req *ir.Request) ([]map[string]any, error) {
 		textOnly := true
 		for _, blk := range m.Blocks {
 			if blk.CacheHint {
-				req.Loss.Add("cache_control")
+				req.Loss.Add(ir.LossCacheControl)
 			}
 			switch blk.Type {
 			case ir.BlockToolResult:
@@ -241,7 +247,7 @@ func encodeMessage(m ir.Message, req *ir.Request) ([]map[string]any, error) {
 			case ir.BlockThinking, ir.BlockRedactedThinking:
 				// Never replayed toward a non-Anthropic backend
 				// (signatures cannot be preserved).
-				req.Loss.Add("thinking")
+				req.Loss.Add(ir.LossThinking)
 			default:
 				return nil, fmt.Errorf("block type %q not allowed in an assistant message", blk.Type)
 			}
@@ -271,13 +277,13 @@ func encodeToolResult(blk ir.Block, req *ir.Request) map[string]any {
 			texts = append(texts, inner.Text)
 		case ir.BlockImage:
 			// The tool role only carries text in this dialect.
-			req.Loss.Add("tool_result.image")
+			req.Loss.Add(ir.LossToolResultImage)
 		}
 	}
 	if tr.IsError {
 		// No error flag exists on tool messages; the text itself must
 		// convey the failure (harnesses already phrase it that way).
-		req.Loss.Add("tool_result.is_error")
+		req.Loss.Add(ir.LossToolResultIsError)
 	}
 	return map[string]any{
 		"role":         "tool",

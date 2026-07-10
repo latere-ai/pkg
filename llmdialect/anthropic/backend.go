@@ -35,7 +35,7 @@ func NewBackend(opts BackendOptions) *Backend {
 }
 
 // Name returns the dialect name.
-func (*Backend) Name() string { return DialectName }
+func (*Backend) Name() ir.Dialect { return DialectName }
 
 // minThinkingBudget is the Messages API's floor for
 // thinking.budget_tokens.
@@ -119,7 +119,7 @@ func (b *Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 		if t > 1 {
 			// OpenAI's scale runs to 2; Anthropic's caps at 1.
 			t = 1
-			req.Loss.Add("temperature")
+			req.Loss.Add(ir.LossTemperature)
 		}
 		body["temperature"] = t
 	}
@@ -150,22 +150,29 @@ func (b *Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 	return json.Marshal(body)
 }
 
+// Effort→budget banding (the inverse of openaichat's banding).
+const (
+	budgetForEffortLow    = 2048
+	budgetForEffortMedium = 8192
+	budgetForEffortHigh   = 16384
+)
+
 // thinkingBudget maps an IR reasoning config to a Messages thinking
 // budget: an explicit budget passes through, an OpenAI-style effort
-// bands to 2048/8192/16384 (recorded as a loss because it is an
+// bands by the constants above (recorded as a loss because it is an
 // approximation). The API requires 1024 <= budget < max_tokens, so
 // the result clamps into that window.
 func thinkingBudget(req *ir.Request, maxTokens int64) int64 {
 	budget := req.Reasoning.BudgetTokens
 	if budget == 0 {
-		req.Loss.Add("reasoning_effort")
+		req.Loss.Add(ir.LossReasoningEffort)
 		switch req.Reasoning.Effort {
-		case "minimal", "low":
-			budget = 2048
-		case "medium":
-			budget = 8192
+		case ir.EffortMinimal, ir.EffortLow:
+			budget = budgetForEffortLow
+		case ir.EffortMedium:
+			budget = budgetForEffortMedium
 		default:
-			budget = 16384
+			budget = budgetForEffortHigh
 		}
 	}
 	if budget < minThinkingBudget {
@@ -235,7 +242,7 @@ func encodeBackendBlock(blk ir.Block, role ir.Role, req *ir.Request) (map[string
 		// Only provider-signed thinking survives a replay; synthesized
 		// blocks (no signature) cannot be sent to the Messages API.
 		if blk.Signature == "" {
-			req.Loss.Add("thinking")
+			req.Loss.Add(ir.LossThinking)
 			return nil, false, nil
 		}
 		return map[string]any{"type": "thinking", "thinking": blk.Text, "signature": blk.Signature}, true, nil

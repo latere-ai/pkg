@@ -21,7 +21,7 @@ type Frontend struct{}
 func NewFrontend() *Frontend { return &Frontend{} }
 
 // Name returns the dialect name.
-func (*Frontend) Name() string { return DialectName }
+func (*Frontend) Name() ir.Dialect { return DialectName }
 
 // requestKeys are the top-level request fields the decoder
 // understands. Anything else lands in the loss report.
@@ -42,7 +42,7 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	req := &ir.Request{}
 	for k := range top {
 		if !requestKeys[k] {
-			req.Loss.Add(k)
+			req.Loss.Add(ir.LossRequestFieldOf(k))
 		}
 	}
 
@@ -105,11 +105,11 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	}
 	for _, t := range wire.Tools {
 		if t.Type != "" && t.Type != "function" {
-			req.Loss.Add("tools." + t.Type)
+			req.Loss.Add(ir.LossToolTypeOf(t.Type))
 			continue
 		}
 		if t.Function.Strict {
-			req.Loss.Add("tools.strict")
+			req.Loss.Add(ir.LossToolStrict)
 		}
 		req.Tools = append(req.Tools, ir.Tool{
 			Name:        t.Function.Name,
@@ -131,7 +131,7 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 		req.ToolChoice.DisableParallel = true
 	}
 	if wire.ReasoningEffort != "" {
-		req.Reasoning = &ir.Reasoning{Effort: wire.ReasoningEffort}
+		req.Reasoning = &ir.Reasoning{Effort: ir.Effort(wire.ReasoningEffort)}
 	}
 	if wire.ResponseFormat != nil {
 		switch wire.ResponseFormat.Type {
@@ -144,7 +144,7 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 			req.Schema = &ir.ResponseSchema{Name: js.Name, Description: js.Description, Schema: js.Schema, Strict: js.Strict}
 		default:
 			// json_object has no cross-dialect equivalent.
-			req.Loss.Add("response_format." + wire.ResponseFormat.Type)
+			req.Loss.Add(ir.LossResponseFormatOf(wire.ResponseFormat.Type))
 		}
 	}
 	return req, nil
@@ -296,7 +296,7 @@ func decodeFrontUserContent(raw json.RawMessage, loss *ir.Loss) ([]ir.Block, err
 			}
 			out = append(out, ir.Block{Type: ir.BlockImage, Image: img})
 		default:
-			loss.Add("content." + p.Type)
+			loss.Add(ir.LossContentTypeOf(p.Type))
 		}
 	}
 	return out, nil

@@ -38,7 +38,7 @@ func TestFrontendDecodeToolVariantsAndParallel(t *testing.T) {
 	if req.ToolChoice.Mode != ir.ToolChoiceAny || !req.ToolChoice.DisableParallel {
 		t.Fatalf("tool choice wrong: %+v", req.ToolChoice)
 	}
-	for _, want := range []string{"tools.web_search", "tools.strict"} {
+	for _, want := range []ir.LossField{"tools.web_search", "tools.strict"} {
 		if !contains(req.Loss.Fields(), want) {
 			t.Fatalf("loss %v missing %q", req.Loss.Fields(), want)
 		}

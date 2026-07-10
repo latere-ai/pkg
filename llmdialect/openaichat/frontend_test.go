@@ -111,7 +111,7 @@ func TestFrontendDecodeRequestImagesAndSchema(t *testing.T) {
 		t.Fatalf("schema wrong: %+v", req.Schema)
 	}
 	loss := req.Loss.Fields()
-	for _, want := range []string{"seed", "content.input_audio"} {
+	for _, want := range []ir.LossField{"seed", "content.input_audio"} {
 		if !contains(loss, want) {
 			t.Fatalf("loss %v missing %q", loss, want)
 		}

@@ -51,8 +51,8 @@ func TestRequestAnthropicToOpenAI(t *testing.T) {
 	if !req.Stream || req.Model != "qwen3-32b" {
 		t.Fatalf("decoded shape wrong: %+v", req)
 	}
-	if want := []string{"cache_control"}; !reflect.DeepEqual(req.Loss.Fields(), want) {
-		t.Fatalf("loss = %v want %v", req.Loss.Fields(), want)
+	if want := []string{"cache_control"}; !reflect.DeepEqual(req.Loss.Strings(), want) {
+		t.Fatalf("loss = %v want %v", req.Loss.Strings(), want)
 	}
 
 	var got map[string]any

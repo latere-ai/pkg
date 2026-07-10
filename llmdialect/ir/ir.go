@@ -13,6 +13,17 @@ package ir
 
 import "encoding/json"
 
+// Dialect names an LLM inference wire dialect. Every codec package
+// exports its own DialectName typed as this.
+type Dialect string
+
+// Dialects.
+const (
+	DialectAnthropicMessages Dialect = "anthropic-messages"
+	DialectOpenAIChat        Dialect = "openai-chat"
+	DialectOpenAIResponses   Dialect = "openai-responses"
+)
+
 // Role is a conversation turn author. The IR keeps the Anthropic
 // two-role model; system content lives on Request.System and
 // tool results are blocks inside a user message.
@@ -115,12 +126,25 @@ type ToolChoice struct {
 	DisableParallel bool
 }
 
+// Effort is the OpenAI-style reasoning effort scale. It is an open
+// enum: decoders pass unknown wire values through unchanged so a new
+// upstream tier does not break translation.
+type Effort string
+
+// Efforts.
+const (
+	EffortMinimal Effort = "minimal"
+	EffortLow     Effort = "low"
+	EffortMedium  Effort = "medium"
+	EffortHigh    Effort = "high"
+)
+
 // Reasoning configures extended thinking. Exactly one of Effort
-// (OpenAI style: minimal/low/medium/high) or BudgetTokens (Anthropic
-// style) is set by a decoder; encoders map between them by the banding
-// documented in the codec packages.
+// (OpenAI style) or BudgetTokens (Anthropic style) is set by a
+// decoder; encoders map between them by the banding documented in the
+// codec packages.
 type Reasoning struct {
-	Effort       string
+	Effort       Effort
 	BudgetTokens int64
 }
 
@@ -150,17 +174,66 @@ type Request struct {
 	UserID        string // caller-supplied end-user identifier
 
 	// Loss accumulates fields dropped or approximated during decode
-	// and encode, as dialect-qualified names (e.g. "cache_control").
+	// and encode.
 	Loss Loss
 }
 
-// Loss is an ordered, deduplicated list of lost field names.
+// LossField names one dropped or approximated field in a loss report.
+// The static vocabulary is enumerated below; structurally dynamic
+// entries (an unknown tool type, an unrecognized content block) are
+// built with the Loss*Of constructors so their shape stays uniform.
+type LossField string
+
+// Static loss fields.
+const (
+	LossCacheControl      LossField = "cache_control"
+	LossCitations         LossField = "citations"
+	LossInclude           LossField = "include"
+	LossReasoningEffort   LossField = "reasoning_effort"
+	LossReasoningItems    LossField = "reasoning"
+	LossReasoningSummary  LossField = "reasoning.summary"
+	LossStopSequences     LossField = "stop_sequences"
+	LossTemperature       LossField = "temperature"
+	LossTextVerbosity     LossField = "text.verbosity"
+	LossThinking          LossField = "thinking"
+	LossThinkingBudget    LossField = "thinking.budget_tokens"
+	LossToolCacheControl  LossField = "tools.cache_control"
+	LossToolResultImage   LossField = "tool_result.image"
+	LossToolResultIsError LossField = "tool_result.is_error"
+	LossToolStrict        LossField = "tools.strict"
+	LossTopK              LossField = "top_k"
+)
+
+// Dynamic loss-field constructors.
+
+// LossRequestFieldOf marks an unrecognized top-level request field.
+func LossRequestFieldOf(name string) LossField { return LossField(name) }
+
+// LossToolTypeOf marks an unsupported tool type.
+func LossToolTypeOf(t string) LossField { return LossField("tools." + t) }
+
+// LossContentTypeOf marks an unsupported content block/part type.
+func LossContentTypeOf(t string) LossField { return LossField("content." + t) }
+
+// LossSystemTypeOf marks an unsupported system block type.
+func LossSystemTypeOf(t string) LossField { return LossField("system." + t) }
+
+// LossInputTypeOf marks an unsupported Responses input item type.
+func LossInputTypeOf(t string) LossField { return LossField("input." + t) }
+
+// LossTextFormatOf marks an unsupported Responses text.format type.
+func LossTextFormatOf(t string) LossField { return LossField("text.format." + t) }
+
+// LossResponseFormatOf marks an unsupported response_format type.
+func LossResponseFormatOf(t string) LossField { return LossField("response_format." + t) }
+
+// Loss is an ordered, deduplicated list of lost fields.
 type Loss struct {
-	fields []string
+	fields []LossField
 }
 
 // Add records a lost field once.
-func (l *Loss) Add(field string) {
+func (l *Loss) Add(field LossField) {
 	for _, f := range l.fields {
 		if f == field {
 			return
@@ -170,7 +243,20 @@ func (l *Loss) Add(field string) {
 }
 
 // Fields returns the recorded losses in insertion order.
-func (l *Loss) Fields() []string { return l.fields }
+func (l *Loss) Fields() []LossField { return l.fields }
+
+// Strings returns the recorded losses as plain strings, for callers
+// that serialize the report (headers, metrics).
+func (l *Loss) Strings() []string {
+	if len(l.fields) == 0 {
+		return nil
+	}
+	out := make([]string, len(l.fields))
+	for i, f := range l.fields {
+		out[i] = string(f)
+	}
+	return out
+}
 
 // StopReason says why generation ended, in Anthropic vocabulary (the
 // richer of the two); codecs map to dialect-native values.

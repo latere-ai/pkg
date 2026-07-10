@@ -23,9 +23,8 @@ import (
 	"latere.ai/x/pkg/llmdialect/ir"
 )
 
-// DialectName identifies this dialect; it matches the spec-25
-// descriptor vocabulary.
-const DialectName = "openai-responses"
+// DialectName identifies this dialect.
+const DialectName = ir.DialectOpenAIResponses
 
 // Frontend is the caller-side Responses codec.
 type Frontend struct{}
@@ -34,7 +33,7 @@ type Frontend struct{}
 func NewFrontend() *Frontend { return &Frontend{} }
 
 // Name returns the dialect name.
-func (*Frontend) Name() string { return DialectName }
+func (*Frontend) Name() ir.Dialect { return DialectName }
 
 // requestKeys are the top-level Responses request fields the decoder
 // understands. Anything else lands in the loss report.
@@ -56,7 +55,7 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	req := &ir.Request{}
 	for k := range top {
 		if !requestKeys[k] {
-			req.Loss.Add(k)
+			req.Loss.Add(ir.LossRequestFieldOf(k))
 		}
 	}
 
@@ -103,7 +102,7 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 		return nil, fmt.Errorf("openairesp: store:true is not supported on this surface (stateless only)")
 	}
 	if len(wire.Include) > 0 {
-		req.Loss.Add("include")
+		req.Loss.Add(ir.LossInclude)
 	}
 
 	req.Model = wire.Model
@@ -123,11 +122,11 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	}
 	for _, t := range wire.Tools {
 		if t.Type != "" && t.Type != "function" {
-			req.Loss.Add("tools." + t.Type)
+			req.Loss.Add(ir.LossToolTypeOf(t.Type))
 			continue
 		}
 		if t.Strict {
-			req.Loss.Add("tools.strict")
+			req.Loss.Add(ir.LossToolStrict)
 		}
 		req.Tools = append(req.Tools, ir.Tool{Name: t.Name, Description: t.Description, InputSchema: t.Parameters})
 	}
@@ -146,15 +145,15 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	}
 	if wire.Reasoning != nil {
 		if wire.Reasoning.Effort != "" {
-			req.Reasoning = &ir.Reasoning{Effort: wire.Reasoning.Effort}
+			req.Reasoning = &ir.Reasoning{Effort: ir.Effort(wire.Reasoning.Effort)}
 		}
 		if len(wire.Reasoning.Summary) > 0 {
-			req.Loss.Add("reasoning.summary")
+			req.Loss.Add(ir.LossReasoningSummary)
 		}
 	}
 	if wire.Text != nil {
 		if wire.Text.Verbosity != "" {
-			req.Loss.Add("text.verbosity")
+			req.Loss.Add(ir.LossTextVerbosity)
 		}
 		if f := wire.Text.Format; f != nil {
 			switch f.Type {
@@ -162,7 +161,7 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 			case "json_schema":
 				req.Schema = &ir.ResponseSchema{Name: f.Name, Description: f.Description, Schema: f.Schema, Strict: f.Strict}
 			default:
-				req.Loss.Add("text.format." + f.Type)
+				req.Loss.Add(ir.LossTextFormatOf(f.Type))
 			}
 		}
 	}
@@ -245,9 +244,9 @@ func decodeInput(req *ir.Request, raw json.RawMessage) error {
 			}})
 		case "reasoning":
 			// Provider-encrypted; cannot be replayed across providers.
-			req.Loss.Add("reasoning")
+			req.Loss.Add(ir.LossReasoningItems)
 		default:
-			req.Loss.Add("input." + item.Type)
+			req.Loss.Add(ir.LossInputTypeOf(item.Type))
 		}
 	}
 	flush()
@@ -302,7 +301,7 @@ func decodeItemContent(raw json.RawMessage, req *ir.Request) ([]ir.Block, error)
 			}
 			out = append(out, ir.Block{Type: ir.BlockImage, Image: img})
 		default:
-			req.Loss.Add("content." + p.Type)
+			req.Loss.Add(ir.LossContentTypeOf(p.Type))
 		}
 	}
 	return out, nil
