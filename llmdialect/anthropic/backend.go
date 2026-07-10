@@ -1,0 +1,470 @@
+package anthropic
+
+// Backend (upstream-side) codec: encodes an IR request as a Messages
+// API body, decodes Messages responses, and decodes the Messages SSE
+// event stream into canonical IR events — so callers speaking another
+// dialect can drive a native Anthropic model.
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+
+	"latere.ai/x/pkg/llmdialect/internal/sse"
+	"latere.ai/x/pkg/llmdialect/ir"
+)
+
+// BackendOptions tune encoding for the Messages API's requirements.
+type BackendOptions struct {
+	// DefaultMaxTokens is injected when the caller omitted max_tokens
+	// (required by the Messages API). Zero means 4096.
+	DefaultMaxTokens int64
+}
+
+// Backend is the upstream-side Messages codec.
+type Backend struct {
+	opts BackendOptions
+}
+
+// NewBackend returns a Messages backend codec.
+func NewBackend(opts BackendOptions) *Backend {
+	if opts.DefaultMaxTokens <= 0 {
+		opts.DefaultMaxTokens = 4096
+	}
+	return &Backend{opts: opts}
+}
+
+// Name returns the dialect name.
+func (*Backend) Name() string { return DialectName }
+
+// minThinkingBudget is the Messages API's floor for
+// thinking.budget_tokens.
+const minThinkingBudget = 1024
+
+// EncodeRequest renders the IR request as a Messages API body.
+// Unrepresentable fields are recorded in req.Loss.
+func (b *Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
+	maxTokens := b.opts.DefaultMaxTokens
+	if req.MaxTokens != nil {
+		maxTokens = *req.MaxTokens
+	}
+	body := map[string]any{
+		"model":      req.Model,
+		"max_tokens": maxTokens,
+	}
+
+	if len(req.System) > 0 {
+		system := make([]map[string]any, 0, len(req.System))
+		for _, blk := range req.System {
+			if blk.Type != ir.BlockText {
+				continue
+			}
+			s := map[string]any{"type": "text", "text": blk.Text}
+			if blk.CacheHint {
+				s["cache_control"] = map[string]any{"type": "ephemeral"}
+			}
+			system = append(system, s)
+		}
+		body["system"] = system
+	}
+
+	messages := make([]map[string]any, 0, len(req.Messages))
+	for i, m := range req.Messages {
+		enc, err := encodeBackendMessage(m, req)
+		if err != nil {
+			return nil, fmt.Errorf("anthropic: messages[%d]: %w", i, err)
+		}
+		messages = append(messages, enc)
+	}
+	body["messages"] = messages
+
+	if len(req.Tools) > 0 {
+		tools := make([]map[string]any, 0, len(req.Tools))
+		for _, t := range req.Tools {
+			schema := t.InputSchema
+			if len(schema) == 0 {
+				schema = json.RawMessage(`{"type":"object"}`)
+			}
+			tool := map[string]any{"name": t.Name, "input_schema": schema}
+			if t.Description != "" {
+				tool["description"] = t.Description
+			}
+			tools = append(tools, tool)
+		}
+		body["tools"] = tools
+	}
+	if req.ToolChoice != nil {
+		tc := map[string]any{}
+		switch req.ToolChoice.Mode {
+		case ir.ToolChoiceAuto:
+			tc["type"] = "auto"
+		case ir.ToolChoiceAny:
+			tc["type"] = "any"
+		case ir.ToolChoiceNone:
+			tc["type"] = "none"
+		case ir.ToolChoiceTool:
+			tc["type"] = "tool"
+			tc["name"] = req.ToolChoice.Name
+		default:
+			return nil, fmt.Errorf("anthropic: unknown tool choice mode %q", req.ToolChoice.Mode)
+		}
+		if req.ToolChoice.DisableParallel {
+			tc["disable_parallel_tool_use"] = true
+		}
+		body["tool_choice"] = tc
+	}
+
+	if req.Temperature != nil {
+		t := *req.Temperature
+		if t > 1 {
+			// OpenAI's scale runs to 2; Anthropic's caps at 1.
+			t = 1
+			req.Loss.Add("temperature")
+		}
+		body["temperature"] = t
+	}
+	if req.TopP != nil {
+		body["top_p"] = *req.TopP
+	}
+	if req.TopK != nil {
+		body["top_k"] = *req.TopK
+	}
+	if len(req.StopSequences) > 0 {
+		body["stop_sequences"] = req.StopSequences
+	}
+	if req.Reasoning != nil {
+		body["thinking"] = map[string]any{
+			"type":          "enabled",
+			"budget_tokens": thinkingBudget(req, maxTokens),
+		}
+	}
+	if req.Schema != nil {
+		body["output_format"] = map[string]any{"type": "json_schema", "schema": req.Schema.Schema}
+	}
+	if req.UserID != "" {
+		body["metadata"] = map[string]any{"user_id": req.UserID}
+	}
+	if req.Stream {
+		body["stream"] = true
+	}
+	return json.Marshal(body)
+}
+
+// thinkingBudget maps an IR reasoning config to a Messages thinking
+// budget: an explicit budget passes through, an OpenAI-style effort
+// bands to 2048/8192/16384 (recorded as a loss because it is an
+// approximation). The API requires 1024 <= budget < max_tokens, so
+// the result clamps into that window.
+func thinkingBudget(req *ir.Request, maxTokens int64) int64 {
+	budget := req.Reasoning.BudgetTokens
+	if budget == 0 {
+		req.Loss.Add("reasoning_effort")
+		switch req.Reasoning.Effort {
+		case "minimal", "low":
+			budget = 2048
+		case "medium":
+			budget = 8192
+		default:
+			budget = 16384
+		}
+	}
+	if budget < minThinkingBudget {
+		budget = minThinkingBudget
+	}
+	if budget >= maxTokens {
+		budget = maxTokens - 1
+	}
+	return budget
+}
+
+func encodeBackendMessage(m ir.Message, req *ir.Request) (map[string]any, error) {
+	content := make([]map[string]any, 0, len(m.Blocks))
+	for _, blk := range m.Blocks {
+		enc, ok, err := encodeBackendBlock(blk, m.Role, req)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			content = append(content, enc)
+		}
+	}
+	role := "user"
+	if m.Role == ir.RoleAssistant {
+		role = "assistant"
+	}
+	return map[string]any{"role": role, "content": content}, nil
+}
+
+func encodeBackendBlock(blk ir.Block, role ir.Role, req *ir.Request) (map[string]any, bool, error) {
+	withCache := func(m map[string]any) map[string]any {
+		if blk.CacheHint {
+			m["cache_control"] = map[string]any{"type": "ephemeral"}
+		}
+		return m
+	}
+	switch blk.Type {
+	case ir.BlockText:
+		return withCache(map[string]any{"type": "text", "text": blk.Text}), true, nil
+	case ir.BlockImage:
+		return withCache(map[string]any{"type": "image", "source": encodeImageSource(blk.Image)}), true, nil
+	case ir.BlockToolUse:
+		args := json.RawMessage(blk.ToolUse.Args)
+		if len(args) == 0 {
+			args = json.RawMessage("{}")
+		}
+		return map[string]any{"type": "tool_use", "id": blk.ToolUse.ID, "name": blk.ToolUse.Name, "input": args}, true, nil
+	case ir.BlockToolResult:
+		if role != ir.RoleUser {
+			return nil, false, fmt.Errorf("tool_result outside a user turn")
+		}
+		inner := make([]map[string]any, 0, len(blk.ToolResult.Blocks))
+		for _, ib := range blk.ToolResult.Blocks {
+			switch ib.Type {
+			case ir.BlockText:
+				inner = append(inner, map[string]any{"type": "text", "text": ib.Text})
+			case ir.BlockImage:
+				inner = append(inner, map[string]any{"type": "image", "source": encodeImageSource(ib.Image)})
+			}
+		}
+		out := map[string]any{"type": "tool_result", "tool_use_id": blk.ToolResult.ToolUseID, "content": inner}
+		if blk.ToolResult.IsError {
+			out["is_error"] = true
+		}
+		return out, true, nil
+	case ir.BlockThinking:
+		// Only provider-signed thinking survives a replay; synthesized
+		// blocks (no signature) cannot be sent to the Messages API.
+		if blk.Signature == "" {
+			req.Loss.Add("thinking")
+			return nil, false, nil
+		}
+		return map[string]any{"type": "thinking", "thinking": blk.Text, "signature": blk.Signature}, true, nil
+	case ir.BlockRedactedThinking:
+		return map[string]any{"type": "redacted_thinking", "data": blk.Redacted}, true, nil
+	default:
+		return nil, false, fmt.Errorf("block type %q not representable", blk.Type)
+	}
+}
+
+func encodeImageSource(img *ir.Image) map[string]any {
+	if img.URL != "" {
+		return map[string]any{"type": "url", "url": img.URL}
+	}
+	return map[string]any{"type": "base64", "media_type": img.MediaType, "data": img.Data}
+}
+
+// backendUsage is the Messages usage object.
+type backendUsage struct {
+	InputTokens              int64 `json:"input_tokens"`
+	OutputTokens             int64 `json:"output_tokens"`
+	CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+}
+
+func (u *backendUsage) toUsage() ir.Usage {
+	return ir.Usage{
+		InputTokens:           u.InputTokens,
+		OutputTokens:          u.OutputTokens,
+		CacheReadInputTokens:  u.CacheReadInputTokens,
+		CacheWriteInputTokens: u.CacheCreationInputTokens,
+	}
+}
+
+// DecodeResponse parses a non-streaming Messages response into the IR.
+func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
+	var wire struct {
+		Type    string       `json:"type"`
+		ID      string       `json:"id"`
+		Model   string       `json:"model"`
+		Content []wireBlock  `json:"content"`
+		Stop    *string      `json:"stop_reason"`
+		StopSeq *string      `json:"stop_sequence"`
+		Usage   backendUsage `json:"usage"`
+		Error   *struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &wire); err != nil {
+		return nil, fmt.Errorf("anthropic: invalid response JSON: %w", err)
+	}
+	if wire.Error != nil {
+		return nil, fmt.Errorf("anthropic: upstream error (%s): %s", wire.Error.Type, wire.Error.Message)
+	}
+	resp := &ir.Response{ID: wire.ID, Model: wire.Model, Usage: wire.Usage.toUsage()}
+	var loss ir.Loss // response-side unknown block types are skipped
+	for _, wb := range wire.Content {
+		blk, ok, err := decodeBlock(wb, &loss)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			resp.Blocks = append(resp.Blocks, blk)
+		}
+	}
+	if wire.Stop != nil {
+		resp.StopReason = ir.StopReason(*wire.Stop)
+	}
+	if wire.StopSeq != nil {
+		resp.StopSequence = *wire.StopSeq
+	}
+	return resp, nil
+}
+
+// NewEventDecoder returns a decoder for a Messages SSE stream.
+func (*Backend) NewEventDecoder(r io.Reader) ir.EventDecoder {
+	return &backendEventDecoder{r: sse.NewReader(r)}
+}
+
+// backendEventDecoder converts Messages SSE events into canonical IR
+// events. The mapping is nearly 1:1; input-side usage from
+// message_start merges into the final MessageDelta usage.
+type backendEventDecoder struct {
+	r        *sse.Reader
+	pending  []ir.Event
+	finished bool
+	usage    ir.Usage
+	stop     ir.StopReason
+	stopSeq  string
+}
+
+// Next returns the next IR event, or io.EOF after MessageStop.
+func (d *backendEventDecoder) Next() (ir.Event, error) {
+	for {
+		if len(d.pending) > 0 {
+			ev := d.pending[0]
+			d.pending = d.pending[1:]
+			return ev, nil
+		}
+		if d.finished {
+			return ir.Event{}, io.EOF
+		}
+		frame, err := d.r.Next()
+		if err == io.EOF {
+			// Upstream closed early; still emit a well-formed tail.
+			d.finish()
+			continue
+		}
+		if err != nil {
+			return ir.Event{}, err
+		}
+		if err := d.consume(frame.Data); err != nil {
+			return ir.Event{}, err
+		}
+	}
+}
+
+func (d *backendEventDecoder) finish() {
+	usage := d.usage
+	d.pending = append(d.pending,
+		ir.Event{Type: ir.EventMessageDelta, StopReason: d.stopOrDefault(), StopSequence: d.stopSeq, Usage: &usage},
+		ir.Event{Type: ir.EventMessageStop},
+	)
+	d.finished = true
+}
+
+func (d *backendEventDecoder) stopOrDefault() ir.StopReason {
+	if d.stop == "" {
+		return ir.StopEndTurn
+	}
+	return d.stop
+}
+
+func (d *backendEventDecoder) consume(data []byte) error {
+	var frame struct {
+		Type    string `json:"type"`
+		Index   int    `json:"index"`
+		Message *struct {
+			ID    string       `json:"id"`
+			Model string       `json:"model"`
+			Usage backendUsage `json:"usage"`
+		} `json:"message"`
+		ContentBlock *wireBlock `json:"content_block"`
+		Delta        *struct {
+			Type        string  `json:"type"`
+			Text        string  `json:"text"`
+			PartialJSON string  `json:"partial_json"`
+			Thinking    string  `json:"thinking"`
+			Signature   string  `json:"signature"`
+			StopReason  *string `json:"stop_reason"`
+			StopSeq     *string `json:"stop_sequence"`
+		} `json:"delta"`
+		Usage *backendUsage `json:"usage"`
+		Error *struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(data, &frame); err != nil {
+		return fmt.Errorf("anthropic: invalid stream event: %w", err)
+	}
+	switch frame.Type {
+	case "message_start":
+		if frame.Message == nil {
+			return fmt.Errorf("anthropic: message_start missing message")
+		}
+		d.usage = frame.Message.Usage.toUsage()
+		usage := d.usage
+		d.pending = append(d.pending, ir.Event{
+			Type: ir.EventMessageStart, ID: frame.Message.ID, Model: frame.Message.Model, Usage: &usage,
+		})
+	case "content_block_start":
+		if frame.ContentBlock == nil {
+			return fmt.Errorf("anthropic: content_block_start missing content_block")
+		}
+		var loss ir.Loss
+		blk, ok, err := decodeBlock(*frame.ContentBlock, &loss)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			blk = ir.Block{Type: ir.BlockText}
+		}
+		d.pending = append(d.pending, ir.Event{Type: ir.EventBlockStart, Index: frame.Index, Block: &blk})
+	case "content_block_delta":
+		if frame.Delta == nil {
+			return nil
+		}
+		switch frame.Delta.Type {
+		case "text_delta":
+			d.pending = append(d.pending, ir.Event{Type: ir.EventTextDelta, Index: frame.Index, Delta: frame.Delta.Text})
+		case "input_json_delta":
+			d.pending = append(d.pending, ir.Event{Type: ir.EventArgsDelta, Index: frame.Index, Delta: frame.Delta.PartialJSON})
+		case "thinking_delta":
+			d.pending = append(d.pending, ir.Event{Type: ir.EventThinkingDelta, Index: frame.Index, Delta: frame.Delta.Thinking})
+		case "signature_delta":
+			d.pending = append(d.pending, ir.Event{Type: ir.EventSignatureDelta, Index: frame.Index, Delta: frame.Delta.Signature})
+		}
+	case "content_block_stop":
+		d.pending = append(d.pending, ir.Event{Type: ir.EventBlockStop, Index: frame.Index})
+	case "message_delta":
+		if frame.Delta != nil {
+			if frame.Delta.StopReason != nil {
+				d.stop = ir.StopReason(*frame.Delta.StopReason)
+			}
+			if frame.Delta.StopSeq != nil {
+				d.stopSeq = *frame.Delta.StopSeq
+			}
+		}
+		if frame.Usage != nil {
+			// Output tokens are cumulative here; input-side counts came
+			// on message_start.
+			d.usage.OutputTokens = frame.Usage.OutputTokens
+			if frame.Usage.InputTokens > 0 {
+				d.usage.InputTokens = frame.Usage.InputTokens
+			}
+			if frame.Usage.CacheReadInputTokens > 0 {
+				d.usage.CacheReadInputTokens = frame.Usage.CacheReadInputTokens
+			}
+		}
+	case "message_stop":
+		d.finish()
+	case "ping":
+	case "error":
+		if frame.Error != nil {
+			return fmt.Errorf("anthropic: upstream error (%s): %s", frame.Error.Type, frame.Error.Message)
+		}
+		return fmt.Errorf("anthropic: upstream error")
+	}
+	return nil
+}

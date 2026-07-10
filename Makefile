@@ -15,8 +15,10 @@ fuzz:
 	go test -fuzz=FuzzParseJWKS -fuzztime=30s ./jwtauth/
 	go test -fuzz=FuzzReader -fuzztime=30s ./llmdialect/internal/sse/
 	go test -fuzz=FuzzDecodeRequest -fuzztime=30s ./llmdialect/anthropic/
+	go test -fuzz=FuzzBackendDecodeResponse -fuzztime=30s ./llmdialect/anthropic/
 	go test -fuzz=FuzzDecodeResponse -fuzztime=30s ./llmdialect/openaichat/
 	go test -fuzz=FuzzEventDecoder -fuzztime=30s ./llmdialect/openaichat/
+	go test -fuzz=FuzzFrontendDecodeRequest -fuzztime=30s ./llmdialect/openaichat/
 
 cover:
 	go test -coverprofile=coverage.out -covermode=atomic ./...

@@ -230,3 +230,85 @@ func TestRoundTripConversation(t *testing.T) {
 		t.Fatalf("round trip wrong: %v", msg)
 	}
 }
+
+// Reverse direction: an OpenAI Chat Completions caller driving a
+// native Anthropic backend.
+var (
+	_ Frontend = (*openaichat.Frontend)(nil)
+	_ Backend  = (*anthropic.Backend)(nil)
+)
+
+func newReverseTranslator() *Translator {
+	return &Translator{
+		Frontend: openaichat.NewFrontend(),
+		Backend:  anthropic.NewBackend(anthropic.BackendOptions{}),
+	}
+}
+
+func TestRequestOpenAIToAnthropic(t *testing.T) {
+	in := `{
+		"model": "claude-sonnet-5",
+		"stream": true,
+		"messages": [
+			{"role": "system", "content": "be brief"},
+			{"role": "user", "content": "list files"},
+			{"role": "assistant", "tool_calls": [{"id": "t1", "type": "function", "function": {"name": "bash", "arguments": "{\"cmd\":\"ls\"}"}}]},
+			{"role": "tool", "tool_call_id": "t1", "content": "a.txt"}
+		],
+		"tools": [{"type": "function", "function": {"name": "bash", "parameters": {"type": "object"}}}]
+	}`
+	out, req, err := newReverseTranslator().Request([]byte(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !req.Stream || req.Model != "claude-sonnet-5" {
+		t.Fatalf("decoded shape wrong: %+v", req)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatal(err)
+	}
+	// max_tokens is required by the Messages API and injected.
+	if got["max_tokens"].(float64) != 4096 {
+		t.Fatalf("max_tokens default missing: %v", got)
+	}
+	if got["system"].([]any)[0].(map[string]any)["text"] != "be brief" {
+		t.Fatalf("system wrong: %v", got["system"])
+	}
+	msgs := got["messages"].([]any)
+	if len(msgs) != 3 { // user, assistant(tool_use), user(tool_result)
+		t.Fatalf("messages = %v", msgs)
+	}
+	tr := msgs[2].(map[string]any)["content"].([]any)[0].(map[string]any)
+	if tr["type"] != "tool_result" || tr["tool_use_id"] != "t1" {
+		t.Fatalf("tool result wrong: %v", tr)
+	}
+}
+
+func TestStreamAnthropicToOpenAI(t *testing.T) {
+	src := strings.NewReader(
+		"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"model\":\"claude\",\"usage\":{\"input_tokens\":6}}}\n\n" +
+			"event: ping\ndata: {\"type\":\"ping\"}\n\n" +
+			"event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n" +
+			"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"hey\"}}\n\n" +
+			"event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n" +
+			"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":1}}\n\n" +
+			"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+
+	rec := httptest.NewRecorder()
+	if err := newReverseTranslator().Stream(rec, src); err != nil {
+		t.Fatal(err)
+	}
+	body := rec.Body.String()
+	if !strings.HasSuffix(strings.TrimSpace(body), "data: [DONE]") {
+		t.Fatalf("stream must end with [DONE]:\n%s", body)
+	}
+	for _, want := range []string{
+		`"role":"assistant"`, `"content":"hey"`, `"finish_reason":"stop"`,
+		`"prompt_tokens":6`, `"completion_tokens":1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("stream missing %q:\n%s", want, body)
+		}
+	}
+}
