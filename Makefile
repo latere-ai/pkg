@@ -19,6 +19,7 @@ fuzz:
 	go test -fuzz=FuzzDecodeResponse -fuzztime=30s ./llmdialect/openaichat/
 	go test -fuzz=FuzzEventDecoder -fuzztime=30s ./llmdialect/openaichat/
 	go test -fuzz=FuzzFrontendDecodeRequest -fuzztime=30s ./llmdialect/openaichat/
+	go test -fuzz=FuzzDecodeRequest -fuzztime=30s ./llmdialect/openairesp/
 
 cover:
 	go test -coverprofile=coverage.out -covermode=atomic ./...
