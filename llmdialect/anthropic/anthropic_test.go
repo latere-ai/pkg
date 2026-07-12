@@ -115,6 +115,45 @@ func TestDecodeRequestSystemBlocksAndCacheControl(t *testing.T) {
 	}
 }
 
+func TestDecodeRequestSystemRoleMessages(t *testing.T) {
+	// The native Messages API accepts system-role turns inside
+	// messages (Claude Code sends them); they fold into the system
+	// prompt, after any top-level system field, and leave the
+	// user/assistant turn list untouched.
+	body := `{
+		"model": "m", "max_tokens": 10,
+		"system": "be brief",
+		"messages": [
+			{"role": "user", "content": "hi"},
+			{"role": "system", "content": "stay uppercase"},
+			{"role": "assistant", "content": "OK"},
+			{"role": "system", "content": [
+				{"type": "text", "text": "and terse", "cache_control": {"type": "ephemeral"}}
+			]},
+			{"role": "user", "content": "again"}
+		]
+	}`
+	req := decode(t, body)
+	if len(req.System) != 3 {
+		t.Fatalf("want 3 system blocks, got %+v", req.System)
+	}
+	if req.System[0].Text != "be brief" || req.System[1].Text != "stay uppercase" || req.System[2].Text != "and terse" {
+		t.Fatalf("system fold order wrong: %+v", req.System)
+	}
+	if !req.System[2].CacheHint {
+		t.Fatalf("system block cache hint missing: %+v", req.System[2])
+	}
+	if len(req.Messages) != 3 {
+		t.Fatalf("want 3 messages, got %d", len(req.Messages))
+	}
+	if req.Messages[0].Role != ir.RoleUser || req.Messages[1].Role != ir.RoleAssistant || req.Messages[2].Role != ir.RoleUser {
+		t.Fatalf("message roles wrong: %+v", req.Messages)
+	}
+	if got := req.Loss.Fields(); got != nil {
+		t.Fatalf("unexpected loss: %v", got)
+	}
+}
+
 func TestDecodeRequestImages(t *testing.T) {
 	body := `{
 		"model": "m", "messages": [{"role": "user", "content": [
@@ -227,6 +266,7 @@ func TestDecodeRequestErrors(t *testing.T) {
 		"bad image source":   `{"model":"m","messages":[{"role":"user","content":[{"type":"image","source":{"type":"file"}}]}]}`,
 		"bad tool choice":    `{"model":"m","messages":[{"role":"user","content":"x"}],"tool_choice":{"type":"weird"}}`,
 		"bad system":         `{"model":"m","messages":[{"role":"user","content":"x"}],"system":42}`,
+		"bad system message": `{"model":"m","messages":[{"role":"system","content":42}]}`,
 		"bad output format":  `{"model":"m","messages":[{"role":"user","content":"x"}],"output_format":{"type":"text"}}`,
 		"bad tool result":    `{"model":"m","messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":42}]}]}`,
 		"malformed messages": `{"model":"m","messages":[{"role":"user","content":"x"}],"temperature":"hot"}`,

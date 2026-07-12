@@ -102,6 +102,17 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 		req.System = sys
 	}
 	for i, m := range wire.Messages {
+		// The native Messages API also accepts system-role turns
+		// inside messages (Claude Code sends them); fold those into
+		// the system prompt like the openaichat frontend does.
+		if m.Role == "system" {
+			sys, err := decodeSystem(m.Content, &req.Loss)
+			if err != nil {
+				return nil, fmt.Errorf("anthropic: messages[%d]: %w", i, err)
+			}
+			req.System = append(req.System, sys...)
+			continue
+		}
 		msg, err := decodeMessage(m, &req.Loss)
 		if err != nil {
 			return nil, fmt.Errorf("anthropic: messages[%d]: %w", i, err)
