@@ -202,6 +202,7 @@ const (
 	LossToolResultIsError LossField = "tool_result.is_error"
 	LossToolStrict        LossField = "tools.strict"
 	LossTopK              LossField = "top_k"
+	LossUserTruncated     LossField = "user.truncated"
 )
 
 // Dynamic loss-field constructors.

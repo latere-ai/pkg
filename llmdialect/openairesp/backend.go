@@ -36,6 +36,9 @@ const (
 	effortMediumMaxBudget = 8192
 )
 
+// maxUserLen is the Responses API cap on the `user` field.
+const maxUserLen = 64
+
 func reasoningEffort(req *ir.Request) string {
 	r := req.Reasoning
 	if r.Effort != "" {
@@ -131,7 +134,14 @@ func (*Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 		body["text"] = map[string]any{"format": format}
 	}
 	if req.UserID != "" {
-		body["user"] = req.UserID
+		// The Responses API caps `user` at 64 chars; harnesses send
+		// longer session ids, so truncate rather than 400 upstream.
+		user := req.UserID
+		if len(user) > maxUserLen {
+			user = user[:maxUserLen]
+			req.Loss.Add(ir.LossUserTruncated)
+		}
+		body["user"] = user
 	}
 	if req.Stream {
 		body["stream"] = true

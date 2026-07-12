@@ -356,6 +356,37 @@ func mustMarshal(t *testing.T, v any) []byte {
 	return b
 }
 
+// The Responses API caps `user` at 64 chars; harnesses (Claude Code)
+// send longer session ids, so the backend must cap it rather than emit
+// an over-long value that upstream 400s on.
+func TestBackendEncodeUserCapped(t *testing.T) {
+	long := strings.Repeat("a", 150)
+	req := &ir.Request{Model: "m", UserID: long,
+		Messages: []ir.Message{{Role: ir.RoleUser, Blocks: []ir.Block{{Type: ir.BlockText, Text: "x"}}}}}
+	raw, err := NewBackend().EncodeRequest(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := mustJSON(t, raw)
+	u, _ := body["user"].(string)
+	if len(u) > 64 {
+		t.Errorf("user len = %d, want <= 64", len(u))
+	}
+	if !containsStr(req.Loss.Strings(), "user.truncated") {
+		t.Errorf("truncation loss missing: %v", req.Loss.Strings())
+	}
+	// A short user id passes through untouched with no loss.
+	req2 := &ir.Request{Model: "m", UserID: "u1",
+		Messages: []ir.Message{{Role: ir.RoleUser, Blocks: []ir.Block{{Type: ir.BlockText, Text: "x"}}}}}
+	raw2, _ := NewBackend().EncodeRequest(req2)
+	if mustJSON(t, raw2)["user"] != "u1" {
+		t.Errorf("short user changed")
+	}
+	if containsStr(req2.Loss.Strings(), "user.truncated") {
+		t.Errorf("unexpected truncation loss for short user")
+	}
+}
+
 func TestBackendEncodeMessageBadBlock(t *testing.T) {
 	// an unrepresentable block type in a message errors out
 	_, err := NewBackend().EncodeRequest(&ir.Request{Model: "m",
