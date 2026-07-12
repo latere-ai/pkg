@@ -24,13 +24,33 @@ type TokenInfo struct {
 	DelegationID        string   `json:"delegation_id,omitempty"`
 	ClientID            string   `json:"client_id,omitempty"`
 	DelegationExpiresAt string   `json:"delegation_expires_at,omitempty"`
-	Act                 *struct {
+	// GrantorID mirrors the flat "grantor_id" claim (deprecated alias of
+	// act.sub, dr-21); Act is the canonical RFC 8693 delegator identity.
+	// The auth service reports both; read Delegator() rather than either.
+	GrantorID string `json:"grantor_id,omitempty"`
+	Act       *struct {
 		Sub string `json:"sub"`
 	} `json:"act,omitempty"`
 }
 
+// Delegator returns the principal sub this token acts for, or "" for a
+// non-delegated token. Mirrors jwtauth.Claims.Delegator (dr-21).
+func (ti *TokenInfo) Delegator() string {
+	if ti.GrantorID != "" {
+		return ti.GrantorID
+	}
+	if ti.Act != nil {
+		return ti.Act.Sub
+	}
+	return ""
+}
+
 // TokenInfoClient calls GET {URL} with Authorization: Bearer <token>. It is
-// stateless; the auth service is authoritative per request per the spec.
+// stateless: every Lookup is an online call and the auth service is
+// authoritative per request. Mutating requests MUST use this direct client.
+// Read-tier consumers may wrap it in CachedTokenInfo (dr-21), which reuses a
+// positive verdict for a short TTL — the documented trade being that a
+// revoked delegation can keep READING for at most that window.
 type TokenInfoClient struct {
 	URL    string
 	Client *http.Client

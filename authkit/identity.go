@@ -70,6 +70,12 @@ type Identity struct {
 	AuthMethod AuthMethod
 }
 
+// Delegator returns the principal sub this identity acts for, or "" for a
+// non-delegated identity. THE accessor for delegator identity (dr-21) —
+// GrantorID stays populated regardless of which wire claim (RFC 8693 act or
+// legacy flat grantor_id) the issuer emitted, because jwtauth folds the two.
+func (i Identity) Delegator() string { return i.GrantorID }
+
 // AuthMethod is the discriminator stamped on Identity by an Authenticator to
 // record how the request was authenticated. Built-in values are listed below;
 // consumers composing custom Authenticators may declare their own.
