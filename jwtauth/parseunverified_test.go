@@ -74,6 +74,65 @@ func TestParseUnverified_GrantorID(t *testing.T) {
 	}
 }
 
+func TestDelegatorConvergence(t *testing.T) {
+	// dr-21: the two wire shapes must produce identical Claims — both
+	// fields populated, same Delegator() — so consumers never care which
+	// claim the issuer emitted.
+	exp := float64(time.Now().Add(time.Hour).Unix())
+	flat, err := ParseUnverified(unsignedToken(map[string]any{
+		"sub": "agent-1", "principal_type": "agent",
+		"grantor_id": "owner-9", "exp": exp,
+	}))
+	if err != nil {
+		t.Fatalf("ParseUnverified flat: %v", err)
+	}
+	nested, err := ParseUnverified(unsignedToken(map[string]any{
+		"sub": "agent-1", "principal_type": "agent",
+		"act": map[string]any{"sub": "owner-9"}, "exp": exp,
+	}))
+	if err != nil {
+		t.Fatalf("ParseUnverified nested: %v", err)
+	}
+	for name, c := range map[string]*Claims{"grantor_id-only": flat, "act-only": nested} {
+		if c.GrantorID != "owner-9" {
+			t.Errorf("%s: GrantorID = %q, want owner-9", name, c.GrantorID)
+		}
+		if c.Act == nil || c.Act.Sub != "owner-9" {
+			t.Errorf("%s: Act = %+v, want &{owner-9}", name, c.Act)
+		}
+		if c.Delegator() != "owner-9" {
+			t.Errorf("%s: Delegator() = %q, want owner-9", name, c.Delegator())
+		}
+	}
+
+	// grantor_id wins when both are present and disagree.
+	both, err := ParseUnverified(unsignedToken(map[string]any{
+		"sub": "agent-1", "grantor_id": "owner-flat",
+		"act": map[string]any{"sub": "owner-nested"}, "exp": exp,
+	}))
+	if err != nil {
+		t.Fatalf("ParseUnverified both: %v", err)
+	}
+	if both.Delegator() != "owner-flat" {
+		t.Errorf("Delegator() with both = %q, want owner-flat", both.Delegator())
+	}
+	if both.Act == nil || both.Act.Sub != "owner-nested" {
+		t.Errorf("Act must keep the wire value, got %+v", both.Act)
+	}
+
+	// Non-delegated tokens have no delegator.
+	plain, err := ParseUnverified(unsignedToken(map[string]any{"sub": "user-1", "exp": exp}))
+	if err != nil {
+		t.Fatalf("ParseUnverified plain: %v", err)
+	}
+	if d := plain.Delegator(); d != "" {
+		t.Errorf("Delegator() on plain token = %q, want empty", d)
+	}
+	if plain.Act != nil {
+		t.Errorf("Act on plain token = %+v, want nil", plain.Act)
+	}
+}
+
 func TestParseUnverified_AgentID(t *testing.T) {
 	// The flat agent_id claim (the reporting dimension on a delegated run)
 	// maps to Claims.AgentID, distinct from the owner-bearing grantor_id.

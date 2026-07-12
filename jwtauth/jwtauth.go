@@ -157,6 +157,21 @@ func (c *Claims) NeedsTokenInfo() bool {
 	return c.PrincipalType == PrincipalAgent && c.Validation == ValidationStrict
 }
 
+// Delegator returns the principal sub of the user this token acts for,
+// or "" for a non-delegated token. It is THE accessor for delegator
+// identity (dr-21): consumers must not read GrantorID or Act directly,
+// so the wire shape (RFC 8693 act vs legacy flat grantor_id) stays an
+// issuer concern. GrantorID wins when both are present.
+func (c *Claims) Delegator() string {
+	if c.GrantorID != "" {
+		return c.GrantorID
+	}
+	if c.Act != nil {
+		return c.Act.Sub
+	}
+	return ""
+}
+
 // ── Errors ──────────────────────────────────────────────────────────────────
 
 var (
@@ -322,13 +337,19 @@ func claimsFromRawPayload(raw rawPayload) *Claims {
 		GrantorID:     raw.GrantorID,
 		AgentID:       raw.AgentID,
 	}
+	// The RFC 8693 act claim and the flat grantor_id express the same
+	// delegator; the fold is two-way so both fields are always populated
+	// for a delegated token regardless of which shape the issuer emitted.
+	// grantor_id wins when both are present (dr-21: act is canonical on
+	// the wire going forward, grantor_id is the deprecated alias).
 	if raw.Act != nil {
 		claims.Act = &ActClaims{Sub: raw.Act.Sub}
-		// A nested act.sub is the same delegator; prefer the flat
-		// grantor_id when both are present, fall back to act.sub.
 		if claims.GrantorID == "" {
 			claims.GrantorID = raw.Act.Sub
 		}
+	}
+	if claims.Act == nil && claims.GrantorID != "" {
+		claims.Act = &ActClaims{Sub: claims.GrantorID}
 	}
 	return claims
 }
