@@ -74,6 +74,26 @@ A service is fully observable only when it both imports this package **and** set
 - `Handler(h, operation, opts...)` — wraps an `http.Handler` with tracing/metrics and sets the `X-Trace-Id` response header.
 - `TraceIDs(ctx)` / `LogAttrs(ctx)` — extract trace/span IDs for log correlation.
 
+## Logging
+
+The otelslog bridge wired by `Bootstrap` attaches `TraceId`/`SpanId` to a log
+record only when the call carries the request context. The convention across
+services:
+
+- Request-path logs (handlers, middleware, anything whose context derives from
+  `r.Context()`) use the `*Context` variants: `slog.InfoContext(ctx, ...)`,
+  `logger.ErrorContext(ctx, ...)`.
+- Startup, shutdown, and background-loop logs stay plain. They have no request
+  trace, and converting them adds noise.
+- Work that outlives the request (queues, async pipelines) keeps correlation
+  with `context.WithoutCancel(reqCtx)`.
+- Where threading a context is disproportionate, append `LogAttrs(ctx)...` to
+  a plain call instead.
+
+Outbound HTTP follows the same rule: every client wraps `Transport` and
+builds requests with `http.NewRequestWithContext`, otherwise the trace dies at
+the hop.
+
 ## Environment Variables
 
 | Variable | Description |
