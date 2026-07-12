@@ -171,6 +171,56 @@ func TestDecodeRequestImages(t *testing.T) {
 	}
 }
 
+func TestDecodeRequestReasoningSignals(t *testing.T) {
+	// Current API: output_config.effort (with thinking:{adaptive}) — this is
+	// what Claude Code sends. Effort maps straight to IR.
+	req := decode(t, `{"model":"m","messages":[{"role":"user","content":"hi"}],
+		"thinking":{"type":"adaptive"},"output_config":{"effort":"high"}}`)
+	if req.Reasoning == nil || req.Reasoning.Effort != ir.EffortHigh || req.Reasoning.BudgetTokens != 0 {
+		t.Fatalf("adaptive+effort → %+v", req.Reasoning)
+	}
+	// Deprecated API: thinking:{enabled, budget_tokens} still decodes.
+	req = decode(t, `{"model":"m","messages":[{"role":"user","content":"hi"}],
+		"thinking":{"type":"enabled","budget_tokens":4096}}`)
+	if req.Reasoning == nil || req.Reasoning.BudgetTokens != 4096 {
+		t.Fatalf("enabled+budget → %+v", req.Reasoning)
+	}
+	// adaptive with no effort → reasoning on, default (no effort/budget).
+	req = decode(t, `{"model":"m","messages":[{"role":"user","content":"hi"}],
+		"thinking":{"type":"adaptive"}}`)
+	if req.Reasoning == nil || req.Reasoning.Effort != "" || req.Reasoning.BudgetTokens != 0 {
+		t.Fatalf("bare adaptive → %+v", req.Reasoning)
+	}
+	// No reasoning signal → nil.
+	req = decode(t, `{"model":"m","messages":[{"role":"user","content":"hi"}]}`)
+	if req.Reasoning != nil {
+		t.Fatalf("no signal → %+v", req.Reasoning)
+	}
+}
+
+// Claude Code's exact request shape (adaptive + output_config.effort) must
+// survive a frontend→backend round trip unchanged: the effort it sends is the
+// effort re-emitted toward the Claude target.
+func TestReasoningRoundTripPreservesEffort(t *testing.T) {
+	req := decode(t, `{"model":"claude-sonnet-5","max_tokens":32000,
+		"messages":[{"role":"user","content":"hi"}],
+		"thinking":{"type":"adaptive"},"output_config":{"effort":"high"}}`)
+	raw, err := NewBackend(BackendOptions{}).EncodeRequest(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	if th, _ := out["thinking"].(map[string]any); th["type"] != "adaptive" {
+		t.Fatalf("thinking = %v", out["thinking"])
+	}
+	if oc, _ := out["output_config"].(map[string]any); oc["effort"] != "high" {
+		t.Fatalf("effort not preserved: %v", out["output_config"])
+	}
+}
+
 func TestDecodeRequestThinkingBlocksAndUnknowns(t *testing.T) {
 	body := `{
 		"model": "m", "messages": [

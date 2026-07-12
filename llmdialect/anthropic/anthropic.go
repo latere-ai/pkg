@@ -70,6 +70,9 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 			Type         string `json:"type"`
 			BudgetTokens int64  `json:"budget_tokens"`
 		} `json:"thinking"`
+		OutputConfig *struct {
+			Effort string `json:"effort"`
+		} `json:"output_config"`
 		OutputFormat *struct {
 			Type   string          `json:"type"`
 			Schema json.RawMessage `json:"schema"`
@@ -140,8 +143,16 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 		}
 		req.ToolChoice = tc
 	}
-	if wire.Thinking != nil && wire.Thinking.Type == "enabled" {
+	// Reasoning is signalled two ways: the current API uses
+	// output_config.effort (with thinking:{adaptive}), the deprecated one
+	// thinking:{enabled, budget_tokens}. Effort wins when present.
+	switch {
+	case wire.OutputConfig != nil && wire.OutputConfig.Effort != "":
+		req.Reasoning = &ir.Reasoning{Effort: ir.Effort(wire.OutputConfig.Effort)}
+	case wire.Thinking != nil && wire.Thinking.Type == "enabled":
 		req.Reasoning = &ir.Reasoning{BudgetTokens: wire.Thinking.BudgetTokens}
+	case wire.Thinking != nil && wire.Thinking.Type == "adaptive":
+		req.Reasoning = &ir.Reasoning{}
 	}
 	if wire.OutputFormat != nil {
 		if wire.OutputFormat.Type != "json_schema" {

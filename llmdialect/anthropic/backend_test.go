@@ -131,41 +131,54 @@ func TestBackendEncodeDefaultMaxTokensAndSchema(t *testing.T) {
 	}
 }
 
-func TestBackendEncodeThinkingBudget(t *testing.T) {
-	base := func(r *ir.Reasoning, maxTokens int64) *ir.Request {
-		return &ir.Request{Model: "m", MaxTokens: i64(maxTokens), Reasoning: r,
+func TestBackendEncodeThinkingAdaptive(t *testing.T) {
+	base := func(r *ir.Reasoning) *ir.Request {
+		return &ir.Request{Model: "m", MaxTokens: i64(32000), Reasoning: r,
 			Messages: []ir.Message{userMsg("x")}}
 	}
-	// Explicit budget passes through.
-	req := base(&ir.Reasoning{BudgetTokens: 5000}, 32000)
-	got := encodeBack(t, req, BackendOptions{})
-	th := got["thinking"].(map[string]any)
-	if th["type"] != "enabled" || th["budget_tokens"].(float64) != 5000 {
-		t.Fatalf("budget passthrough wrong: %v", th)
+	// Reasoning encodes as thinking:{adaptive} + output_config.effort, never
+	// the deprecated thinking:{enabled, budget_tokens} that newer Claude
+	// models (opus-4.7/4.8, sonnet-5, fable-5) reject.
+	assertShape := func(t *testing.T, got map[string]any, wantEffort string) {
+		th, ok := got["thinking"].(map[string]any)
+		if !ok || th["type"] != "adaptive" {
+			t.Fatalf("thinking = %v, want {type:adaptive}", got["thinking"])
+		}
+		if _, has := th["budget_tokens"]; has {
+			t.Fatalf("must not emit budget_tokens: %v", th)
+		}
+		oc, ok := got["output_config"].(map[string]any)
+		if !ok || oc["effort"] != wantEffort {
+			t.Fatalf("output_config = %v, want effort %q", got["output_config"], wantEffort)
+		}
 	}
-	if contains(req.Loss.Fields(), "reasoning_effort") {
-		t.Fatal("explicit budget must not record an effort loss")
-	}
-	// Effort bands, and is a recorded approximation.
-	for effort, want := range map[ir.Effort]float64{ir.EffortLow: 2048, ir.EffortMedium: 8192, ir.EffortHigh: 16384} {
-		req := base(&ir.Reasoning{Effort: effort}, 32000)
+	// Effort passes straight through (lossless — no banding).
+	for effort, want := range map[ir.Effort]string{ir.EffortLow: "low", ir.EffortMedium: "medium", ir.EffortHigh: "high"} {
+		req := base(&ir.Reasoning{Effort: effort})
 		got := encodeBack(t, req, BackendOptions{})
-		if b := got["thinking"].(map[string]any)["budget_tokens"].(float64); b != want {
-			t.Fatalf("effort %s → %v want %v", effort, b, want)
-		}
-		if !contains(req.Loss.Fields(), "reasoning_effort") {
-			t.Fatal("effort banding must be recorded as loss")
+		assertShape(t, got, want)
+		if contains(req.Loss.Fields(), "reasoning_effort") {
+			t.Fatalf("effort %s passthrough must not record a loss", effort)
 		}
 	}
-	// Clamps: floor 1024, ceiling max_tokens-1.
-	got = encodeBack(t, base(&ir.Reasoning{BudgetTokens: 10}, 32000), BackendOptions{})
-	if b := got["thinking"].(map[string]any)["budget_tokens"].(float64); b != 1024 {
-		t.Fatalf("floor clamp wrong: %v", b)
+	// minimal has no API equivalent → low, recorded as a loss.
+	req := base(&ir.Reasoning{Effort: ir.EffortMinimal})
+	got := encodeBack(t, req, BackendOptions{})
+	assertShape(t, got, "low")
+	if !contains(req.Loss.Fields(), "reasoning_effort") {
+		t.Fatal("minimal→low must be a recorded loss")
 	}
-	got = encodeBack(t, base(&ir.Reasoning{BudgetTokens: 90000}, 2000), BackendOptions{})
-	if b := got["thinking"].(map[string]any)["budget_tokens"].(float64); b != 1999 {
-		t.Fatalf("ceiling clamp wrong: %v", b)
+	// Anthropic-style budget bands to an effort and records the approximation.
+	for budget, want := range map[int64]string{1500: "low", 5000: "medium", 20000: "high"} {
+		req := base(&ir.Reasoning{BudgetTokens: budget})
+		got := encodeBack(t, req, BackendOptions{})
+		assertShape(t, got, want)
+		if !contains(req.Loss.Fields(), "thinking.budget_tokens") {
+			t.Fatalf("budget %d banding must record a loss", budget)
+		}
 	}
+	// Reasoning enabled with neither effort nor budget defaults to high.
+	assertShape(t, encodeBack(t, base(&ir.Reasoning{}), BackendOptions{}), "high")
 }
 
 func TestBackendEncodeThinkingReplayPolicy(t *testing.T) {

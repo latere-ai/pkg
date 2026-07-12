@@ -37,10 +37,6 @@ func NewBackend(opts BackendOptions) *Backend {
 // Name returns the dialect name.
 func (*Backend) Name() ir.Dialect { return DialectName }
 
-// minThinkingBudget is the Messages API's floor for
-// thinking.budget_tokens.
-const minThinkingBudget = 1024
-
 // EncodeRequest renders the IR request as a Messages API body.
 // Unrepresentable fields are recorded in req.Loss.
 func (b *Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
@@ -133,10 +129,17 @@ func (b *Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 		body["stop_sequences"] = req.StopSequences
 	}
 	if req.Reasoning != nil {
-		body["thinking"] = map[string]any{
-			"type":          "enabled",
-			"budget_tokens": thinkingBudget(req, maxTokens),
+		// Newer Claude models (opus-4.7/4.8, sonnet-5, fable-5) reject the
+		// deprecated thinking:{enabled, budget_tokens} and require
+		// thinking:{adaptive} + output_config.effort; older models accept
+		// adaptive too, so emit it uniformly.
+		body["thinking"] = map[string]any{"type": "adaptive"}
+		oc, _ := body["output_config"].(map[string]any)
+		if oc == nil {
+			oc = map[string]any{}
 		}
+		oc["effort"] = outputConfigEffort(req)
+		body["output_config"] = oc
 	}
 	if req.Schema != nil {
 		body["output_format"] = map[string]any{"type": "json_schema", "schema": req.Schema.Schema}
@@ -150,38 +153,48 @@ func (b *Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 	return json.Marshal(body)
 }
 
-// Effort→budget banding (the inverse of openaichat's banding).
+// Budget→effort banding thresholds for Anthropic-style callers, now
+// that the adaptive API is effort-based rather than budget-based.
 const (
 	budgetForEffortLow    = 2048
 	budgetForEffortMedium = 8192
-	budgetForEffortHigh   = 16384
 )
 
-// thinkingBudget maps an IR reasoning config to a Messages thinking
-// budget: an explicit budget passes through, an OpenAI-style effort
-// bands by the constants above (recorded as a loss because it is an
-// approximation). The API requires 1024 <= budget < max_tokens, so
-// the result clamps into that window.
-func thinkingBudget(req *ir.Request, maxTokens int64) int64 {
-	budget := req.Reasoning.BudgetTokens
-	if budget == 0 {
+// outputConfigEffort maps an IR reasoning config to an output_config
+// effort value ("low"/"medium"/"high"; the API also accepts "xhigh").
+// An OpenAI-style effort passes straight through (lossless); "minimal"
+// has no API equivalent and maps to "low" (recorded); an Anthropic-style
+// budget bands to an effort (recorded as an approximation); reasoning
+// enabled with neither defaults to "high".
+func outputConfigEffort(req *ir.Request) string {
+	switch req.Reasoning.Effort {
+	case ir.EffortLow:
+		return "low"
+	case ir.EffortMedium:
+		return "medium"
+	case ir.EffortHigh:
+		return "high"
+	case "xhigh":
+		return "xhigh"
+	case ir.EffortMinimal:
 		req.Loss.Add(ir.LossReasoningEffort)
-		switch req.Reasoning.Effort {
-		case ir.EffortMinimal, ir.EffortLow:
-			budget = budgetForEffortLow
-		case ir.EffortMedium:
-			budget = budgetForEffortMedium
-		default:
-			budget = budgetForEffortHigh
+		return "low"
+	case "":
+		if b := req.Reasoning.BudgetTokens; b > 0 {
+			req.Loss.Add(ir.LossThinkingBudget)
+			switch {
+			case b <= budgetForEffortLow:
+				return "low"
+			case b <= budgetForEffortMedium:
+				return "medium"
+			default:
+				return "high"
+			}
 		}
+		return "high"
+	default:
+		return "high"
 	}
-	if budget < minThinkingBudget {
-		budget = minThinkingBudget
-	}
-	if budget >= maxTokens {
-		budget = maxTokens - 1
-	}
-	return budget
 }
 
 func encodeBackendMessage(m ir.Message, req *ir.Request) (map[string]any, error) {
