@@ -36,6 +36,30 @@ func TestCSRFIssueSetsCookie(t *testing.T) {
 	}
 }
 
+// TestCSRFIssueIsSessionCookie pins the cookie to browser-session scope. A
+// finite Max-Age expires under a dashboard tab left open past it, dropping the
+// X-CSRF-Token header and failing every state-changing request with a csrf
+// error while the login session is still valid.
+func TestCSRFIssueIsSessionCookie(t *testing.T) {
+	w := httptest.NewRecorder()
+	if _, err := CSRFIssue(w, testCookieName, false); err != nil {
+		t.Fatalf("CSRFIssue: %v", err)
+	}
+	for _, c := range w.Result().Cookies() {
+		if c.Name != testCookieName {
+			continue
+		}
+		if c.MaxAge != 0 {
+			t.Fatalf("Max-Age = %d, want 0 (session cookie)", c.MaxAge)
+		}
+		if !c.Expires.IsZero() {
+			t.Fatalf("Expires = %v, want unset (session cookie)", c.Expires)
+		}
+		return
+	}
+	t.Fatalf("cookie %q not set", testCookieName)
+}
+
 func TestCSRFIssueSecureFlag(t *testing.T) {
 	w := httptest.NewRecorder()
 	_, err := CSRFIssue(w, testCookieName, true)

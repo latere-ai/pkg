@@ -23,6 +23,11 @@ const csrfField = "csrf_token"
 // cookieName should be product-specific (e.g. "__cella_csrf", "__topos_csrf")
 // so products sharing a domain do not stomp each other's cookies.
 // secure should be true in production (HTTPS) and false in local dev.
+//
+// The cookie carries no Max-Age, making it a session cookie. A finite TTL
+// would expire while a long-lived SPA tab stays open, silently breaking every
+// state-changing request until the next full page load re-issued it. Callers
+// re-issue on page load, so browser-session scope is the effective lifetime.
 func CSRFIssue(w http.ResponseWriter, cookieName string, secure bool) (string, error) {
 	tok, err := randomURLToken(16)
 	if err != nil {
@@ -35,7 +40,6 @@ func CSRFIssue(w http.ResponseWriter, cookieName string, secure bool) (string, e
 		HttpOnly: false, // form template reads it
 		Secure:   secure,
 		SameSite: http.SameSiteStrictMode,
-		MaxAge:   3600,
 	})
 	return tok, nil
 }
