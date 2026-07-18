@@ -107,22 +107,54 @@ type TokenSource interface {
 	Token(ctx context.Context) (string, error)
 }
 
-// Option configures a Client.
-type Option func(*Client)
+// Option configures a [Client] or a [Direct] caller.
+type Option func(*settings)
 
-// WithAPIKey authenticates with a static bearer (a Lux virtual key).
+// settings is the option state shared by both caller kinds.
+type settings struct {
+	apiKey string
+	tokens TokenSource
+	hc     *http.Client
+	oauth  bool
+}
+
+func applyOptions(opts []Option) settings {
+	s := settings{hc: http.DefaultClient}
+	for _, o := range opts {
+		o(&s)
+	}
+	return s
+}
+
+// WithAPIKey authenticates with a static credential: a Lux virtual
+// key on [Client], the provider's API key on [Direct].
 func WithAPIKey(key string) Option {
-	return func(c *Client) { c.apiKey = key }
+	return func(s *settings) { s.apiKey = key }
 }
 
 // WithTokenSource authenticates each call with a token from ts.
 func WithTokenSource(ts TokenSource) Option {
-	return func(c *Client) { c.tokens = ts }
+	return func(s *settings) { s.tokens = ts }
 }
 
 // WithHTTPClient overrides the underlying HTTP client.
 func WithHTTPClient(hc *http.Client) Option {
-	return func(c *Client) { c.hc = hc }
+	return func(s *settings) { s.hc = hc }
+}
+
+// WithOAuthToken marks the credential as an OAuth access token
+// ([Direct] with [ProviderAnthropic] only): it travels as
+// "Authorization: Bearer" with the OAuth beta header instead of
+// x-api-key.
+func WithOAuthToken() Option {
+	return func(s *settings) { s.oauth = true }
+}
+
+// Caller is the call surface shared by the gateway [Client] and the
+// provider-direct [Direct].
+type Caller interface {
+	Generate(ctx context.Context, req *Request) (*Result, error)
+	Stream(ctx context.Context, req *Request) (*Stream, error)
 }
 
 // Client calls one Lux deployment.
@@ -135,14 +167,13 @@ type Client struct {
 
 // New returns a client for the Lux deployment at baseURL.
 func New(baseURL string, opts ...Option) *Client {
-	c := &Client{
+	s := applyOptions(opts)
+	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
-		hc:      http.DefaultClient,
+		apiKey:  s.apiKey,
+		tokens:  s.tokens,
+		hc:      s.hc,
 	}
-	for _, o := range opts {
-		o(c)
-	}
-	return c
 }
 
 // Error is a non-2xx gateway response, decoded from the error
@@ -207,10 +238,11 @@ func (c *Client) Stream(ctx context.Context, req *Request) (*Stream, error) {
 		defer resp.Body.Close()
 		return nil, fmt.Errorf("lux: expected an event stream, got %q", resp.Header.Get("Content-Type"))
 	}
+	r := lux.NewStreamReader(resp.Body)
 	return &Stream{
-		body: resp.Body,
-		r:    lux.NewStreamReader(resp.Body),
-		loss: parseLoss(resp.Header),
+		next:   r.Next,
+		closer: resp.Body.Close,
+		loss:   parseLoss(resp.Header),
 	}, nil
 }
 
@@ -277,16 +309,16 @@ func parseLoss(h http.Header) []string {
 // Stream is a live event stream. Next returns io.EOF after the final
 // event; a mid-stream gateway failure surfaces as *StreamError.
 type Stream struct {
-	body io.ReadCloser
-	r    *lux.StreamReader
-	loss []string
+	next   func() (Event, error)
+	closer func() error
+	loss   []string
 }
 
 // Next returns the next event.
-func (s *Stream) Next() (Event, error) { return s.r.Next() }
+func (s *Stream) Next() (Event, error) { return s.next() }
 
 // Loss lists request fields the backend dialect could not represent.
 func (s *Stream) Loss() []string { return s.loss }
 
 // Close releases the underlying connection.
-func (s *Stream) Close() error { return s.body.Close() }
+func (s *Stream) Close() error { return s.closer() }

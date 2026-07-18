@@ -253,6 +253,11 @@ func usageFromIR(u ir.Usage) Usage {
 	}
 }
 
+// EventFromIR converts a canonical IR event to the wire vocabulary.
+// Exported for consumers that drive a non-lux SSE decoder and want
+// the lux wire shape out (luxsdk's direct mode).
+func EventFromIR(ev ir.Event) (Event, error) { return eventFromIR(ev) }
+
 // eventFromIR converts a canonical IR event to the wire.
 func eventFromIR(ev ir.Event) (Event, error) {
 	if !validEventTypes[ev.Type] {
