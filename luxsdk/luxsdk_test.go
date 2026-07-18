@@ -308,3 +308,70 @@ func TestContextCancellation(t *testing.T) {
 		t.Fatal("want context error")
 	}
 }
+
+func TestCountTokens(t *testing.T) {
+	var gotPath, gotBody string
+	srv := testServer(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"input_tokens": 42}`))
+	})
+	tc, err := New(srv.URL, WithAPIKey("k")).CountTokens(context.Background(), &Request{Model: "m", Messages: []Message{UserText("hi")}, Stream: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/lux/v1/count_tokens" {
+		t.Fatalf("path = %q", gotPath)
+	}
+	if strings.Contains(gotBody, `"stream":true`) {
+		t.Fatalf("CountTokens must force stream off: %s", gotBody)
+	}
+	if tc.InputTokens != 42 || tc.Estimated {
+		t.Fatalf("bad count: %#v", tc)
+	}
+}
+
+func TestCountTokensEstimated(t *testing.T) {
+	srv := testServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Lux-Compat-Estimated", "true")
+		_, _ = w.Write([]byte(`{"input_tokens": 7}`))
+	})
+	tc, err := New(srv.URL).CountTokens(context.Background(), &Request{Model: "m", Messages: []Message{UserText("x")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tc.InputTokens != 7 || !tc.Estimated {
+		t.Fatalf("bad count: %#v", tc)
+	}
+}
+
+func TestCountTokensErrors(t *testing.T) {
+	srv := testServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"type":"error","error":{"type":"permission_error","message":"no"}}`))
+	})
+	var apiErr *Error
+	if _, err := New(srv.URL).CountTokens(context.Background(), &Request{Model: "m", Messages: []Message{UserText("x")}}); !errors.As(err, &apiErr) || apiErr.Status != 403 {
+		t.Fatalf("want *Error 403, got %v", err)
+	}
+	srvBad := testServer(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`{`)) })
+	if _, err := New(srvBad.URL).CountTokens(context.Background(), &Request{Model: "m", Messages: []Message{UserText("x")}}); err == nil {
+		t.Fatal("want decode error")
+	}
+	if _, err := New("http://127.0.0.1:1").CountTokens(context.Background(), &Request{Model: "m", Messages: []Message{UserText("x")}}); err == nil {
+		t.Fatal("want transport error")
+	}
+	c := New("http://unused", WithTokenSource(staticTokens{err: errors.New("no token")}))
+	if _, err := c.CountTokens(context.Background(), &Request{Model: "m", Messages: []Message{UserText("x")}}); err == nil || !strings.Contains(err.Error(), "no token") {
+		t.Fatalf("want token source error, got %v", err)
+	}
+	req := &Request{Model: "m", Messages: []Message{{Role: RoleUser, Blocks: []Block{{Type: BlockToolUse, ToolUse: &ToolUse{Args: []byte(`{`)}}}}}}
+	if _, err := New("http://unused").CountTokens(context.Background(), req); err == nil {
+		t.Fatal("want marshal error")
+	}
+	if _, err := New("http://bad\nurl").CountTokens(context.Background(), &Request{Model: "m", Messages: []Message{UserText("x")}}); err == nil {
+		t.Fatal("want URL error")
+	}
+}

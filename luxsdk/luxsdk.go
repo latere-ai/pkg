@@ -99,8 +99,16 @@ func AssistantText(text string) Message {
 // generatePath is the gateway's native inference surface.
 const generatePath = "/lux/v1/generate"
 
+// countTokensPath is the gateway's native token-counting surface.
+const countTokensPath = "/lux/v1/count_tokens"
+
 // lossHeader carries the backend-leg translation loss report.
 const lossHeader = "X-Lux-Compat-Loss"
+
+// estimatedHeader marks a count_tokens answer as a heuristic estimate
+// (the target has no native counting endpoint) rather than an exact
+// tokenizer count.
+const estimatedHeader = "X-Lux-Compat-Estimated"
 
 // TokenSource supplies a fresh bearer per call (Latere Auth JWTs).
 type TokenSource interface {
@@ -218,6 +226,52 @@ func (c *Client) Generate(ctx context.Context, req *Request) (*Result, error) {
 	}
 	out := &Result{Loss: parseLoss(resp.Header)}
 	if err := json.Unmarshal(body, &out.Response); err != nil {
+		return nil, fmt.Errorf("lux: invalid response JSON: %w", err)
+	}
+	return out, nil
+}
+
+// TokenCount is a count_tokens answer. Estimated marks a heuristic
+// (order-of-magnitude) count for targets with no native counting
+// endpoint; exact counts come from the provider's tokenizer.
+type TokenCount struct {
+	InputTokens int64 `json:"input_tokens"`
+	Estimated   bool  `json:"-"`
+}
+
+// CountTokens returns the input token count for req without spending
+// output tokens. Counting runs no spend gates.
+func (c *Client) CountTokens(ctx context.Context, req *Request) (*TokenCount, error) {
+	wire := *req
+	wire.Stream = false
+	body, err := json.Marshal(&wire)
+	if err != nil {
+		return nil, fmt.Errorf("lux: encoding request: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+countTokensPath, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	bearer := c.apiKey
+	if c.tokens != nil {
+		if bearer, err = c.tokens.Token(ctx); err != nil {
+			return nil, fmt.Errorf("lux: token source: %w", err)
+		}
+	}
+	if bearer != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	resp, err := c.hc.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("lux: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, decodeError(resp)
+	}
+	out := &TokenCount{Estimated: resp.Header.Get(estimatedHeader) == "true"}
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		return nil, fmt.Errorf("lux: invalid response JSON: %w", err)
 	}
 	return out, nil
