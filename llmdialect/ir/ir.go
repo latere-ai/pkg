@@ -22,6 +22,7 @@ const (
 	DialectAnthropicMessages Dialect = "anthropic-messages"
 	DialectOpenAIChat        Dialect = "openai-chat"
 	DialectOpenAIResponses   Dialect = "openai-responses"
+	DialectLux               Dialect = "lux"
 )
 
 // Role is a conversation turn author. The IR keeps the Anthropic

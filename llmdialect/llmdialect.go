@@ -31,6 +31,7 @@ const (
 	DialectAnthropicMessages = ir.DialectAnthropicMessages
 	DialectOpenAIChat        = ir.DialectOpenAIChat
 	DialectOpenAIResponses   = ir.DialectOpenAIResponses
+	DialectLux               = ir.DialectLux
 )
 
 // Frontend is the caller-side codec of a dialect: it decodes what the
