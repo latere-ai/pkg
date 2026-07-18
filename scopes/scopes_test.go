@@ -63,7 +63,7 @@ func TestKnownScopesPresent(t *testing.T) {
 		"policy:write",
 		"billing:read", "billing:report",
 		"read:projects", "admin:tasks",
-		"llm.read", "llm.invoke", "llm.serve", "llm.admin",
+		"llm.read", "llm.invoke", "llm.serve", "llm.admin", "llm.keyadmin",
 	}
 	have := map[string]bool{}
 	for _, sc := range All() {
