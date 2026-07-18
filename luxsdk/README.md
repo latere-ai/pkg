@@ -14,7 +14,9 @@ import "latere.ai/x/pkg/luxsdk"
 
 Both caller kinds expose the same `Caller` surface — `Generate` (one
 JSON response) and `Stream` (SSE) — so call sites are agnostic to how
-the model is reached.
+the model is reached. The gateway `Client` additionally offers
+`CountTokens`. TypeScript and Python clients with the same surface
+live in the lux repo (`sdk/typescript`, `sdk/python`).
 
 ```go
 // Through a Lux deployment: key custody, gates, metering, routing.
@@ -77,6 +79,13 @@ Assemble a streamed tool call from `block_start` (id, name) +
 `message_start` (input side) and `message_delta` (output side);
 accumulate both. A mid-stream gateway failure surfaces from `Next` as
 `*StreamError`.
+
+## Token counting
+
+```go
+tc, err := c.CountTokens(ctx, req) // POST /lux/v1/count_tokens; no spend gates
+// tc.InputTokens; tc.Estimated marks a heuristic count (no native tokenizer)
+```
 
 ## Errors and loss
 

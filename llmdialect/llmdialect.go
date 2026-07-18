@@ -1,7 +1,9 @@
 // Package llmdialect translates between LLM inference wire dialects —
-// Anthropic Messages, OpenAI Chat Completions, and OpenAI Responses —
-// through a neutral intermediate representation (package ir), so a
-// caller speaking one dialect can drive a model served behind another.
+// Anthropic Messages, OpenAI Chat Completions, OpenAI Responses, and
+// the lux-native dialect (the IR itself as a public wire format, spec
+// lux/33) — through a neutral intermediate representation (package
+// ir), so a caller speaking one dialect can drive a model served
+// behind another.
 //
 // Translation is hub-and-spoke: each dialect implements a Frontend
 // (caller side) and/or Backend (upstream side) codec against the IR,
