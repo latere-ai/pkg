@@ -16,7 +16,8 @@ Both caller kinds expose the same `Caller` surface — `Generate` (one
 JSON response) and `Stream` (SSE) — so call sites are agnostic to how
 the model is reached. The gateway `Client` additionally offers
 `CountTokens`. TypeScript and Python clients with the same surface
-live in the lux repo (`sdk/typescript`, `sdk/python`).
+live in their own public repos: [lux-typescript-sdk](https://github.com/latere-ai/lux-typescript-sdk)
+and [lux-python-sdk](https://github.com/latere-ai/lux-python-sdk).
 
 ```go
 // Through a Lux deployment: key custody, gates, metering, routing.
