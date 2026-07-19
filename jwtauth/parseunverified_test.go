@@ -21,7 +21,7 @@ func TestParseUnverified_HappyPath(t *testing.T) {
 		"org_id":         "org-9",
 		"client_id":      "lux-dashboard",
 		"is_superadmin":  true,
-		"scp":            []string{"llm.read", "llm.invoke", "llm.admin"},
+		"scp":            []string{"drive:read", "drive:write", "cella:run"},
 		"roles":          []string{"admin"},
 		"exp":            float64(time.Now().Add(time.Hour).Unix()),
 	})
@@ -38,8 +38,8 @@ func TestParseUnverified_HappyPath(t *testing.T) {
 	if c.ClientID != "lux-dashboard" {
 		t.Errorf("ClientID = %q, want lux-dashboard", c.ClientID)
 	}
-	if len(c.Scopes) != 3 || c.Scopes[0] != "llm.read" {
-		t.Errorf("Scopes = %v, want [llm.read llm.invoke llm.admin]", c.Scopes)
+	if len(c.Scopes) != 3 || c.Scopes[0] != "drive:read" {
+		t.Errorf("Scopes = %v, want [drive:read drive:write cella:run]", c.Scopes)
 	}
 	if c.Exp.IsZero() {
 		t.Error("Exp not populated")
@@ -215,7 +215,7 @@ func TestParseUnverified_NoJWKS(t *testing.T) {
 	httpGet = func(string) (*http.Response, error) {
 		panic("ParseUnverified must not fetch JWKS")
 	}
-	if _, err := ParseUnverified(unsignedToken(map[string]any{"sub": "s", "scp": []string{"llm.read"}})); err != nil {
+	if _, err := ParseUnverified(unsignedToken(map[string]any{"sub": "s", "scp": []string{"drive:read"}})); err != nil {
 		t.Fatalf("ParseUnverified: %v", err)
 	}
 }
@@ -226,7 +226,7 @@ func TestParseUnverified_NoJWKS(t *testing.T) {
 func TestParseUnverified_ExpiredStillParses(t *testing.T) {
 	tok := unsignedToken(map[string]any{
 		"sub": "s",
-		"scp": []string{"llm.read"},
+		"scp": []string{"drive:read"},
 		"exp": float64(time.Now().Add(-time.Hour).Unix()),
 	})
 	c, err := ParseUnverified(tok)
@@ -236,7 +236,7 @@ func TestParseUnverified_ExpiredStillParses(t *testing.T) {
 	if !c.Exp.Before(time.Now()) {
 		t.Error("expected Exp in the past")
 	}
-	if len(c.Scopes) != 1 || c.Scopes[0] != "llm.read" {
+	if len(c.Scopes) != 1 || c.Scopes[0] != "drive:read" {
 		t.Errorf("Scopes = %v", c.Scopes)
 	}
 }
