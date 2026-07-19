@@ -60,6 +60,44 @@ func TestGenerate(t *testing.T) {
 	}
 }
 
+func TestCostTags(t *testing.T) {
+	var gotTag string
+	var tagSet bool
+	srv := testServer(t, func(w http.ResponseWriter, r *http.Request) {
+		gotTag = r.Header.Get("Lux-Cost-Tag")
+		_, tagSet = r.Header["Lux-Cost-Tag"]
+		_, _ = w.Write([]byte(`{"id":"x","model":"m","blocks":[],"stop_reason":"end_turn","usage":{"input_tokens":0,"output_tokens":0}}`))
+	})
+
+	// Insertion order (tenant, project) differs from sorted order, so a
+	// pass proves the header is sorted, not just echoed.
+	c := New(srv.URL, WithCostTags(map[string]string{"tenant": "acme", "project": "web"}))
+	if _, err := c.Generate(context.Background(), &Request{Model: "m", Messages: []Message{UserText("x")}}); err != nil {
+		t.Fatal(err)
+	}
+	if gotTag != "project=web,tenant=acme" {
+		t.Fatalf("bad cost tag on Generate: %q", gotTag)
+	}
+
+	// CountTokens carries the same header.
+	tagSet, gotTag = false, ""
+	if _, err := c.CountTokens(context.Background(), &Request{Model: "m", Messages: []Message{UserText("x")}}); err != nil {
+		t.Fatal(err)
+	}
+	if gotTag != "project=web,tenant=acme" {
+		t.Fatalf("bad cost tag on CountTokens: %q", gotTag)
+	}
+
+	// No option: the header is absent (not merely empty).
+	tagSet, gotTag = false, ""
+	if _, err := New(srv.URL).Generate(context.Background(), &Request{Model: "m", Messages: []Message{UserText("x")}}); err != nil {
+		t.Fatal(err)
+	}
+	if tagSet {
+		t.Fatalf("Lux-Cost-Tag must be absent when unset, got %q", gotTag)
+	}
+}
+
 func TestGenerateError(t *testing.T) {
 	srv := testServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

@@ -38,6 +38,19 @@ mode), `WithTokenSource` (per-call token, e.g. a rotating JWT),
 `WithOAuthToken` (direct Anthropic only: bearer + OAuth beta header),
 `WithHTTPClient`.
 
+## Cost attribution
+
+```go
+c := luxsdk.New("https://lux.latere.ai", luxsdk.WithAPIKey(key),
+    luxsdk.WithCostTags(map[string]string{"tenant": "acme", "project": "web"}))
+```
+
+`WithCostTags` attributes every call's cost to named dimensions within
+the caller's own spend, sent as the `Lux-Cost-Tag` header (sorted
+`key=value` pairs, e.g. `project=web,tenant=acme`). It never changes
+who is billed or what the key can reach. Gateway `Client` only; a nil
+or empty map sends no header, and the gateway validates the value.
+
 ## Requests
 
 ```go

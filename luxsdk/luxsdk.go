@@ -22,6 +22,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"sort"
 	"strings"
 
 	"latere.ai/x/pkg/llmdialect/ir"
@@ -110,6 +111,10 @@ const lossHeader = "X-Lux-Compat-Loss"
 // tokenizer count.
 const estimatedHeader = "X-Lux-Compat-Estimated"
 
+// costTagHeader carries cost-attribution tags: a call's cost is split
+// across named dimensions within the caller's own spend.
+const costTagHeader = "Lux-Cost-Tag"
+
 // TokenSource supplies a fresh bearer per call (Latere Auth JWTs).
 type TokenSource interface {
 	Token(ctx context.Context) (string, error)
@@ -120,10 +125,11 @@ type Option func(*settings)
 
 // settings is the option state shared by both caller kinds.
 type settings struct {
-	apiKey string
-	tokens TokenSource
-	hc     *http.Client
-	oauth  bool
+	apiKey   string
+	tokens   TokenSource
+	hc       *http.Client
+	oauth    bool
+	costTags map[string]string
 }
 
 func applyOptions(opts []Option) settings {
@@ -150,6 +156,15 @@ func WithHTTPClient(hc *http.Client) Option {
 	return func(s *settings) { s.hc = hc }
 }
 
+// WithCostTags attributes every call's cost to named dimensions within
+// the caller's own spend (e.g. {"tenant": "acme", "project": "web"}),
+// sent as the Lux-Cost-Tag header. It never changes the billing owner
+// or what the key can reach. Gateway [Client] only; a nil or empty map
+// sends no header. The gateway validates the value.
+func WithCostTags(tags map[string]string) Option {
+	return func(s *settings) { s.costTags = tags }
+}
+
 // WithOAuthToken marks the credential as an OAuth access token
 // ([Direct] with [ProviderAnthropic] only): it travels as
 // "Authorization: Bearer" with the OAuth beta header instead of
@@ -167,20 +182,22 @@ type Caller interface {
 
 // Client calls one Lux deployment.
 type Client struct {
-	baseURL string
-	apiKey  string
-	tokens  TokenSource
-	hc      *http.Client
+	baseURL  string
+	apiKey   string
+	tokens   TokenSource
+	hc       *http.Client
+	costTags map[string]string
 }
 
 // New returns a client for the Lux deployment at baseURL.
 func New(baseURL string, opts ...Option) *Client {
 	s := applyOptions(opts)
 	return &Client{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		apiKey:  s.apiKey,
-		tokens:  s.tokens,
-		hc:      s.hc,
+		baseURL:  strings.TrimRight(baseURL, "/"),
+		apiKey:   s.apiKey,
+		tokens:   s.tokens,
+		hc:       s.hc,
+		costTags: s.costTags,
 	}
 }
 
@@ -262,6 +279,9 @@ func (c *Client) CountTokens(ctx context.Context, req *Request) (*TokenCount, er
 	if bearer != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+bearer)
 	}
+	if tags := formatCostTags(c.costTags); tags != "" {
+		httpReq.Header.Set(costTagHeader, tags)
+	}
 	resp, err := c.hc.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("lux: %w", err)
@@ -322,11 +342,38 @@ func (c *Client) post(ctx context.Context, req *Request, stream bool) (*http.Res
 	if bearer != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+bearer)
 	}
+	if tags := formatCostTags(c.costTags); tags != "" {
+		httpReq.Header.Set(costTagHeader, tags)
+	}
 	resp, err := c.hc.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("lux: %w", err)
 	}
 	return resp, nil
+}
+
+// formatCostTags serializes tags to the Lux-Cost-Tag wire form: sorted
+// key=value pairs joined by commas, no spaces. A nil or empty map
+// yields "".
+func formatCostTags(tags map[string]string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(tags))
+	for k := range tags {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for i, k := range keys {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(k)
+		b.WriteByte('=')
+		b.WriteString(tags[k])
+	}
+	return b.String()
 }
 
 // decodeError parses the gateway error envelope
