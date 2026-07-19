@@ -12,8 +12,8 @@ import "latere.ai/x/pkg/luxsdk"
 
 ## Callers
 
-Both caller kinds expose the same `Caller` surface — `Generate` (one
-JSON response) and `Stream` (SSE) — so call sites are agnostic to how
+Both caller kinds expose the same `Caller` surface (`Generate` for one
+JSON response and `Stream` for SSE), so call sites are agnostic to how
 the model is reached. The gateway `Client` additionally offers
 `CountTokens`. TypeScript and Python clients with the same surface
 live in their own public repos: [lux-typescript-sdk](https://github.com/latere-ai/lux-typescript-sdk)
@@ -56,7 +56,7 @@ Messages are two-role (`RoleUser` / `RoleAssistant`); tool results are
 `BlockToolResult` blocks inside a user turn. Block types:
 `text`, `image`, `tool_use`, `tool_result`, `thinking`,
 `redacted_thinking`. `Generate` forces `stream: false`; `Stream`
-forces it on — the flag on the request is never trusted.
+forces it on. The flag on the request is never trusted.
 
 ## Streaming
 
