@@ -264,6 +264,55 @@ func TestJWTAuthenticateCarriesActorClaims(t *testing.T) {
 	}
 }
 
+func TestJWTAuthenticateCarriesRoles(t *testing.T) {
+	// The org-scoped "roles" claim flows onto Identity.Roles so a consumer
+	// can derive org authority (e.g. an org admin holds "owner"/"admin")
+	// without a product-specific scope.
+	claims := &jwtauth.Claims{
+		Sub:           "u-1",
+		OrgID:         "org-1",
+		PrincipalType: jwtauth.PrincipalUser,
+		Roles:         []string{"admin"},
+	}
+	j := newJWTWithFakeValidator(&fakeValidator{claims: claims}, nil)
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"u-1"}`))
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Authorization", "Bearer hdr."+payload+".sig")
+	id, err := j.Authenticate(r)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(id.Roles) != 1 || id.Roles[0] != "admin" {
+		t.Fatalf("Roles = %v, want [admin]", id.Roles)
+	}
+}
+
+func TestJWTAuthenticateStrictAgentCarriesRoles(t *testing.T) {
+	// The strict path re-authorizes roles via tokeninfo alongside scopes.
+	claims := &jwtauth.Claims{
+		Sub:           "agent-1",
+		PrincipalType: jwtauth.PrincipalAgent,
+		Validation:    jwtauth.ValidationStrict,
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"sub":"agent-1","principal_type":"agent","org_id":"org-1","scopes":["read:x"],"roles":["member"]}`))
+	}))
+	defer srv.Close()
+	ti := NewTokenInfoClient(srv.URL)
+	j := newJWTWithFakeValidator(&fakeValidator{claims: claims}, ti)
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"agent-1"}`))
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Authorization", "Bearer hdr."+payload+".sig")
+	id, err := j.Authenticate(r)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(id.Roles) != 1 || id.Roles[0] != "member" {
+		t.Fatalf("Roles = %v, want [member]", id.Roles)
+	}
+}
+
 func TestJWTAuthenticateCarriesGrantorID(t *testing.T) {
 	// A delegated agent/actor token carries the RFC 8693 grantor (the
 	// owner who delegated). It flows onto Identity.GrantorID so a

@@ -68,6 +68,7 @@ func (j *JWT) Authenticate(r *http.Request) (Identity, error) {
 			PrincipalType: ti.PrincipalType,
 			IsSuperadmin:  false, // superadmin is not re-asserted via tokeninfo
 			Scopes:        ti.Scopes,
+			Roles:         ti.Roles, // tokeninfo re-authorizes org roles alongside scopes
 			ClientID:      cmp.Or(ti.ClientID, clientID),
 			TokenID:       ti.Sub,
 			// Preserve the actor binding from the signature-verified JWT:
@@ -88,6 +89,7 @@ func (j *JWT) Authenticate(r *http.Request) (Identity, error) {
 		PrincipalType: string(claims.PrincipalType),
 		IsSuperadmin:  claims.IsSuperadmin,
 		Scopes:        claims.Scopes,
+		Roles:         claims.Roles,
 		ClientID:      clientID,
 		TokenID:       claims.Sub,
 		Kind:          claims.Kind,

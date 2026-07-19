@@ -36,6 +36,13 @@ type Identity struct {
 	PrincipalType string // "user" | "service" | "agent" | "dev"
 	IsSuperadmin  bool
 	Scopes        []string
+	// Roles are the caller's role names in the token's active org (e.g.
+	// "owner", "admin", "member"), from the token's "roles" claim. They are
+	// org-scoped: a personal-view token (no active org) carries none. A
+	// consumer derives org authority from them (e.g. an org admin is a
+	// holder of "owner" or "admin") without minting a product-specific
+	// scope. Absent/unknown roles confer no authority (fail-safe).
+	Roles []string
 	// ClientID is the OAuth client_id of the caller's token. Used to
 	// resolve per-client config. Empty for dev bearer tokens and for
 	// older JWTs minted before the client_id claim was added.
