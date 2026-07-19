@@ -252,9 +252,9 @@ func (m *memoryStore) Save(t *oauth2.Token) error {
 	return nil
 }
 
-func (m *memoryStore) Load() (*oauth2.Token, error)        { return m.saved, nil }
-func (m *memoryStore) Clear() error                        { m.saved = nil; return nil }
-func (m *memoryStore) Touched() bool                       { return m.saved != nil }
+func (m *memoryStore) Load() (*oauth2.Token, error) { return m.saved, nil }
+func (m *memoryStore) Clear() error                 { m.saved = nil; return nil }
+func (m *memoryStore) Touched() bool                { return m.saved != nil }
 func (m *memoryStore) WithExpiry(d time.Duration) *memoryStore {
 	if m.saved != nil {
 		m.saved.Expiry = time.Now().Add(d)

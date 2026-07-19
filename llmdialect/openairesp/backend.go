@@ -301,9 +301,9 @@ func (e *respError) Error() string {
 // DecodeResponse parses a non-streaming Responses API response into the IR.
 func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 	var wire struct {
-		ID                string           `json:"id"`
-		Model             string           `json:"model"`
-		Status            string           `json:"status"`
+		ID                string `json:"id"`
+		Model             string `json:"model"`
+		Status            string `json:"status"`
 		IncompleteDetails *struct {
 			Reason string `json:"reason"`
 		} `json:"incomplete_details"`

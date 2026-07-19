@@ -1,4 +1,4 @@
-.PHONY: test race fuzz cover cover-html
+.PHONY: test race fuzz cover cover-html fmt fmt-check hooks
 
 test:
 	go test -v -count=1 ./...
@@ -33,3 +33,16 @@ cover:
 
 cover-html: cover
 	go tool cover -html=coverage.out
+
+# fmt formats all Go sources in place.
+fmt:
+	gofmt -w .
+
+# fmt-check fails if any Go source is not gofmt-formatted.
+fmt-check:
+	@out=$$(gofmt -l .); if [ -n "$$out" ]; then echo "gofmt: unformatted files:"; echo "$$out"; exit 1; fi
+
+# hooks installs the repository git hooks (pre-commit gofmt guard).
+hooks:
+	git config core.hooksPath .githooks
+	@echo "installed git hooks (core.hooksPath=.githooks)"

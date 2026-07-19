@@ -13,10 +13,10 @@ package md
 import (
 	"bytes"
 
+	"github.com/goccy/go-yaml"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
-	"github.com/goccy/go-yaml"
 )
 
 var renderer = goldmark.New(

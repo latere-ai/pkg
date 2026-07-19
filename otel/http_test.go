@@ -245,10 +245,10 @@ func TestHandlerWithMetricsHookCarriesMethodAndClass(t *testing.T) {
 
 func TestRouteFromPattern(t *testing.T) {
 	cases := map[string]string{
-		"":                  "",
+		"":                   "",
 		"GET /v1/parse/{id}": "/v1/parse/{id}",
-		"/static/":          "/static/",
-		"POST /x":           "/x",
+		"/static/":           "/static/",
+		"POST /x":            "/x",
 	}
 	for in, want := range cases {
 		if got := routeFromPattern(in); got != want {

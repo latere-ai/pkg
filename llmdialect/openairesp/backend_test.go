@@ -32,12 +32,12 @@ func TestBackendEncodeRequest(t *testing.T) {
 	maxTok := int64(4096)
 	temp := 0.5
 	req := &ir.Request{
-		Model:     "gpt-5.6-sol",
-		MaxTokens: &maxTok,
+		Model:       "gpt-5.6-sol",
+		MaxTokens:   &maxTok,
 		Temperature: &temp,
-		Stream:    true,
-		System:    []ir.Block{{Type: ir.BlockText, Text: "be terse"}},
-		Reasoning: &ir.Reasoning{Effort: ir.EffortHigh},
+		Stream:      true,
+		System:      []ir.Block{{Type: ir.BlockText, Text: "be terse"}},
+		Reasoning:   &ir.Reasoning{Effort: ir.EffortHigh},
 		Tools: []ir.Tool{{
 			Name: "shell", Description: "run a command",
 			InputSchema: json.RawMessage(`{"type":"object","properties":{"cmd":{"type":"string"}}}`),

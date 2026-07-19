@@ -165,7 +165,7 @@ func TestSplitFrontmatterInteriorTripleDash(t *testing.T) {
 // are not their own line: they must not be treated as frontmatter.
 func TestSplitFrontmatterLooseOpening(t *testing.T) {
 	for _, src := range []string{
-		"----\ntitle: test\n---\nbody\n", // "----" opening
+		"----\ntitle: test\n---\nbody\n",   // "----" opening
 		"---foo\ntitle: test\n---\nbody\n", // "---foo" opening
 		"---",                              // bare opening at EOF, no body
 	} {

@@ -16,13 +16,13 @@ import (
 func newSessionTestClient(t *testing.T) *oidc.Client {
 	t.Helper()
 	c := oidc.New(oidc.Config{
-		AuthURL:          "https://auth.example.test",
-		ClientID:         "test",
-		ClientSecret:     "test-secret",
-		RedirectURL:      "https://app.example.test/callback",
-		CookieKey:        "00112233445566778899aabbccddeeff",
-		InsecureCookies:  true,
-		CookieName:       "test-session",
+		AuthURL:         "https://auth.example.test",
+		ClientID:        "test",
+		ClientSecret:    "test-secret",
+		RedirectURL:     "https://app.example.test/callback",
+		CookieKey:       "00112233445566778899aabbccddeeff",
+		InsecureCookies: true,
+		CookieName:      "test-session",
 	})
 	if c == nil {
 		t.Fatal("oidc.New returned nil")
