@@ -37,7 +37,6 @@ func All() []Scope {
 	s = append(s, policy()...)
 	s = append(s, billing()...)
 	s = append(s, wallfacer()...)
-	s = append(s, lux()...)
 	sort.SliceStable(s, func(i, j int) bool {
 		if s[i].Category != s[j].Category {
 			return s[i].Category < s[j].Category
