@@ -12,9 +12,34 @@ package pgxmigrate
 import (
 	"fmt"
 	"io/fs"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/source"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+)
+
+// Bounds on the database-open retry. A rolling deploy overlaps the outgoing and
+// incoming pods for a few seconds, so the incoming pod's migrate connection can
+// briefly find no free slot; ~10s of retries outlasts that window while still
+// crashing promptly when the database is actually down.
+const (
+	openAttempts   = 6
+	openRetryDelay = 2 * time.Second
+)
+
+// newMigrator opens the migrate instance (and, through the database driver, a
+// connection). It is a variable so the retry loop is testable without a
+// database. sleep is likewise stubbed to keep those tests instant.
+var (
+	newMigrator = func(d source.Driver, dsn string) (migrator, error) {
+		m, err := migrate.NewWithSourceInstance("iofs", d, dsn)
+		if err != nil {
+			return nil, err
+		}
+		return m, nil
+	}
+	sleep = time.Sleep
 )
 
 // Up applies all pending migrations from src (rooted at dir, e.g. "." or
@@ -35,11 +60,29 @@ func Up(dsn string, src fs.FS, dir string) error {
 	if err != nil {
 		return fmt.Errorf("pgxmigrate: open source: %w", err)
 	}
-	m, err := migrate.NewWithSourceInstance("iofs", d, dsn)
+	m, err := open(d, dsn)
 	if err != nil {
-		return fmt.Errorf("pgxmigrate: init: %w", err)
+		return err
 	}
 	return runUp(m)
+}
+
+// open builds the migrate instance, retrying the database connection it opens.
+// Only the open is retried: a failure inside Up leaves golang-migrate's dirty
+// flag set, so re-running it can only report "Dirty database version" and would
+// mask a real migration bug.
+func open(d source.Driver, dsn string) (migrator, error) {
+	var err error
+	for attempt := 1; attempt <= openAttempts; attempt++ {
+		var m migrator
+		if m, err = newMigrator(d, dsn); err == nil {
+			return m, nil
+		}
+		if attempt < openAttempts {
+			sleep(openRetryDelay)
+		}
+	}
+	return nil, fmt.Errorf("pgxmigrate: init: %w", err)
 }
 
 // migrator is the subset of *migrate.Migrate that runUp needs, so the
