@@ -31,7 +31,9 @@ d, err := luxsdk.NewDirect(luxsdk.ProviderAnthropic, key, "")
 `Provider` is a closed enum: `ProviderAnthropic`, `ProviderOpenAI`
 (reasoning models are routed to `/v1/responses` automatically),
 `ProviderGemini` (openai-compat prefix), `ProviderOpenRouter`,
-`ProviderOllama` (unauthenticated when no key is set).
+`ProviderOllama` (unauthenticated when no key is set),
+`ProviderMoonshot`, `ProviderXai`, and `ProviderZhipu` (whose chat
+endpoint lives under `/api/paas/v4`, not `/v1`).
 
 Auth options: `WithAPIKey` (static bearer; provider key in direct
 mode), `WithTokenSource` (per-call token, e.g. a rotating JWT),

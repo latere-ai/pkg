@@ -36,6 +36,9 @@ const (
 	ProviderGemini     Provider = "gemini"
 	ProviderOpenRouter Provider = "openrouter"
 	ProviderOllama     Provider = "ollama"
+	ProviderMoonshot   Provider = "moonshot"
+	ProviderXai        Provider = "xai"
+	ProviderZhipu      Provider = "zhipu"
 )
 
 // Per-provider defaults.
@@ -45,6 +48,12 @@ var providerDefaults = map[Provider]string{
 	ProviderGemini:     "https://generativelanguage.googleapis.com",
 	ProviderOpenRouter: "https://openrouter.ai/api",
 	ProviderOllama:     "http://localhost:11434",
+	ProviderMoonshot:   "https://api.moonshot.ai",
+	ProviderXai:        "https://api.x.ai",
+	// Host-only, like the rest. Zhipu is the one provider that does not
+	// serve its OpenAI-compatible surface at /v1, so the difference lives
+	// in backendFor's path rather than in this URL.
+	ProviderZhipu: "https://api.z.ai",
 }
 
 const (
@@ -95,15 +104,19 @@ func NewDirect(provider Provider, apiKey, baseURL string, opts ...Option) (*Dire
 
 // backendFor picks the dialect backend and upstream path, mirroring
 // the gateway's routing: Anthropic speaks Messages; Gemini is reached
-// through its openai-compat prefix; OpenAI reasoning models require
-// the Responses API for tool use; everything else is Chat
-// Completions.
+// through its openai-compat prefix; Zhipu serves Chat Completions under
+// /api/paas/v4 rather than /v1; OpenAI reasoning models require the
+// Responses API for tool use; everything else is Chat Completions.
 func (d *Direct) backendFor(model string) (llmdialect.Backend, string) {
 	switch d.provider {
 	case ProviderAnthropic:
 		return anthropic.NewBackend(anthropic.BackendOptions{}), "/v1/messages"
 	case ProviderGemini:
 		return openaichat.NewBackend(openaichat.BackendOptions{}), "/v1beta/openai/chat/completions"
+	case ProviderZhipu:
+		// Zhipu serves chat completions at /api/paas/v4, not /v1, which
+		// is a 404 there. Same shape otherwise, so only the path differs.
+		return openaichat.NewBackend(openaichat.BackendOptions{}), "/api/paas/v4/chat/completions"
 	case ProviderOpenAI:
 		if isOpenAIResponsesModel(model) {
 			return openairesp.NewBackend(), "/v1/responses"

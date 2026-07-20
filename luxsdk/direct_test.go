@@ -385,3 +385,60 @@ var (
 	_ Caller = (*Client)(nil)
 	_ Caller = (*Direct)(nil)
 )
+
+// The A-series openai-chat providers (spec lux 035). Moonshot and xAI are
+// plain Bearer + /v1; Zhipu is the exception that motivates a test of its own,
+// since /v1/chat/completions is a 404 on its API.
+func TestDirectOpenAIChatFamilyPaths(t *testing.T) {
+	cases := []struct {
+		provider Provider
+		model    string
+		wantPath string
+	}{
+		{ProviderMoonshot, "kimi-k2.6", "/v1/chat/completions"},
+		{ProviderXai, "grok-4.5", "/v1/chat/completions"},
+		{ProviderZhipu, "glm-4.6", "/api/paas/v4/chat/completions"},
+	}
+	for _, c := range cases {
+		t.Run(string(c.provider), func(t *testing.T) {
+			var gotPath, gotAuth string
+			srv := testServer(t, func(w http.ResponseWriter, r *http.Request) {
+				gotPath, gotAuth = r.URL.Path, r.Header.Get("Authorization")
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"id":"cc1","model":"`+c.model+`","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`)
+			})
+			d, err := NewDirect(c.provider, "sek", srv.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := d.Generate(context.Background(), &Request{Model: c.model, Messages: []Message{UserText("x")}}); err != nil {
+				t.Fatal(err)
+			}
+			if gotPath != c.wantPath {
+				t.Fatalf("%s path = %q, want %q", c.provider, gotPath, c.wantPath)
+			}
+			if gotAuth != "Bearer sek" {
+				t.Fatalf("%s auth = %q, want Bearer", c.provider, gotAuth)
+			}
+		})
+	}
+}
+
+// A provider in the enum but missing from providerDefaults is rejected by
+// NewDirect, so an incomplete add fails loudly rather than sending requests to
+// an empty base URL.
+func TestDirectNewProviderDefaultsAreComplete(t *testing.T) {
+	for _, p := range []Provider{
+		ProviderAnthropic, ProviderOpenAI, ProviderGemini, ProviderOpenRouter,
+		ProviderOllama, ProviderMoonshot, ProviderXai, ProviderZhipu,
+	} {
+		d, err := NewDirect(p, "k", "")
+		if err != nil {
+			t.Errorf("NewDirect(%s) = %v; add it to providerDefaults", p, err)
+			continue
+		}
+		if d.baseURL == "" {
+			t.Errorf("NewDirect(%s) has an empty base URL", p)
+		}
+	}
+}
