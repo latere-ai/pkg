@@ -10,6 +10,11 @@
 //		Messages: []luxsdk.Message{luxsdk.UserText("hello")},
 //	})
 //
+// Both arguments fall back to the environment when omitted, so a
+// script configured by `eval "$(latere lux env lux)"` needs neither:
+//
+//	c := luxsdk.New("") // LUX_BASE_URL + LUX_API_KEY
+//
 // The wire vocabulary is defined once in pkg/llmdialect/lux and
 // re-exported here, so the SDK and the gateway codec cannot drift.
 package luxsdk
@@ -22,6 +27,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 
@@ -189,9 +195,42 @@ type Client struct {
 	costTags map[string]string
 }
 
+// Environment fallbacks for the two values a native-dialect call needs.
+// They apply only to what the caller left unset, so an explicit
+// argument can never be overridden by the process environment.
+const (
+	// EnvBaseURL names the gateway, e.g. https://lux.latere.ai. It is
+	// deliberately not LUX_API_URL: that is the latere CLI's own target,
+	// and one variable steering both would let `eval "$(latere lux env
+	// lux)"` silently retarget the CLI from a subshell.
+	EnvBaseURL = "LUX_BASE_URL"
+	// EnvAPIKey carries exactly what Authorization: Bearer carries: a
+	// lux_* virtual key, or a Latere Auth identity/actor token.
+	EnvAPIKey = "LUX_API_KEY"
+)
+
+// DefaultBaseURL is the public gateway, used when neither an explicit
+// baseURL nor [EnvBaseURL] is set.
+const DefaultBaseURL = "https://lux.latere.ai"
+
 // New returns a client for the Lux deployment at baseURL.
+//
+// An empty baseURL resolves from [EnvBaseURL], then [DefaultBaseURL].
+// Omitting both [WithAPIKey] and [WithTokenSource] resolves the
+// credential from [EnvAPIKey]. An unset credential stays unset rather
+// than defaulting to unauthenticated, so a misspelled variable name
+// fails at the gateway instead of silently becoming an anonymous call.
 func New(baseURL string, opts ...Option) *Client {
 	s := applyOptions(opts)
+	if baseURL == "" {
+		baseURL = os.Getenv(EnvBaseURL)
+	}
+	if baseURL == "" {
+		baseURL = DefaultBaseURL
+	}
+	if s.apiKey == "" && s.tokens == nil {
+		s.apiKey = os.Getenv(EnvAPIKey)
+	}
 	return &Client{
 		baseURL:  strings.TrimRight(baseURL, "/"),
 		apiKey:   s.apiKey,
