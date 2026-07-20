@@ -28,6 +28,19 @@ c := luxsdk.New("https://lux.latere.ai", luxsdk.WithAPIKey(key))
 d, err := luxsdk.NewDirect(luxsdk.ProviderAnthropic, key, "")
 ```
 
+Both connection values fall back to `LUX_BASE_URL` and `LUX_API_KEY`
+when omitted, so a process configured by `eval "$(latere lux env
+--compat lux)"` can construct with neither:
+
+```go
+c := luxsdk.New("")
+```
+
+Explicit arguments always win: the environment only fills what the
+caller left unset, so exporting `LUX_BASE_URL` can never redirect a
+client that passed its own. The three SDKs share this precedence
+exactly; the convention fragments the moment one of them disagrees.
+
 `Provider` is a closed enum: `ProviderAnthropic`, `ProviderOpenAI`
 (reasoning models are routed to `/v1/responses` automatically),
 `ProviderGemini` (openai-compat prefix), `ProviderOpenRouter`,
