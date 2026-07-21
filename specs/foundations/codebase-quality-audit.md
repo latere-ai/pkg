@@ -1,6 +1,6 @@
 ---
 title: Codebase quality audit
-status: drafted
+status: validated
 track: foundations
 depends_on: []
 affects:
@@ -115,4 +115,26 @@ Parallel OpenAI Chat tool-call deltas can violate canonical block ordering. It
 requires a separate stream-state design because the safe options change either
 latency or the IR grammar; it is intentionally not mixed into the independent
 fixes above.
+
+## Task Breakdown
+
+| Child spec | Depends on | Effort | Status |
+|---|---|---|---|
+| [Credential redaction](codebase-quality-audit/credential-redaction.md) | — | small | validated |
+| [Batch shutdown lifecycle](codebase-quality-audit/batch-shutdown-lifecycle.md) | — | small | validated |
+| [Session authentication validation](codebase-quality-audit/session-authentication-validation.md) | — | small | validated |
+| [Token-info lookup abstraction](codebase-quality-audit/tokeninfo-lookup-abstraction.md) | — | small | validated |
+| [JWKS HTTP client](codebase-quality-audit/jwks-http-client.md) | — | medium | validated |
+| [Telemetry proxy body limit](codebase-quality-audit/telemetry-proxy-body-limit.md) | — | small | validated |
+| [OTLP log base endpoint](codebase-quality-audit/otlp-log-base-endpoint.md) | — | medium | validated |
+| [HTTP status recording](codebase-quality-audit/http-status-recording.md) | — | small | validated |
+| [OpenAI Chat message ordering](codebase-quality-audit/openai-chat-message-ordering.md) | — | small | validated |
+| [OpenAI Responses terminal failures](codebase-quality-audit/openai-responses-terminal-failures.md) | — | medium | validated |
+| [Markdown frontmatter fence](codebase-quality-audit/markdown-frontmatter-fence.md) | — | small | validated |
+| [Migration close errors](codebase-quality-audit/migration-close-errors.md) | — | small | validated |
+| [Fuzz workflow discovery](codebase-quality-audit/fuzz-workflow-discovery.md) | — | small | validated |
+
+All tasks are independent. The recommended order above starts with security and
+lifecycle fixes, then transport/codec correctness, then repository workflow
+cleanup.
 
