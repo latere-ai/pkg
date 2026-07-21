@@ -68,6 +68,7 @@ func TestSessionAuthenticator_HappyPath(t *testing.T) {
 			OrgID:        "org-1",
 			ClientID:     "cli-x",
 			Scopes:       []string{"read:projects"},
+			OrgRoles:     []string{"admin"},
 			IsSuperadmin: false,
 		},
 	}
@@ -99,6 +100,9 @@ func TestSessionAuthenticator_HappyPath(t *testing.T) {
 	if id.AuthMethod != MethodCookie {
 		t.Fatalf("AuthMethod = %q, want %q", id.AuthMethod, MethodCookie)
 	}
+	if len(id.Roles) != 1 || id.Roles[0] != "admin" {
+		t.Fatalf("Roles = %v, want [admin]", id.Roles)
+	}
 }
 
 func TestSessionAuthenticator_TamperedCookie(t *testing.T) {
@@ -109,5 +113,49 @@ func TestSessionAuthenticator_TamperedCookie(t *testing.T) {
 	_, err := a.Authenticate(req)
 	if !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("tampered cookie: got %v, want ErrUnauthenticated", err)
+	}
+}
+
+func TestSessionAuthenticator_RejectsInvalidLifecycle(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name string
+		sess oidc.Session
+	}{
+		{
+			name: "empty subject",
+			sess: oidc.Session{Expiry: now.Add(time.Hour)},
+		},
+		{
+			name: "missing access token expiry",
+			sess: oidc.Session{User: oidc.User{Sub: "u-1"}},
+		},
+		{
+			name: "expired access token",
+			sess: oidc.Session{Expiry: now.Add(-time.Minute), User: oidc.User{Sub: "u-1"}},
+		},
+		{
+			name: "expired session window",
+			sess: oidc.Session{
+				Expiry:        now.Add(time.Hour),
+				SessionExpiry: now.Add(-time.Minute),
+				User:          oidc.User{Sub: "u-1"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newSessionTestClient(t)
+			rec := httptest.NewRecorder()
+			if err := c.SetSession(rec, &tt.sess); err != nil {
+				t.Fatalf("SetSession: %v", err)
+			}
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.AddCookie(rec.Result().Cookies()[0])
+			_, err := NewSessionAuthenticator(c).Authenticate(req)
+			if !errors.Is(err, ErrUnauthenticated) {
+				t.Fatalf("Authenticate error = %v, want ErrUnauthenticated", err)
+			}
+		})
 	}
 }

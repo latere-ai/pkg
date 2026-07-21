@@ -2,6 +2,7 @@ package authkit
 
 import (
 	"net/http"
+	"time"
 
 	"latere.ai/x/pkg/oidc"
 )
@@ -32,6 +33,11 @@ func (s *SessionAuthenticator) Authenticate(r *http.Request) (Identity, error) {
 	if err != nil || sess == nil {
 		return Identity{}, ErrUnauthenticated
 	}
+	now := time.Now()
+	if sess.User.Sub == "" || sess.Expiry.IsZero() || !sess.Expiry.After(now) ||
+		(!sess.SessionExpiry.IsZero() && !sess.SessionExpiry.After(now)) {
+		return Identity{}, ErrUnauthenticated
+	}
 	return Identity{
 		Sub:           sess.User.Sub,
 		OrgID:         sess.User.OrgID,
@@ -39,6 +45,7 @@ func (s *SessionAuthenticator) Authenticate(r *http.Request) (Identity, error) {
 		PrincipalType: "user",
 		IsSuperadmin:  sess.User.IsSuperadmin,
 		Scopes:        sess.User.Scopes,
+		Roles:         sess.User.OrgRoles,
 		ClientID:      sess.User.ClientID,
 		TokenID:       sess.User.Sub,
 		AuthMethod:    MethodCookie,
