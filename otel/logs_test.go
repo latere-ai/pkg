@@ -88,8 +88,13 @@ func TestSetupLogs_NoEndpoint_OmitsReplicaWhenEmpty(t *testing.T) {
 }
 
 func TestSetupLogs_WithEndpoint(t *testing.T) {
-	srv := otlpLogServer(t)
-	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", srv.URL)
+	paths := make(chan string, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths <- r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", srv.URL+"/otlp")
 	var buf bytes.Buffer
 	stdout := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
 	logger, shutdown, err := SetupLogs(context.Background(), LogsConfig{
@@ -106,6 +111,14 @@ func TestSetupLogs_WithEndpoint(t *testing.T) {
 	}
 	if err := shutdown(context.Background()); err != nil {
 		t.Errorf("shutdown err = %v", err)
+	}
+	select {
+	case got := <-paths:
+		if got != "/otlp/v1/logs" {
+			t.Errorf("OTLP log path = %q, want /otlp/v1/logs", got)
+		}
+	default:
+		t.Error("OTLP exporter made no request")
 	}
 }
 
@@ -217,36 +230,6 @@ func TestNewLogResource_CarriesEnvironment(t *testing.T) {
 	}
 }
 
-func TestUseInsecure(t *testing.T) {
-	cases := map[string]bool{
-		"https://gateway.grafana.net/otlp": false, // TLS gateway must keep TLS
-		"http://localhost:4318":            true,  // explicit plaintext
-		"localhost:4318":                   true,  // scheme-less stays plaintext
-		"":                                 true,
-	}
-	for in, want := range cases {
-		if got := useInsecure(in); got != want {
-			t.Errorf("useInsecure(%q) = %v, want %v", in, got, want)
-		}
-	}
-}
-
-func TestStripScheme(t *testing.T) {
-	cases := map[string]string{
-		"http://x:1":  "x:1",
-		"https://x:1": "x:1",
-		"x:1":         "x:1",
-		"":            "",
-		"http://":     "http://",
-		"https://":    "https://",
-	}
-	for in, want := range cases {
-		if got := stripScheme(in); got != want {
-			t.Errorf("stripScheme(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 func TestNoopShutdown(t *testing.T) {
 	if err := noopShutdown(context.Background()); err != nil {
 		t.Errorf("err = %v, want nil", err)
@@ -348,26 +331,4 @@ func TestLoggerWithEmptyAttrs(t *testing.T) {
 	if !strings.Contains(buf.String(), `"msg":"ping"`) {
 		t.Errorf("output did not include message: %s", buf.String())
 	}
-}
-
-func FuzzStripScheme(f *testing.F) {
-	f.Add("http://host:1234")
-	f.Add("https://host:1234")
-	f.Add("host:1234")
-	f.Add("")
-	f.Add("http://")
-	f.Add("http://http://") // doubled scheme: only the first is stripped
-	f.Fuzz(func(t *testing.T, s string) {
-		got := stripScheme(s)
-		// stripScheme removes at most one leading http:// or https:// prefix,
-		// so the result is either unchanged or the input with exactly one such
-		// prefix removed. A doubled scheme (e.g. "http://http://") therefore
-		// legitimately leaves a scheme on the result.
-		switch {
-		case got == s, s == "http://"+got, s == "https://"+got:
-			// valid: zero or one prefix removed.
-		default:
-			t.Errorf("stripScheme(%q) = %q is not a single-prefix strip", s, got)
-		}
-	})
 }

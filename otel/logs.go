@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"os"
-	"strings"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
@@ -30,17 +29,11 @@ type LogsConfig struct {
 }
 
 var (
-	newLogExporter = func(ctx context.Context, endpoint string) (sdklog.Exporter, error) {
-		opts := []otlploghttp.Option{otlploghttp.WithEndpoint(stripScheme(endpoint))}
-		// Honor the endpoint scheme like the trace/metric exporters instead of
-		// always forcing plaintext: an https:// endpoint keeps TLS. Only an
-		// explicit http:// (or scheme-less) endpoint stays insecure, so this
-		// cannot break a plaintext in-cluster collector while it fixes silent
-		// log loss against a TLS gateway.
-		if useInsecure(endpoint) {
-			opts = append(opts, otlploghttp.WithInsecure())
-		}
-		return otlploghttp.New(ctx, opts...)
+	newLogExporter = func(ctx context.Context, _ string) (sdklog.Exporter, error) {
+		// The exporter owns OTEL endpoint parsing. In particular, the general
+		// OTEL_EXPORTER_OTLP_ENDPOINT is a base URL: the exporter preserves its
+		// scheme and appends /v1/logs after any existing path prefix.
+		return otlploghttp.New(ctx)
 	}
 	// newLogResource shares serviceResource so log records carry the same
 	// service + deployment.environment attributes as traces and metrics.
@@ -110,25 +103,6 @@ func loggerWith(h slog.Handler, attrs []slog.Attr) *slog.Logger {
 }
 
 func noopShutdown(context.Context) error { return nil }
-
-// useInsecure reports whether the log exporter should force a plaintext
-// connection to endpoint. Only an explicit https:// endpoint keeps TLS;
-// http:// and scheme-less endpoints stay insecure, preserving the historical
-// plaintext behavior for in-cluster collectors.
-func useInsecure(endpoint string) bool {
-	return !strings.HasPrefix(endpoint, "https://")
-}
-
-// stripScheme drops a leading http:// or https:// from s. The OTLP/HTTP
-// exporter accepts the bare authority (host:port) and rejects the scheme.
-func stripScheme(s string) string {
-	for _, p := range []string{"http://", "https://"} {
-		if strings.HasPrefix(s, p) && len(s) > len(p) {
-			return s[len(p):]
-		}
-	}
-	return s
-}
 
 // teeHandler fans every log record to two handlers. The secondary's errors do
 // not propagate; the primary is the source of truth for ops.
