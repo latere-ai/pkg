@@ -33,6 +33,18 @@ type TokenInfo struct {
 	} `json:"act,omitempty"`
 }
 
+// TokenInfoLookup is the online-validation contract used by JWT
+// authentication. TokenInfoClient provides authoritative per-request lookups;
+// CachedTokenInfo implements the same contract for explicitly read-only tiers.
+type TokenInfoLookup interface {
+	Lookup(ctx context.Context, rawToken string) (*TokenInfo, error)
+}
+
+var (
+	_ TokenInfoLookup = (*TokenInfoClient)(nil)
+	_ TokenInfoLookup = (*CachedTokenInfo)(nil)
+)
+
 // Delegator returns the principal sub this token acts for, or "" for a
 // non-delegated token. Mirrors jwtauth.Claims.Delegator (dr-21).
 func (ti *TokenInfo) Delegator() string {

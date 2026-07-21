@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"latere.ai/x/pkg/jwtauth"
 )
@@ -41,7 +43,7 @@ func (f *fakeValidator) Validate(string) (*jwtauth.Claims, error) {
 	return f.claims, f.err
 }
 
-func newJWTWithFakeValidator(v validator, ti *TokenInfoClient) *JWT {
+func newJWTWithFakeValidator(v validator, ti TokenInfoLookup) *JWT {
 	return &JWT{V: v, TokenInfo: ti}
 }
 
@@ -182,6 +184,34 @@ func TestJWTAuthenticateStrictAgentWithTokenInfo(t *testing.T) {
 	}
 	if id.AuthMethod != MethodBearer {
 		t.Fatalf("AuthMethod = %q, want %q", id.AuthMethod, MethodBearer)
+	}
+}
+
+func TestJWTAuthenticateStrictAgentWithCachedTokenInfo(t *testing.T) {
+	claims := &jwtauth.Claims{
+		Sub:           "agent-1",
+		PrincipalType: jwtauth.PrincipalAgent,
+		Validation:    jwtauth.ValidationStrict,
+	}
+	var lookups atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		lookups.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"sub":"agent-1","principal_type":"agent","org_id":"org-1","scopes":["read:x"]}`))
+	}))
+	defer srv.Close()
+
+	cached := NewCachedTokenInfo(NewTokenInfoClient(srv.URL), time.Minute)
+	j := newJWTWithFakeValidator(&fakeValidator{claims: claims}, cached)
+	for range 2 {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.Header.Set("Authorization", "Bearer hdr.payload.sig")
+		if _, err := j.Authenticate(r); err != nil {
+			t.Fatalf("Authenticate: %v", err)
+		}
+	}
+	if got := lookups.Load(); got != 1 {
+		t.Fatalf("upstream lookups = %d, want 1 cached lookup", got)
 	}
 }
 

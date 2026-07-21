@@ -25,17 +25,17 @@ type validator interface {
 // tokens), JWT calls the auth service's GET /tokeninfo on every request and
 // uses the returned payload as the authoritative source of Sub, OrgID, and
 // Scopes — because a delegation can be revoked between token issuance and
-// expiry. A nil TokenInfoClient in this case fails closed: such tokens are
+// expiry. A nil TokenInfo lookup in this case fails closed: such tokens are
 // rejected outright.
 type JWT struct {
 	V         validator
-	TokenInfo *TokenInfoClient
+	TokenInfo TokenInfoLookup
 }
 
 // NewJWT wires a JWT authenticator. v is the JWKS-backed validator from
 // latere.ai/x/pkg/jwtauth; ti is optional but required for strict agent
 // tokens (NeedsTokenInfo).
-func NewJWT(v *jwtauth.Validator, ti *TokenInfoClient) *JWT {
+func NewJWT(v *jwtauth.Validator, ti TokenInfoLookup) *JWT {
 	return &JWT{V: v, TokenInfo: ti}
 }
 
