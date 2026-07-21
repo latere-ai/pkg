@@ -10,6 +10,7 @@
 package pgxmigrate
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"time"
@@ -95,9 +96,16 @@ type migrator interface {
 // runUp applies migrations and always closes the migrator, even on failure, so
 // the migrate-owned connection pool is never leaked on a failed startup.
 func runUp(m migrator) error {
-	defer m.Close()
+	var upErr error
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		return fmt.Errorf("pgxmigrate: up: %w", err)
+		upErr = fmt.Errorf("pgxmigrate: up: %w", err)
 	}
-	return nil
+	sourceErr, dbErr := m.Close()
+	if sourceErr != nil {
+		sourceErr = fmt.Errorf("pgxmigrate: close source: %w", sourceErr)
+	}
+	if dbErr != nil {
+		dbErr = fmt.Errorf("pgxmigrate: close database: %w", dbErr)
+	}
+	return errors.Join(upErr, sourceErr, dbErr)
 }

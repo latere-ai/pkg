@@ -87,12 +87,17 @@ func TestUpGivesUpOnPersistentOpenFailure(t *testing.T) {
 
 // fakeMigrator records whether Close was called and returns a configured Up error.
 type fakeMigrator struct {
-	upErr  error
-	closed bool
+	upErr     error
+	sourceErr error
+	dbErr     error
+	closed    bool
 }
 
-func (f *fakeMigrator) Up() error                       { return f.upErr }
-func (f *fakeMigrator) Close() (sourceErr, dbErr error) { f.closed = true; return nil, nil }
+func (f *fakeMigrator) Up() error { return f.upErr }
+func (f *fakeMigrator) Close() (sourceErr, dbErr error) {
+	f.closed = true
+	return f.sourceErr, f.dbErr
+}
 
 // TestRunUpClosesOnSuccess reproduces the connection leak the shared package
 // exists to prevent: migrate opens its own *sql.DB and must be closed after Up.
@@ -132,5 +137,23 @@ func TestRunUpClosesOnError(t *testing.T) {
 	}
 	if !f.closed {
 		t.Fatal("migrator was not closed on the error path")
+	}
+}
+
+func TestRunUpReturnsCloseErrors(t *testing.T) {
+	sourceErr := errors.New("source close")
+	dbErr := errors.New("database close")
+	err := runUp(&fakeMigrator{sourceErr: sourceErr, dbErr: dbErr})
+	if !errors.Is(err, sourceErr) || !errors.Is(err, dbErr) {
+		t.Fatalf("close error = %v, want both source and database causes", err)
+	}
+}
+
+func TestRunUpJoinsMigrationAndCloseErrors(t *testing.T) {
+	upErr := errors.New("migration failed")
+	dbErr := errors.New("database close")
+	err := runUp(&fakeMigrator{upErr: upErr, dbErr: dbErr})
+	if !errors.Is(err, upErr) || !errors.Is(err, dbErr) {
+		t.Fatalf("joined error = %v, want migration and close causes", err)
 	}
 }
