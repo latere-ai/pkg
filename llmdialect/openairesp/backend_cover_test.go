@@ -2,6 +2,7 @@ package openairesp
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -205,8 +206,7 @@ func TestBackendDecodeOutputTextInvalid(t *testing.T) {
 	}
 }
 
-// Streaming edge cases: reasoning deltas, error frame, invalid frame,
-// and EOF without a terminal response.completed.
+// Streaming edge cases: reasoning deltas and EOF without a terminal event.
 func TestBackendEventDecoderReasoningAndEOF(t *testing.T) {
 	stream := strings.Join([]string{
 		`data: {"type":"response.created","response":{"id":"resp_a","model":"m"}}`, ``,
@@ -219,7 +219,7 @@ func TestBackendEventDecoderReasoningAndEOF(t *testing.T) {
 	var sawStart, sawStop bool
 	for {
 		ev, err := dec.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.ErrUnexpectedEOF) {
 			break
 		}
 		if err != nil {
@@ -234,7 +234,7 @@ func TestBackendEventDecoderReasoningAndEOF(t *testing.T) {
 			sawStop = true
 		}
 	}
-	if !sawStart || !sawStop || thinking.String() != "think" {
+	if !sawStart || sawStop || thinking.String() != "think" {
 		t.Errorf("start=%v stop=%v thinking=%q", sawStart, sawStop, thinking.String())
 	}
 }
@@ -264,10 +264,32 @@ func TestBackendEventDecoderIncomplete(t *testing.T) {
 }
 
 func TestBackendEventDecoderErrors(t *testing.T) {
-	// error frame surfaces as an error
+	// The legacy nested error shape remains accepted.
 	dec := NewBackend().NewEventDecoder(strings.NewReader("data: {\"type\":\"error\",\"error\":{\"message\":\"x\",\"type\":\"e\"}}\n\n"))
 	if _, err := dec.Next(); err == nil {
 		t.Error("want error frame")
+	}
+	// The official error event carries code and message at top level.
+	dec = NewBackend().NewEventDecoder(strings.NewReader("data: {\"type\":\"error\",\"code\":\"server_error\",\"message\":\"boom\"}\n\n"))
+	if _, err := dec.Next(); err == nil || !strings.Contains(err.Error(), "server_error") || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("official error frame = %v", err)
+	}
+	// response.failed carries its error inside the response object.
+	failed := strings.Join([]string{
+		`data: {"type":"response.created","response":{"id":"resp_f","model":"m"}}`, ``,
+		`data: {"type":"response.failed","response":{"status":"failed","error":{"code":"model_error","message":"failed generation"}}}`, ``,
+	}, "\n")
+	dec = NewBackend().NewEventDecoder(strings.NewReader(failed))
+	if ev, err := dec.Next(); err != nil || ev.Type != ir.EventMessageStart {
+		t.Fatalf("start event = %+v, %v", ev, err)
+	}
+	if _, err := dec.Next(); err == nil || !strings.Contains(err.Error(), "model_error") {
+		t.Fatalf("response.failed error = %v", err)
+	}
+	// A cancelled response is also terminal and cannot become end_turn.
+	dec = NewBackend().NewEventDecoder(strings.NewReader("data: {\"type\":\"response.cancelled\",\"response\":{\"status\":\"cancelled\"}}\n\n"))
+	if _, err := dec.Next(); err == nil || !strings.Contains(err.Error(), "cancelled") {
+		t.Fatalf("response.cancelled error = %v", err)
 	}
 	// invalid JSON frame surfaces as an error
 	dec2 := NewBackend().NewEventDecoder(strings.NewReader("data: {not json\n\n"))
@@ -409,8 +431,8 @@ func TestBackendDecodeEmptyStringContent(t *testing.T) {
 }
 
 func TestBackendEventDecoderOpenBlockAtEOF(t *testing.T) {
-	// a message item opened but never .done before the stream ends: finish
-	// must still close the open block (BlockStop) before MessageStop.
+	// A message item opened but never completed is a truncated upstream stream,
+	// not a successful response with a synthetic terminal tail.
 	stream := strings.Join([]string{
 		`data: {"type":"response.created","response":{"id":"resp_o","model":"m"}}`, ``,
 		`data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_0","role":"assistant"}}`, ``,
@@ -420,7 +442,7 @@ func TestBackendEventDecoderOpenBlockAtEOF(t *testing.T) {
 	var seq []ir.EventType
 	for {
 		ev, err := dec.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.ErrUnexpectedEOF) {
 			break
 		}
 		if err != nil {
@@ -428,18 +450,14 @@ func TestBackendEventDecoderOpenBlockAtEOF(t *testing.T) {
 		}
 		seq = append(seq, ev.Type)
 	}
-	// BlockStop must appear before the terminal MessageStop
-	if seq[len(seq)-1] != ir.EventMessageStop || seq[len(seq)-2] != ir.EventMessageDelta {
-		t.Fatalf("tail = %v", seq)
-	}
-	var sawStop bool
+	var sawSyntheticTerminal bool
 	for _, e := range seq {
-		if e == ir.EventBlockStop {
-			sawStop = true
+		if e == ir.EventBlockStop || e == ir.EventMessageDelta || e == ir.EventMessageStop {
+			sawSyntheticTerminal = true
 		}
 	}
-	if !sawStop {
-		t.Errorf("open block not closed: %v", seq)
+	if sawSyntheticTerminal {
+		t.Errorf("truncated stream synthesized terminal events: %v", seq)
 	}
 }
 

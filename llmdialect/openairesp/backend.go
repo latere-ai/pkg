@@ -292,10 +292,18 @@ func (u *respUsage) toUsage() ir.Usage {
 type respError struct {
 	Message string `json:"message"`
 	Type    string `json:"type"`
+	Code    string `json:"code"`
 }
 
 func (e *respError) Error() string {
-	return fmt.Sprintf("openairesp: upstream error (%s): %s", e.Type, e.Message)
+	kind := e.Code
+	if kind == "" {
+		kind = e.Type
+	}
+	if kind == "" {
+		kind = "unknown"
+	}
+	return fmt.Sprintf("openairesp: upstream error (%s): %s", kind, e.Message)
 }
 
 // DecodeResponse parses a non-streaming Responses API response into the IR.
@@ -436,8 +444,8 @@ func (d *EventDecoder) Next() (ir.Event, error) {
 		}
 		frame, err := d.r.Next()
 		if err == io.EOF {
-			d.finish(ir.StopEndTurn)
-			continue
+			d.finished = true
+			return ir.Event{}, io.ErrUnexpectedEOF
 		}
 		if err != nil {
 			return ir.Event{}, err
@@ -467,6 +475,8 @@ func (d *EventDecoder) closeOpen() {
 func (d *EventDecoder) consume(data []byte) error {
 	var ev struct {
 		Type     string `json:"type"`
+		Code     string `json:"code"`
+		Message  string `json:"message"`
 		Delta    string `json:"delta"`
 		Response struct {
 			ID                string `json:"id"`
@@ -476,6 +486,7 @@ func (d *EventDecoder) consume(data []byte) error {
 				Reason string `json:"reason"`
 			} `json:"incomplete_details"`
 			Usage *respUsage `json:"usage"`
+			Error *respError `json:"error"`
 		} `json:"response"`
 		Item struct {
 			Type   string `json:"type"`
@@ -488,7 +499,12 @@ func (d *EventDecoder) consume(data []byte) error {
 		return fmt.Errorf("openairesp: invalid stream frame: %w", err)
 	}
 	if ev.Error != nil {
+		d.finished = true
 		return ev.Error
+	}
+	if ev.Type == "error" {
+		d.finished = true
+		return &respError{Code: ev.Code, Type: ev.Type, Message: ev.Message}
 	}
 
 	switch ev.Type {
@@ -533,6 +549,15 @@ func (d *EventDecoder) consume(data []byte) error {
 			d.usage = &u
 		}
 		d.finish(responseStop(ev.Response.Status, incompleteReason(ev.Response.IncompleteDetails), d.sawTool))
+	case "response.failed":
+		d.finished = true
+		if ev.Response.Error != nil {
+			return ev.Response.Error
+		}
+		return fmt.Errorf("openairesp: upstream response failed")
+	case "response.cancelled":
+		d.finished = true
+		return fmt.Errorf("openairesp: upstream response cancelled")
 	}
 	return nil
 }
