@@ -67,6 +67,14 @@ var rules = []rule{
 		`${1}***`,
 	},
 	{
+		regexp.MustCompile(`(?i)\b(\w*(?:key|secret|token|password|passwd))='[^']*'`),
+		`$1='***'`,
+	},
+	{
+		regexp.MustCompile(`(?i)\b(\w*(?:key|secret|token|password|passwd))="[^"]*"`),
+		`$1="***"`,
+	},
+	{
 		regexp.MustCompile(`(?i)\b(\w*(?:key|secret|token|password|passwd))=([^\s&'"]+)`),
 		`$1=***`,
 	},
@@ -84,6 +92,7 @@ var rules = []rule{
 	{regexp.MustCompile(`\bghu_[A-Za-z0-9]{36,}\b`), `***`},
 	{regexp.MustCompile(`\bgho_[A-Za-z0-9]{36,}\b`), `***`},
 	{regexp.MustCompile(`\bghr_[A-Za-z0-9]{36,}\b`), `***`},
+	{regexp.MustCompile(`\bgithub_pat_[A-Za-z0-9_]{20,}\b`), `***`},
 	{regexp.MustCompile(`\bsk-ant-[A-Za-z0-9_-]{20,}\b`), `***`},
 	{regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{20,}\b`), `***`},
 }

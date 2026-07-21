@@ -232,6 +232,8 @@ func TestRedact(t *testing.T) {
 	}{
 		{"bearer", "Authorization: Bearer abc.def.ghi_123-XYZ", []string{"Authorization: Bearer ***"}, []string{"abc.def.ghi_123-XYZ"}},
 		{"env", "GITHUB_TOKEN=ghp_0123456789abcdef0123456789abcdef0123", []string{"GITHUB_TOKEN=***"}, []string{"ghp_0123456789"}},
+		{"single-quoted env", "API_TOKEN='opaque-credential-value'", []string{"API_TOKEN='***'"}, []string{"opaque-credential-value"}},
+		{"double-quoted env", `API_TOKEN="opaque credential value"`, []string{`API_TOKEN="***"`}, []string{"opaque credential value"}},
 		{"url", "https://alice:hunter2@example.com/", []string{"https://alice:***@example.com/"}, []string{"hunter2"}},
 		{"jwt", "tok=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghij", []string{"***"}, []string{"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"}},
 		{"aws", "AKIAIOSFODNN7EXAMPLE", []string{"***"}, []string{"AKIAIOSFODNN7EXAMPLE"}},
@@ -240,6 +242,7 @@ func TestRedact(t *testing.T) {
 		{"gh user", "ghu_0123456789abcdef0123456789abcdef0123", []string{"***"}, []string{"ghu_0123456789abcdef0123456789abcdef0123"}},
 		{"gh oauth", "gho_0123456789abcdef0123456789abcdef0123", []string{"***"}, []string{"gho_0123456789abcdef0123456789abcdef0123"}},
 		{"gh refresh", "ghr_0123456789abcdef0123456789abcdef0123", []string{"***"}, []string{"ghr_0123456789abcdef0123456789abcdef0123"}},
+		{"gh fine-grained", "github_pat_11AA22bb33CC44dd55EE66ff77GG88hh99II", []string{"***"}, []string{"github_pat_11AA22bb33CC44dd55EE66ff77GG88hh99II"}},
 		{"anthropic", "sk-ant-xxxxxxxxxxxxxxxxxxxxxxxx", []string{"***"}, []string{"sk-ant-xxxxxxxxxxxxxxxxxxxxxxxx"}},
 		{"openai", "sk-proj-abcdef0123456789abcdef0123456789", []string{"***"}, []string{"sk-proj-abcdef0123456789abcdef0123456789"}},
 		{"plain", "hello world", []string{"hello world"}, []string{"***"}},
