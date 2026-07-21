@@ -345,6 +345,35 @@ func TestStatusWriter(t *testing.T) {
 	sw3.Flush() // must not panic
 }
 
+func TestStatusWriter_RecordsCommittedFinalStatus(t *testing.T) {
+	rw := &recordingWriter{}
+	sw := &statusWriter{ResponseWriter: rw, code: http.StatusOK}
+	sw.WriteHeader(http.StatusEarlyHints)
+	sw.WriteHeader(http.StatusNoContent)
+	sw.WriteHeader(http.StatusInternalServerError)
+	if sw.code != http.StatusNoContent {
+		t.Fatalf("recorded code = %d, want first final status 204", sw.code)
+	}
+	if got := rw.codes; len(got) != 2 || got[0] != http.StatusEarlyHints || got[1] != http.StatusNoContent {
+		t.Fatalf("written status codes = %v, want [103 204]", got)
+	}
+}
+
+func TestStatusWriter_WriteCommitsImplicitOK(t *testing.T) {
+	rw := &recordingWriter{}
+	sw := &statusWriter{ResponseWriter: rw, code: http.StatusOK}
+	if _, err := sw.Write([]byte("ok")); err != nil {
+		t.Fatal(err)
+	}
+	sw.WriteHeader(http.StatusInternalServerError)
+	if sw.code != http.StatusOK {
+		t.Fatalf("recorded code = %d, want implicit 200", sw.code)
+	}
+	if got := rw.codes; len(got) != 1 || got[0] != http.StatusOK {
+		t.Fatalf("written status codes = %v, want [200]", got)
+	}
+}
+
 type flushingHijackingRecorder struct {
 	*httptest.ResponseRecorder
 	flushed bool
@@ -362,3 +391,23 @@ type nonHijackWriter struct{}
 func (nonHijackWriter) Header() http.Header       { return http.Header{} }
 func (nonHijackWriter) Write([]byte) (int, error) { return 0, nil }
 func (nonHijackWriter) WriteHeader(int)           {}
+
+type recordingWriter struct {
+	header http.Header
+	codes  []int
+}
+
+func (w *recordingWriter) Header() http.Header {
+	if w.header == nil {
+		w.header = make(http.Header)
+	}
+	return w.header
+}
+
+func (w *recordingWriter) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
+func (w *recordingWriter) WriteHeader(code int) {
+	w.codes = append(w.codes, code)
+}

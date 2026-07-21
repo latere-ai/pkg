@@ -174,18 +174,37 @@ func statusClass(code int) string {
 
 type statusWriter struct {
 	http.ResponseWriter
-	code int
+	code       int
+	wroteFinal bool
 }
 
 func (w *statusWriter) WriteHeader(code int) {
+	if code >= 100 && code <= 199 && code != http.StatusSwitchingProtocols {
+		w.ResponseWriter.WriteHeader(code)
+		return
+	}
+	if w.wroteFinal {
+		return
+	}
+	w.wroteFinal = true
 	w.code = code
 	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *statusWriter) Write(p []byte) (int, error) {
+	if !w.wroteFinal {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(p)
 }
 
 func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 func (w *statusWriter) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		if !w.wroteFinal {
+			w.WriteHeader(http.StatusOK)
+		}
 		f.Flush()
 	}
 }
