@@ -32,10 +32,4 @@ jobs:
           fi
 
       - name: Fuzz
-        # -fuzz can only target one test per invocation, so each fuzz target is
-        # run separately. Keep this list in sync with the Makefile `fuzz` target.
-        run: |
-          go test -fuzz=FuzzSetup -fuzztime=30s ./otel/
-          go test -fuzz=FuzzStripScheme -fuzztime=30s ./otel/
-          go test -fuzz=FuzzVersion -fuzztime=30s ./otel/
-          go test -fuzz=FuzzRouteFromPattern -fuzztime=30s ./otel/
+        run: make fuzz
