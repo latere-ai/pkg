@@ -45,9 +45,13 @@ func TelemetryProxy(prefix string) http.Handler {
 			sub = "/" + sub
 		}
 
-		body, err := io.ReadAll(io.LimitReader(r.Body, maxTelemetryBody))
+		body, err := io.ReadAll(io.LimitReader(r.Body, maxTelemetryBody+1))
 		if err != nil {
 			http.Error(w, "read body", http.StatusBadRequest)
+			return
+		}
+		if len(body) > maxTelemetryBody {
+			http.Error(w, "telemetry payload too large", http.StatusRequestEntityTooLarge)
 			return
 		}
 

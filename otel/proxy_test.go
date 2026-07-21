@@ -122,3 +122,42 @@ func TestTelemetryProxy_SubpathWithoutLeadingSlash(t *testing.T) {
 		t.Errorf("forwarded path = %q, want /", gotPath)
 	}
 }
+
+func TestTelemetryProxy_EnforcesBodyLimitBeforeForwarding(t *testing.T) {
+	var calls, gotBytes int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		body, _ := io.ReadAll(r.Body)
+		gotBytes = len(body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(upstream.Close)
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", upstream.URL)
+	h := TelemetryProxy("/v1/telemetry")
+
+	tooLarge := httptest.NewRecorder()
+	h.ServeHTTP(tooLarge, httptest.NewRequest(
+		http.MethodPost,
+		"/v1/telemetry/v1/traces",
+		strings.NewReader(strings.Repeat("x", maxTelemetryBody+1)),
+	))
+	if tooLarge.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized status = %d, want 413", tooLarge.Code)
+	}
+	if calls != 0 {
+		t.Fatalf("oversized payload made %d upstream calls, want 0", calls)
+	}
+
+	exact := httptest.NewRecorder()
+	h.ServeHTTP(exact, httptest.NewRequest(
+		http.MethodPost,
+		"/v1/telemetry/v1/traces",
+		strings.NewReader(strings.Repeat("x", maxTelemetryBody)),
+	))
+	if exact.Code != http.StatusOK {
+		t.Fatalf("exact-limit status = %d, want 200", exact.Code)
+	}
+	if calls != 1 || gotBytes != maxTelemetryBody {
+		t.Fatalf("upstream calls=%d bytes=%d, want 1 call with %d bytes", calls, gotBytes, maxTelemetryBody)
+	}
+}
