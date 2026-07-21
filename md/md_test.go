@@ -182,10 +182,10 @@ func TestSplitFrontmatterLooseOpening(t *testing.T) {
 	}
 }
 
-// TestSplitFrontmatterClosingFenceWithSpaces confirms the closing fence is
-// matched on trimmed line content.
+// TestSplitFrontmatterClosingFenceWithSpaces confirms trailing horizontal
+// whitespace is allowed without accepting indentation.
 func TestSplitFrontmatterClosingFenceWithSpaces(t *testing.T) {
-	src := []byte("---\ntitle: test\n  ---  \nbody\n")
+	src := []byte("---\ntitle: test\n---  \nbody\n")
 	front, body, err := Parse(src)
 	if err != nil {
 		t.Fatal(err)
@@ -195,6 +195,26 @@ func TestSplitFrontmatterClosingFenceWithSpaces(t *testing.T) {
 	}
 	if string(body) != "body\n" {
 		t.Errorf("body = %q, want 'body\\n'", body)
+	}
+}
+
+func TestSplitFrontmatterPreservesIndentedFenceInBlockScalar(t *testing.T) {
+	src := []byte("---\nsummary: |\n  before\n  ---\n  after\nslug: x\n---\nbody\n")
+	front, body, err := Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary, _ := front["summary"].(string)
+	for _, want := range []string{"before", "---", "after"} {
+		if !strings.Contains(summary, want) {
+			t.Errorf("summary = %q, want %q preserved", summary, want)
+		}
+	}
+	if front["slug"] != "x" {
+		t.Errorf("slug = %v, want x", front["slug"])
+	}
+	if string(body) != "body\n" {
+		t.Errorf("body = %q, want body", body)
 	}
 }
 

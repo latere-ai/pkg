@@ -68,7 +68,8 @@ func Render(src []byte) ([]byte, error) {
 //
 // Both fences must be their own lines. The opening "---" must be followed by
 // a newline or end-of-input (so "----" or "---foo" are not fences), and the
-// closing fence is a line whose trimmed content is exactly "---". This keeps
+// closing fence starts at column one and may have trailing horizontal space.
+// This keeps
 // an interior "---" inside a YAML value (e.g. `title: "a --- b"`) from
 // prematurely closing the block.
 func splitFrontmatter(src []byte) (body, front []byte, ok bool) {
@@ -92,8 +93,8 @@ func splitFrontmatter(src []byte) (body, front []byte, ok bool) {
 		return src, nil, false
 	}
 
-	// Scan line by line for a closing fence: a line whose trimmed content
-	// is exactly "---".
+	// Scan line by line for a column-one closing fence. Leading indentation is
+	// significant YAML content (for example, a "---" line in a block scalar).
 	for pos := 0; pos <= len(rest); {
 		nl := bytes.IndexByte(rest[pos:], '\n')
 		var line []byte
@@ -105,7 +106,7 @@ func splitFrontmatter(src []byte) (body, front []byte, ok bool) {
 			line = rest[pos : pos+nl]
 			next = pos + nl + 1
 		}
-		if string(bytes.TrimSpace(line)) == "---" {
+		if bytes.Equal(bytes.TrimRight(line, " \t"), delim) {
 			front = rest[:pos]
 			body = rest[next:]
 			return body, front, true
