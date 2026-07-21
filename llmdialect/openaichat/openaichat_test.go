@@ -126,6 +126,32 @@ func TestEncodeRequestImagesAndParts(t *testing.T) {
 	}
 }
 
+func TestEncodeRequestPreservesMixedUserBlockOrder(t *testing.T) {
+	req := &ir.Request{
+		Model: "m",
+		Messages: []ir.Message{{Role: ir.RoleUser, Blocks: []ir.Block{
+			{Type: ir.BlockText, Text: "before"},
+			{Type: ir.BlockToolResult, ToolResult: &ir.ToolResult{
+				ToolUseID: "call-1",
+				Blocks:    []ir.Block{{Type: ir.BlockText, Text: "result"}},
+			}},
+			{Type: ir.BlockText, Text: "after"},
+		}}},
+	}
+	msgs := encode(t, req, BackendOptions{})["messages"].([]any)
+	if len(msgs) != 3 {
+		t.Fatalf("messages = %v, want three ordered segments", msgs)
+	}
+	wantRoles := []string{"user", "tool", "user"}
+	wantContent := []string{"before", "result", "after"}
+	for i, raw := range msgs {
+		msg := raw.(map[string]any)
+		if msg["role"] != wantRoles[i] || msg["content"] != wantContent[i] {
+			t.Fatalf("messages[%d] = %v, want role=%q content=%q", i, msg, wantRoles[i], wantContent[i])
+		}
+	}
+}
+
 func TestEncodeRequestToolChoiceModes(t *testing.T) {
 	base := func() *ir.Request {
 		return &ir.Request{Model: "m", Messages: []ir.Message{{Role: ir.RoleUser, Blocks: []ir.Block{{Type: ir.BlockText, Text: "x"}}}}}

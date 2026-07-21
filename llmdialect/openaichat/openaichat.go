@@ -199,12 +199,27 @@ func encodeMessage(m ir.Message, req *ir.Request) ([]map[string]any, error) {
 	case ir.RoleUser:
 		var content []map[string]any
 		textOnly := true
+		flushContent := func() {
+			if len(content) == 0 {
+				return
+			}
+			msg := map[string]any{"role": "user"}
+			if textOnly && len(content) == 1 {
+				msg["content"] = content[0]["text"]
+			} else {
+				msg["content"] = content
+			}
+			out = append(out, msg)
+			content = nil
+			textOnly = true
+		}
 		for _, blk := range m.Blocks {
 			if blk.CacheHint {
 				req.Loss.Add(ir.LossCacheControl)
 			}
 			switch blk.Type {
 			case ir.BlockToolResult:
+				flushContent()
 				out = append(out, encodeToolResult(blk, req))
 			case ir.BlockText:
 				content = append(content, map[string]any{"type": "text", "text": blk.Text})
@@ -215,15 +230,7 @@ func encodeMessage(m ir.Message, req *ir.Request) ([]map[string]any, error) {
 				return nil, fmt.Errorf("block type %q not allowed in a user message", blk.Type)
 			}
 		}
-		if len(content) > 0 {
-			msg := map[string]any{"role": "user"}
-			if textOnly && len(content) == 1 {
-				msg["content"] = content[0]["text"]
-			} else {
-				msg["content"] = content
-			}
-			out = append(out, msg)
-		}
+		flushContent()
 	case ir.RoleAssistant:
 		var texts []string
 		var toolCalls []map[string]any
