@@ -27,6 +27,14 @@ type fakeIDP struct {
 }
 
 func newFakeIDP(t *testing.T) *fakeIDP {
+	return newFakeIDPServer(t, false)
+}
+
+func newFakeTLSIDP(t *testing.T) *fakeIDP {
+	return newFakeIDPServer(t, true)
+}
+
+func newFakeIDPServer(t *testing.T, tls bool) *fakeIDP {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -63,7 +71,11 @@ func newFakeIDP(t *testing.T) *fakeIDP {
 			}},
 		})
 	})
-	f.srv = httptest.NewServer(mux)
+	if tls {
+		f.srv = httptest.NewTLSServer(mux)
+	} else {
+		f.srv = httptest.NewServer(mux)
+	}
 	t.Cleanup(f.srv.Close)
 	return f
 }
@@ -165,6 +177,15 @@ func TestVerifyIDToken_HappyPath(t *testing.T) {
 	}
 	if id.Raw["sub"] != "user-123" {
 		t.Error("Raw claims not populated")
+	}
+}
+
+func TestVerifyIDToken_UsesConfiguredHTTPClientForJWKS(t *testing.T) {
+	idp := newFakeTLSIDP(t)
+	a := newAuth(t, idp, "client-1", "latere")
+	idToken := idp.signRS256(t, baseIDClaims(idp, "client-1", "nonce-1"))
+	if _, err := a.VerifyIDToken(context.Background(), tokenWithID(idToken, ""), "nonce-1"); err != nil {
+		t.Fatalf("VerifyIDToken through configured TLS client: %v", err)
 	}
 }
 

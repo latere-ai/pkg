@@ -197,6 +197,9 @@ type Config struct {
 	Audiences []string
 	// CacheTTL controls how long JWKS keys are cached. Defaults to 5 minutes.
 	CacheTTL time.Duration
+	// HTTPClient fetches JWKS documents. Defaults to a client with a 10-second
+	// timeout. Supply it for custom trust roots, proxies, or mTLS.
+	HTTPClient *http.Client
 }
 
 // Validator validates RS256 JWTs using keys fetched from a JWKS endpoint.
@@ -210,9 +213,13 @@ func New(cfg Config) *Validator {
 	if cfg.CacheTTL == 0 {
 		cfg.CacheTTL = 5 * time.Minute
 	}
+	cache := &jwksCache{url: cfg.JWKSURL, ttl: cfg.CacheTTL}
+	if cfg.HTTPClient != nil {
+		cache.get = cfg.HTTPClient.Get
+	}
 	return &Validator{
 		cfg:   cfg,
-		cache: &jwksCache{url: cfg.JWKSURL, ttl: cfg.CacheTTL},
+		cache: cache,
 	}
 }
 
@@ -435,6 +442,7 @@ const minForcedRefreshInterval = 15 * time.Second
 type jwksCache struct {
 	url        string
 	ttl        time.Duration
+	get        func(string) (*http.Response, error)
 	mu         sync.Mutex // guards cachedAt, lastForced, keys; never held across I/O
 	fetchMu    sync.Mutex // serializes JWKS fetches so only one goroutine hits the network
 	cachedAt   time.Time
@@ -502,7 +510,11 @@ func (c *jwksCache) load(force bool) ([]jwkEntry, error) {
 		return keys, nil
 	}
 
-	resp, err := httpGet(c.url)
+	get := c.get
+	if get == nil {
+		get = httpGet
+	}
+	resp, err := get(c.url)
 	if err != nil {
 		return c.cachedOr(err)
 	}

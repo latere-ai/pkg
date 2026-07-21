@@ -138,10 +138,12 @@ func New(ctx context.Context, cfg Config) (*Authenticator, error) {
 		},
 		// idVerifier checks aud == ClientID. Issuer is validated separately
 		// (issuerOK) so Google's scheme-optional iss is accepted.
-		idVerifier: jwtauth.New(jwtauth.Config{JWKSURL: doc.JWKSURI, Audiences: []string{cfg.ClientID}}),
+		idVerifier: jwtauth.New(jwtauth.Config{
+			JWKSURL: doc.JWKSURI, Audiences: []string{cfg.ClientID}, HTTPClient: hc,
+		}),
 		// atVerifier skips aud (an access token's audience is the resource
 		// server, not this client) — signature + exp are still enforced.
-		atVerifier: jwtauth.New(jwtauth.Config{JWKSURL: doc.JWKSURI}),
+		atVerifier: jwtauth.New(jwtauth.Config{JWKSURL: doc.JWKSURI, HTTPClient: hc}),
 		issuer:     doc.Issuer,
 		mapper:     mapper,
 	}, nil

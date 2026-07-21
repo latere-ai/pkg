@@ -163,6 +163,20 @@ func TestValidateUserToken(t *testing.T) {
 	}
 }
 
+func TestValidateUsesConfiguredHTTPClient(t *testing.T) {
+	key := genKey(t)
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(jwksJSON(t, key))
+	}))
+	t.Cleanup(srv.Close)
+	v := New(Config{JWKSURL: srv.URL, HTTPClient: srv.Client()})
+	token := signToken(t, key, defaultHeader(key), defaultPayload())
+	if _, err := v.Validate(token); err != nil {
+		t.Fatalf("Validate with configured TLS client: %v", err)
+	}
+}
+
 func TestValidateServiceToken(t *testing.T) {
 	key := genKey(t)
 	v := testValidator(t, key)
