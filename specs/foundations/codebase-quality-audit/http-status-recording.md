@@ -1,6 +1,6 @@
 ---
 title: Record committed HTTP response status
-status: validated
+status: complete
 track: foundations
 depends_on: []
 affects:
@@ -35,3 +35,20 @@ by `net/http` when handlers call `WriteHeader` repeatedly.
 
 - Do not change route or span labeling.
 
+## Implementation Notes
+
+### Status
+
+Complete in `30ee4a5` on 2026-07-21.
+
+### What Was Done
+
+- Recorded the first committed final status and covered implicit writes/flushes.
+
+### Decisions Made During Implementation
+
+- Allowed informational responses before the final code, except protocol switch.
+
+### Follow-ups
+
+None.

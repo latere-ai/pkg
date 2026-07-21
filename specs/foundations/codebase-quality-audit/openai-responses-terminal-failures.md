@@ -1,6 +1,6 @@
 ---
 title: Fail closed on Responses stream termination errors
-status: validated
+status: complete
 track: foundations
 depends_on: []
 affects:
@@ -35,3 +35,21 @@ a successful `end_turn`.
 
 - Keep completed/incomplete response event translation unchanged.
 
+## Implementation Notes
+
+### Status
+
+Complete in `b054408` on 2026-07-21.
+
+### What Was Done
+
+- Parsed official error shapes and failed/cancelled terminal events.
+- Replaced fabricated EOF success coverage with `io.ErrUnexpectedEOF`.
+
+### Decisions Made During Implementation
+
+- Kept completed and incomplete event translation unchanged.
+
+### Follow-ups
+
+None.

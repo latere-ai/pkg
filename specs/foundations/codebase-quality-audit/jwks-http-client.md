@@ -1,6 +1,6 @@
 ---
 title: Honor custom HTTP clients for JWKS
-status: validated
+status: complete
 track: foundations
 depends_on: []
 affects:
@@ -37,3 +37,21 @@ private trust roots, proxies, and mTLS policies are not bypassed.
 
 - Do not expand supported JWT algorithms or alter cache semantics.
 
+## Implementation Notes
+
+### Status
+
+Complete in `2aebf5b` on 2026-07-21.
+
+### What Was Done
+
+- Wired caller transports through JWKS caches and both OIDC token validators.
+- Added TLS issuer regressions while preserving default cache tests.
+
+### Decisions Made During Implementation
+
+- Stored fetch behavior per cache and retained the global default-client seam.
+
+### Follow-ups
+
+None.

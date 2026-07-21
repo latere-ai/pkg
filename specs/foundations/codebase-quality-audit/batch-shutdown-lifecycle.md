@@ -1,6 +1,6 @@
 ---
 title: Reject batch items after shutdown
-status: validated
+status: complete
 track: foundations
 depends_on: []
 affects:
@@ -36,3 +36,20 @@ item was accepted after the only consumer has exited.
 - Keep `Add` non-blocking apart from short in-memory synchronization.
 - Do not make `Run` reusable.
 
+## Implementation Notes
+
+### Status
+
+Complete in `26171b0` on 2026-07-21.
+
+### What Was Done
+
+- Added synchronized lifecycle state and cancellation-race regressions.
+
+### Decisions Made During Implementation
+
+- Used one short lifecycle lock to define the accepted-versus-drained boundary.
+
+### Follow-ups
+
+None.

@@ -1,6 +1,6 @@
 ---
 title: Make cached token info usable by JWT authentication
-status: validated
+status: complete
 track: foundations
 depends_on: []
 affects:
@@ -35,3 +35,20 @@ the documented cached implementation can be used for read-tier authentication.
 
 - Do not change cache policy or strict-token authorization fields.
 
+## Implementation Notes
+
+### Status
+
+Complete in `ce91fd6` on 2026-07-21.
+
+### What Was Done
+
+- Added the minimal lookup interface, implementation assertions, and cache test.
+
+### Decisions Made During Implementation
+
+- Changed only the dependency type; cache policy and authorization stayed intact.
+
+### Follow-ups
+
+None.

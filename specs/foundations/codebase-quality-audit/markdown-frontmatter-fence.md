@@ -1,6 +1,6 @@
 ---
 title: Preserve indented YAML block content
-status: validated
+status: complete
 track: foundations
 depends_on: []
 affects:
@@ -35,3 +35,20 @@ inside YAML block scalars remain data.
 
 - Do not add a new YAML parser or change leading-newline handling.
 
+## Implementation Notes
+
+### Status
+
+Complete in `6590b9f` on 2026-07-21.
+
+### What Was Done
+
+- Restricted closing fences to column one and corrected the stale test.
+
+### Decisions Made During Implementation
+
+- Continued allowing horizontal whitespace after a valid fence.
+
+### Follow-ups
+
+None.

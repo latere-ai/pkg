@@ -1,6 +1,6 @@
 ---
 title: Redact quoted and fine-grained credentials
-status: validated
+status: complete
 track: foundations
 depends_on: []
 affects:
@@ -36,3 +36,20 @@ through the audit redactor despite its documented credential coverage.
 
 - Do not change JSON key redaction or broaden unrelated credential-key suffixes.
 
+## Implementation Notes
+
+### Status
+
+Complete in `0d04d24` on 2026-07-21.
+
+### What Was Done
+
+- Redacted quoted assignments and `github_pat_` credentials with regressions.
+
+### Decisions Made During Implementation
+
+- Preserved matching quotes and benign text around the replaced value.
+
+### Follow-ups
+
+None.

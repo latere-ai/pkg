@@ -1,6 +1,6 @@
 ---
 title: Validate cookie sessions before authentication
-status: validated
+status: complete
 track: foundations
 depends_on: []
 affects:
@@ -34,5 +34,23 @@ building an authenticated identity.
 ## Boundaries
 
 - Do not refresh tokens or change cookie encryption in this adapter.
-- Preserve zero optional expiry fields for legacy sessions.
+- Preserve a zero optional dashboard-session expiry for legacy sessions; a
+  missing access-token expiry remains invalid.
 
+## Implementation Notes
+
+### Status
+
+Complete in `6b350a3` on 2026-07-21.
+
+### What Was Done
+
+- Rejected empty subjects and invalid lifetimes, and preserved organization roles.
+
+### Decisions Made During Implementation
+
+- Required access-token expiry but allowed a missing optional session expiry.
+
+### Follow-ups
+
+None.

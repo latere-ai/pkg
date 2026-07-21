@@ -8,11 +8,11 @@ the filesystem hierarchy groups parent designs and their implementation tasks.
 
 | Spec | Status | Delivers |
 |---|---|---|
-| [codebase-quality-audit.md](foundations/codebase-quality-audit.md) | Not started | Reproducible correctness fixes, stale-code cleanup, and usable shared abstractions |
+| [codebase-quality-audit.md](foundations/codebase-quality-audit.md) | **Complete** | Reproducible correctness fixes, stale-code cleanup, and usable shared abstractions |
 
 ## Status Quo
 
-- ○ Codebase quality audit
+- ✅ Codebase quality audit
 - `○` Not started
 - `◐` In progress
 - `✅` Complete

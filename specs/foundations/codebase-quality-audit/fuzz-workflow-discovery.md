@@ -1,6 +1,6 @@
 ---
 title: Discover fuzz targets in one workflow
-status: validated
+status: complete
 track: foundations
 depends_on: []
 affects:
@@ -33,3 +33,22 @@ Eliminate stale duplicated fuzz manifests by discovering every repository
 ## Boundaries
 
 - Do not change ordinary race or coverage gates.
+
+## Implementation Notes
+
+### Status
+
+Complete in `d166d44` on 2026-07-21.
+
+### What Was Done
+
+- Made the test tree the fuzz manifest and routed CI through `make fuzz`.
+- Verified all 20 current targets with one iteration each.
+
+### Decisions Made During Implementation
+
+- Kept the 30-second default while allowing `FUZZTIME` and `GO` overrides.
+
+### Follow-ups
+
+None.

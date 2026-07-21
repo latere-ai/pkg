@@ -1,6 +1,6 @@
 ---
 title: Preserve OpenAI Chat user-block ordering
-status: validated
+status: complete
 track: foundations
 depends_on: []
 affects:
@@ -33,3 +33,20 @@ Encode mixed text and tool-result blocks in their original conversational order.
 
 - Do not alter assistant tool-call encoding or IR event grammar.
 
+## Implementation Notes
+
+### Status
+
+Complete in `25d9b1d` on 2026-07-21.
+
+### What Was Done
+
+- Preserved text/tool/text ordering with an exact message-sequence regression.
+
+### Decisions Made During Implementation
+
+- Retained scalar encoding for a single text block.
+
+### Follow-ups
+
+None.

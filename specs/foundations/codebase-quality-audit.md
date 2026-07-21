@@ -1,6 +1,6 @@
 ---
 title: Codebase quality audit
-status: validated
+status: complete
 track: foundations
 depends_on: []
 affects:
@@ -109,6 +109,36 @@ removed.
 - Run package tests after each commit, then repository-wide test, race, vet,
   coverage, build, and a one-iteration pass over every discovered fuzz target.
 
+## Outcome
+
+The audit shipped all 13 scoped tasks as independent commits. It closed the
+identified correctness gaps, removed stale endpoint and fuzz-test logic, and
+made the authentication extension points usable without breaking exported
+callers.
+
+### What Shipped
+
+- Regression-tested fixes across authentication, batching, telemetry, LLM
+  codecs, Markdown parsing, migration cleanup, and credential redaction.
+- Minimal shared interfaces for token-info lookups and caller-controlled JWKS
+  transports.
+- Repository-wide fuzz discovery covering all 20 current targets from one CI
+  entry point.
+- A verified final state with 96.4% statement coverage, passing race, vet,
+  build, formatting, and one-iteration fuzz checks.
+
+### Design Evolution
+
+1. JWKS fetch behavior is stored per cache so custom transports remain local,
+   while the existing default-client test seam remains intact.
+2. OTLP log endpoint parsing is delegated to the exporter, preserving its base
+   path rules and removing obsolete scheme-rewriting helpers.
+3. Batch intake and shutdown share one lifecycle lock, defining an exact
+   accepted-versus-drained boundary without making `Add` blocking on I/O.
+4. Access-token expiry is required for authenticated cookie sessions, while a
+   missing optional dashboard-session expiry remains compatible with legacy
+   sessions.
+
 ## Deferred Findings
 
 Parallel OpenAI Chat tool-call deltas can violate canonical block ordering. It
@@ -120,21 +150,42 @@ fixes above.
 
 | Child spec | Depends on | Effort | Status |
 |---|---|---|---|
-| [Credential redaction](codebase-quality-audit/credential-redaction.md) | — | small | validated |
-| [Batch shutdown lifecycle](codebase-quality-audit/batch-shutdown-lifecycle.md) | — | small | validated |
-| [Session authentication validation](codebase-quality-audit/session-authentication-validation.md) | — | small | validated |
-| [Token-info lookup abstraction](codebase-quality-audit/tokeninfo-lookup-abstraction.md) | — | small | validated |
-| [JWKS HTTP client](codebase-quality-audit/jwks-http-client.md) | — | medium | validated |
-| [Telemetry proxy body limit](codebase-quality-audit/telemetry-proxy-body-limit.md) | — | small | validated |
-| [OTLP log base endpoint](codebase-quality-audit/otlp-log-base-endpoint.md) | — | medium | validated |
-| [HTTP status recording](codebase-quality-audit/http-status-recording.md) | — | small | validated |
-| [OpenAI Chat message ordering](codebase-quality-audit/openai-chat-message-ordering.md) | — | small | validated |
-| [OpenAI Responses terminal failures](codebase-quality-audit/openai-responses-terminal-failures.md) | — | medium | validated |
-| [Markdown frontmatter fence](codebase-quality-audit/markdown-frontmatter-fence.md) | — | small | validated |
-| [Migration close errors](codebase-quality-audit/migration-close-errors.md) | — | small | validated |
-| [Fuzz workflow discovery](codebase-quality-audit/fuzz-workflow-discovery.md) | — | small | validated |
+| [Credential redaction](codebase-quality-audit/credential-redaction.md) | — | small | complete |
+| [Batch shutdown lifecycle](codebase-quality-audit/batch-shutdown-lifecycle.md) | — | small | complete |
+| [Session authentication validation](codebase-quality-audit/session-authentication-validation.md) | — | small | complete |
+| [Token-info lookup abstraction](codebase-quality-audit/tokeninfo-lookup-abstraction.md) | — | small | complete |
+| [JWKS HTTP client](codebase-quality-audit/jwks-http-client.md) | — | medium | complete |
+| [Telemetry proxy body limit](codebase-quality-audit/telemetry-proxy-body-limit.md) | — | small | complete |
+| [OTLP log base endpoint](codebase-quality-audit/otlp-log-base-endpoint.md) | — | medium | complete |
+| [HTTP status recording](codebase-quality-audit/http-status-recording.md) | — | small | complete |
+| [OpenAI Chat message ordering](codebase-quality-audit/openai-chat-message-ordering.md) | — | small | complete |
+| [OpenAI Responses terminal failures](codebase-quality-audit/openai-responses-terminal-failures.md) | — | medium | complete |
+| [Markdown frontmatter fence](codebase-quality-audit/markdown-frontmatter-fence.md) | — | small | complete |
+| [Migration close errors](codebase-quality-audit/migration-close-errors.md) | — | small | complete |
+| [Fuzz workflow discovery](codebase-quality-audit/fuzz-workflow-discovery.md) | — | small | complete |
 
 All tasks are independent. The recommended order above starts with security and
 lifecycle fixes, then transport/codec correctness, then repository workflow
 cleanup.
 
+## Implementation Notes
+
+### Status
+
+Complete in commits `0d04d24` through `d166d44` on 2026-07-21.
+
+### What Was Done
+
+- Implemented and regression-tested every child spec in one focused commit.
+- Removed stale OTLP endpoint helpers and their obsolete tests, and replaced
+  copied fuzz manifests with repository discovery.
+
+### What Was Not Done
+
+- Parallel OpenAI Chat tool-call delta ordering remains deferred because a safe
+  fix requires a separate stream-state and IR design.
+
+### Follow-ups
+
+- Create a dedicated spec for parallel tool-call streaming semantics before
+  changing latency or canonical block ordering.

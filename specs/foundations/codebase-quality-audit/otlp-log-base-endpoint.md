@@ -1,6 +1,6 @@
 ---
 title: Preserve OTLP log base endpoint paths
-status: validated
+status: complete
 track: foundations
 depends_on: []
 affects:
@@ -34,3 +34,21 @@ Use the exporter’s standard environment parsing so a general endpoint ending i
 
 - Do not change trace/metric setup or logging fan-out semantics.
 
+## Implementation Notes
+
+### Status
+
+Complete in `4672bb8` on 2026-07-21.
+
+### What Was Done
+
+- Delegated endpoint parsing to the exporter and verified `/otlp/v1/logs`.
+- Removed obsolete scheme helpers, comments, tests, and fuzzer.
+
+### Decisions Made During Implementation
+
+- Kept local-only fallback behavior unchanged.
+
+### Follow-ups
+
+None.

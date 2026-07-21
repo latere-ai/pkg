@@ -1,6 +1,6 @@
 ---
 title: Report migration close errors
-status: validated
+status: complete
 track: foundations
 depends_on: []
 affects:
@@ -35,3 +35,20 @@ migration startup.
 
 - Do not retry migrations or change database-driver selection.
 
+## Implementation Notes
+
+### Status
+
+Complete in `fd8cc99` on 2026-07-21.
+
+### What Was Done
+
+- Joined migration, source-close, and database-close failures with regressions.
+
+### Decisions Made During Implementation
+
+- Preserved `migrate.ErrNoChange` as success only when cleanup also succeeds.
+
+### Follow-ups
+
+None.

@@ -1,6 +1,6 @@
 ---
 title: Reject oversized telemetry payloads
-status: validated
+status: complete
 track: foundations
 depends_on: []
 affects:
@@ -35,3 +35,20 @@ truncated OTLP protobuf.
 
 - Do not change the response-body cap or allowed methods.
 
+## Implementation Notes
+
+### Status
+
+Complete in `091200e` on 2026-07-21.
+
+### What Was Done
+
+- Rejected limit-plus-one payloads before upstream and tested exact-limit data.
+
+### Decisions Made During Implementation
+
+- Read one byte beyond the cap to distinguish exact-size from oversized input.
+
+### Follow-ups
+
+None.
