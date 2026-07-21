@@ -3,6 +3,7 @@ package batch
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -125,5 +126,47 @@ func TestBatcher_DropsWhenFull(t *testing.T) {
 	}
 	if b.Add(2) {
 		t.Fatal("second Add should be dropped when buffer is full")
+	}
+}
+
+func TestBatcher_RejectsAfterShutdown(t *testing.T) {
+	b := New(Config[int]{BufferSize: 1, BatchSize: 1, Flush: func(context.Context, []int) {}})
+	ctx, cancel := context.WithCancel(context.Background())
+	go b.Run(ctx)
+	cancel()
+	b.Wait()
+	if b.Add(1) {
+		t.Fatal("Add accepted an item after Run returned")
+	}
+}
+
+func TestBatcher_CancelRaceFlushesEveryAcceptedItem(t *testing.T) {
+	s := &sink{}
+	b := New(Config[int]{BufferSize: 256, BatchSize: 17, Flush: s.flush})
+	ctx, cancel := context.WithCancel(context.Background())
+	go b.Run(ctx)
+
+	var accepted atomic.Int64
+	if b.Add(-1) {
+		accepted.Add(1)
+	}
+	var producers sync.WaitGroup
+	for producer := range 8 {
+		producers.Add(1)
+		go func(base int) {
+			defer producers.Done()
+			for item := range 500 {
+				if b.Add(base*500 + item) {
+					accepted.Add(1)
+				}
+			}
+		}(producer)
+	}
+	cancel()
+	producers.Wait()
+	b.Wait()
+
+	if got, want := int64(s.total()), accepted.Load(); got != want {
+		t.Fatalf("flushed %d items, want every %d accepted items", got, want)
 	}
 }

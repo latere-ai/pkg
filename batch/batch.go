@@ -18,6 +18,7 @@ package batch
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
@@ -51,6 +52,8 @@ type Batcher[T any] struct {
 	flushInt time.Duration
 	flush    func(ctx context.Context, batch []T)
 	done     chan struct{}
+	intakeMu sync.Mutex
+	stopped  bool
 }
 
 // New builds a Batcher from cfg. It panics if cfg.Flush is nil, which is always
@@ -74,9 +77,14 @@ func New[T any](cfg Config[T]) *Batcher[T] {
 	}
 }
 
-// Add enqueues item without blocking. It returns false if the intake buffer is
-// full and the item was dropped.
+// Add enqueues item without waiting for buffer capacity. It returns false if
+// the intake buffer is full or shutdown has begun.
 func (b *Batcher[T]) Add(item T) bool {
+	b.intakeMu.Lock()
+	defer b.intakeMu.Unlock()
+	if b.stopped {
+		return false
+	}
 	select {
 	case b.ch <- item:
 		return true
@@ -107,6 +115,9 @@ func (b *Batcher[T]) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			b.intakeMu.Lock()
+			b.stopped = true
+			b.intakeMu.Unlock()
 			for {
 				select {
 				case item := <-b.ch:
