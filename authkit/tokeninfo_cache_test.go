@@ -30,6 +30,72 @@ func countingTokenInfo(t *testing.T, verdicts map[string]int) (*TokenInfoClient,
 	return NewTokenInfoClient(srv.URL), &hits
 }
 
+// delegatedTokenInfo serves a verdict carrying the full delegated shape —
+// act.sub, scopes and roles — so tests exercise every field the cache must
+// copy rather than share.
+func delegatedTokenInfo(t *testing.T, verdicts map[string]int) (*TokenInfoClient, *atomic.Int64) {
+	t.Helper()
+	var hits atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		status, ok := verdicts[r.Header.Get("Authorization")]
+		if !ok {
+			status = http.StatusUnauthorized
+		}
+		w.WriteHeader(status)
+		if status == http.StatusOK {
+			_, _ = w.Write([]byte(`{"sub":"agent-1","principal_type":"agent","grantor_id":"owner-9",` +
+				`"scopes":["read","write"],"roles":["member"],"act":{"sub":"owner-9"}}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return NewTokenInfoClient(srv.URL), &hits
+}
+
+// TestCachedTokenInfoSharedPointerPoisoning pins that a caller mutating the
+// *TokenInfo it received cannot poison the cached verdict served to the next
+// caller. Both the value stored and the value returned must be copies.
+func TestCachedTokenInfoSharedPointerPoisoning(t *testing.T) {
+	client, hits := delegatedTokenInfo(t, map[string]int{"Bearer good": http.StatusOK})
+	c := NewCachedTokenInfo(client, time.Minute)
+
+	first, err := c.Lookup(context.Background(), "good")
+	if err != nil {
+		t.Fatalf("first lookup: %v", err)
+	}
+	// A caller mutates its own copy — scalar, slice element and Act alike.
+	first.GrantorID = "attacker-owned"
+	first.Act.Sub = "attacker-owned"
+	first.Scopes[0] = "admin"
+	first.Roles[0] = "admin"
+
+	second, err := c.Lookup(context.Background(), "good")
+	if err != nil {
+		t.Fatalf("second lookup: %v", err)
+	}
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("upstream hits = %d, want 1 (must be a cache hit, not a refetch)", got)
+	}
+	if got := second.Delegator(); got != "owner-9" {
+		t.Fatalf("cached verdict poisoned: second delegator = %q, want owner-9", got)
+	}
+	if second.Act.Sub != "owner-9" {
+		t.Fatalf("cached act poisoned: act.sub = %q, want owner-9", second.Act.Sub)
+	}
+	if second.Scopes[0] != "read" {
+		t.Fatalf("cached scopes poisoned: scopes[0] = %q, want read", second.Scopes[0])
+	}
+	if second.Roles[0] != "member" {
+		t.Fatalf("cached roles poisoned: roles[0] = %q, want member", second.Roles[0])
+	}
+}
+
+func TestCloneTokenInfoNil(t *testing.T) {
+	if got := cloneTokenInfo(nil); got != nil {
+		t.Fatalf("cloneTokenInfo(nil) = %#v, want nil", got)
+	}
+}
+
 func TestCachedTokenInfoReusesPositiveVerdict(t *testing.T) {
 	client, hits := countingTokenInfo(t, map[string]int{"Bearer good": http.StatusOK})
 	c := NewCachedTokenInfo(client, time.Minute)

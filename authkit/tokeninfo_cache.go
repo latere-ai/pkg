@@ -75,7 +75,9 @@ func (c *CachedTokenInfo) maxEntries() int {
 
 // Lookup returns a cached positive verdict when one is fresh, otherwise
 // delegates to the underlying client and caches a success. Errors (including
-// ErrRevoked) are returned as-is and never cached.
+// ErrRevoked) are returned as-is and never cached. The returned *TokenInfo is
+// the caller's own copy: mutating it cannot alter the cached verdict or any
+// value handed to another caller.
 func (c *CachedTokenInfo) Lookup(ctx context.Context, rawToken string) (*TokenInfo, error) {
 	key := sha256.Sum256([]byte(rawToken))
 	now := c.clock()
@@ -83,7 +85,7 @@ func (c *CachedTokenInfo) Lookup(ctx context.Context, rawToken string) (*TokenIn
 	c.mu.Lock()
 	if e, ok := c.entries[key]; ok && now.Before(e.expires) {
 		c.mu.Unlock()
-		return e.info, nil
+		return cloneTokenInfo(e.info), nil
 	}
 	c.mu.Unlock()
 
@@ -105,7 +107,30 @@ func (c *CachedTokenInfo) Lookup(ctx context.Context, rawToken string) (*TokenIn
 		}
 	}
 	if len(c.entries) < c.maxEntries() {
-		c.entries[key] = tokenInfoEntry{info: ti, expires: now.Add(c.ttl())}
+		c.entries[key] = tokenInfoEntry{info: cloneTokenInfo(ti), expires: now.Add(c.ttl())}
 	}
 	return ti, nil
+}
+
+// cloneTokenInfo returns a deep-enough copy of ti that a caller mutating the
+// result cannot reach the original: the struct is copied by value and the
+// Scopes/Roles slices and the Act pointer are reallocated. Every value that
+// crosses the cache boundary passes through here, so a caller holding a
+// verdict never shares memory with the cached entry.
+func cloneTokenInfo(ti *TokenInfo) *TokenInfo {
+	if ti == nil {
+		return nil
+	}
+	out := *ti
+	if ti.Scopes != nil {
+		out.Scopes = append([]string(nil), ti.Scopes...)
+	}
+	if ti.Roles != nil {
+		out.Roles = append([]string(nil), ti.Roles...)
+	}
+	if ti.Act != nil {
+		act := *ti.Act
+		out.Act = &act
+	}
+	return &out
 }
