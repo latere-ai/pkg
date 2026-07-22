@@ -370,10 +370,59 @@ func TestStreamReaderOpaqueErrorFrame(t *testing.T) {
 	}
 }
 
+// TestEventDecoderTruncatedStream pins that a stream cut off before
+// message_stop is reported as io.ErrUnexpectedEOF, not the clean io.EOF that
+// signals a complete message. A caller cannot otherwise tell a finished
+// response from a dropped connection.
+func TestEventDecoderTruncatedStream(t *testing.T) {
+	var buf bytes.Buffer
+	enc := NewFrontend().NewEventEncoder(&buf)
+	truncated := []ir.Event{
+		{Type: ir.EventMessageStart, ID: "msg_1", Model: "m"},
+		{Type: ir.EventBlockStart, Index: 0, Block: &ir.Block{Type: ir.BlockText}},
+		{Type: ir.EventTextDelta, Index: 0, Delta: "Hel"},
+	}
+	for _, ev := range truncated {
+		if err := enc.Encode(ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dec := NewBackend().NewEventDecoder(&buf)
+	var last []string
+	for {
+		ev, err := dec.Next()
+		if err != nil {
+			if err != io.ErrUnexpectedEOF {
+				t.Fatalf("truncated stream (last event %v) reported as %v; want io.ErrUnexpectedEOF", last, err)
+			}
+			break
+		}
+		last = append(last, string(ev.Type))
+	}
+}
+
+// TestEventDecoderCompleteStreamEOF pins the other half: once message_stop
+// has been delivered, end of stream is the clean io.EOF.
+func TestEventDecoderCompleteStreamEOF(t *testing.T) {
+	var buf bytes.Buffer
+	enc := NewFrontend().NewEventEncoder(&buf)
+	if err := enc.Encode(ir.Event{Type: ir.EventMessageStop}); err != nil {
+		t.Fatal(err)
+	}
+	dec := NewBackend().NewEventDecoder(&buf)
+	if _, err := dec.Next(); err != nil {
+		t.Fatalf("message_stop: %v", err)
+	}
+	if _, err := dec.Next(); err != io.EOF {
+		t.Fatalf("after message_stop: got %v, want io.EOF", err)
+	}
+}
+
 func TestStreamReaderSkipsUnknownFrames(t *testing.T) {
 	in := "event: ping\ndata: {}\n\n" +
 		"data: [DONE]\n\n" +
-		"event: text_delta\ndata: {\"index\":0,\"delta\":\"hi\"}\n\n"
+		"event: text_delta\ndata: {\"index\":0,\"delta\":\"hi\"}\n\n" +
+		"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
 	r := NewStreamReader(strings.NewReader(in))
 	ev, err := r.Next()
 	if err != nil {
@@ -382,6 +431,13 @@ func TestStreamReaderSkipsUnknownFrames(t *testing.T) {
 	// The type field is filled from the frame name when absent.
 	if ev.Type != ir.EventTextDelta || ev.Delta != "hi" {
 		t.Fatalf("bad event: %#v", ev)
+	}
+	stop, err := r.Next()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stop.Type != ir.EventMessageStop {
+		t.Fatalf("bad event: %#v", stop)
 	}
 	if _, err := r.Next(); err != io.EOF {
 		t.Fatalf("want EOF, got %v", err)

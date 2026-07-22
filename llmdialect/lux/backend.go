@@ -124,12 +124,17 @@ func (e *StreamError) Error() string {
 }
 
 // StreamReader yields wire-level lux Events from an SSE stream,
-// returning io.EOF at end of stream. Unknown event names are skipped
+// returning io.EOF once the stream ends after message_stop and
+// io.ErrUnexpectedEOF when it ends before one, so a truncated response is
+// distinguishable from a complete one. Unknown event names are skipped
 // (forward compatibility); an `event: error` frame surfaces as a
 // *StreamError. luxsdk consumes this directly; the Backend's IR
 // decoder wraps it.
 type StreamReader struct {
 	r *sse.Reader
+	// done records that message_stop was delivered, which makes the
+	// subsequent end of stream a clean termination rather than a cut.
+	done bool
 }
 
 // NewStreamReader returns a wire-level lux SSE reader.
@@ -141,6 +146,9 @@ func NewStreamReader(r io.Reader) *StreamReader {
 func (s *StreamReader) Next() (Event, error) {
 	for {
 		frame, err := s.r.Next()
+		if err == io.EOF && !s.done {
+			return Event{}, io.ErrUnexpectedEOF
+		}
 		if err != nil {
 			return Event{}, err
 		}
@@ -156,6 +164,9 @@ func (s *StreamReader) Next() (Event, error) {
 		}
 		if ev.Type == "" {
 			ev.Type = ir.EventType(frame.Name)
+		}
+		if ev.Type == ir.EventMessageStop {
+			s.done = true
 		}
 		return ev, nil
 	}

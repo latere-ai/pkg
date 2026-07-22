@@ -447,7 +447,8 @@ func parseLoss(h http.Header) []string {
 }
 
 // Stream is a live event stream. Next returns io.EOF after the final
-// event; a mid-stream gateway failure surfaces as *StreamError.
+// event, and io.ErrUnexpectedEOF if the stream ends before message_stop;
+// a mid-stream gateway failure surfaces as *StreamError.
 type Stream struct {
 	next   func() (Event, error)
 	closer func() error
