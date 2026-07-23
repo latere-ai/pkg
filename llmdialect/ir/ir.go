@@ -273,13 +273,20 @@ const (
 	StopRefusal      StopReason = "refusal"
 )
 
-// Usage is token accounting for one call.
+// Usage is token and cost accounting for one call.
 type Usage struct {
 	InputTokens           int64
 	OutputTokens          int64
 	CacheReadInputTokens  int64
 	CacheWriteInputTokens int64
 	ReasoningTokens       int64
+	// CostUSDMicro is the gateway-reported cost in millionths of a USD,
+	// or nil when the gateway reported none. Nil means unknown, never
+	// zero: zero is a legitimate cost (local and cached calls report
+	// it), so a consumer that fails closed on an unknown cost must be
+	// able to tell the two apart. Carried verbatim, including a
+	// gateway's own unpriced sentinel; this layer computes no prices.
+	CostUSDMicro *int64
 }
 
 // Response is a dialect-neutral non-streaming inference response.

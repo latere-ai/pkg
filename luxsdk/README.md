@@ -109,6 +109,22 @@ Assemble a streamed tool call from `block_start` (id, name) +
 accumulate both. A mid-stream gateway failure surfaces from `Next` as
 `*StreamError`.
 
+## Usage and cost
+
+`res.Usage` carries the call's token counts and, when the gateway
+reports one, its cost:
+
+```go
+if c := res.Usage.CostUSDMicro; c != nil {
+    fmt.Println(*c) // millionths of a USD, as reported by the gateway
+}
+```
+
+`CostUSDMicro` is nil when the gateway reported no cost. Nil means
+unknown, not free: a reported zero cost arrives as a pointer to zero,
+so the two cases stay distinguishable for a caller that must refuse to
+spend against an unknown price.
+
 ## Token counting
 
 ```go

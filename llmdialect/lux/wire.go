@@ -100,13 +100,19 @@ type ResponseSchema struct {
 	Strict      bool            `json:"strict,omitempty"`
 }
 
-// Usage is token accounting for one call.
+// Usage is token and cost accounting for one call.
 type Usage struct {
 	InputTokens           int64 `json:"input_tokens"`
 	OutputTokens          int64 `json:"output_tokens"`
 	CacheReadInputTokens  int64 `json:"cache_read_input_tokens,omitempty"`
 	CacheWriteInputTokens int64 `json:"cache_write_input_tokens,omitempty"`
 	ReasoningTokens       int64 `json:"reasoning_tokens,omitempty"`
+	// CostUSDMicro is the gateway-reported cost in millionths of a USD.
+	// The pointer carries the nil/zero distinction onto the wire:
+	// omitempty drops only nil, so an explicitly reported zero cost
+	// still travels as "cost_usd_micro":0 and stays distinguishable
+	// from a gateway that reported nothing.
+	CostUSDMicro *int64 `json:"cost_usd_micro,omitempty"`
 }
 
 // Response is a lux-dialect non-streaming response.
@@ -240,6 +246,7 @@ func usageToIR(u Usage) ir.Usage {
 		CacheReadInputTokens:  u.CacheReadInputTokens,
 		CacheWriteInputTokens: u.CacheWriteInputTokens,
 		ReasoningTokens:       u.ReasoningTokens,
+		CostUSDMicro:          copyInt64(u.CostUSDMicro),
 	}
 }
 
@@ -250,7 +257,19 @@ func usageFromIR(u ir.Usage) Usage {
 		CacheReadInputTokens:  u.CacheReadInputTokens,
 		CacheWriteInputTokens: u.CacheWriteInputTokens,
 		ReasoningTokens:       u.ReasoningTokens,
+		CostUSDMicro:          copyInt64(u.CostUSDMicro),
 	}
+}
+
+// copyInt64 copies an optional value across the wire/IR boundary, so
+// the two structs never share a pointer and a mutation on one side
+// cannot reach the other.
+func copyInt64(v *int64) *int64 {
+	if v == nil {
+		return nil
+	}
+	c := *v
+	return &c
 }
 
 // EventFromIR converts a canonical IR event to the wire vocabulary.

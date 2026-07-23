@@ -413,3 +413,39 @@ func TestCountTokensErrors(t *testing.T) {
 		t.Fatal("want URL error")
 	}
 }
+
+// TestGenerateCostUSDMicro pins that the gateway-reported cost reaches
+// an SDK caller through the existing Usage surface, and that an
+// omitted cost stays nil rather than becoming a free turn.
+func TestGenerateCostUSDMicro(t *testing.T) {
+	const body = `{"id":"msg_1","model":"m","blocks":[],"stop_reason":"end_turn",
+		"usage":{"input_tokens":3,"output_tokens":2,"cost_usd_micro":1200}}`
+	srv := testServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	})
+	res, err := New(srv.URL, WithAPIKey("k")).Generate(context.Background(), &Request{Model: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Usage.CostUSDMicro == nil {
+		t.Fatal("CostUSDMicro = nil, want 1200")
+	}
+	if *res.Usage.CostUSDMicro != 1200 {
+		t.Fatalf("CostUSDMicro = %d, want 1200", *res.Usage.CostUSDMicro)
+	}
+
+	const noCost = `{"id":"msg_1","model":"m","blocks":[],"stop_reason":"end_turn",
+		"usage":{"input_tokens":3,"output_tokens":2}}`
+	srv2 := testServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(noCost))
+	})
+	res, err = New(srv2.URL, WithAPIKey("k")).Generate(context.Background(), &Request{Model: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Usage.CostUSDMicro != nil {
+		t.Fatalf("CostUSDMicro = %d, want nil (a gateway that reports no cost is unknown, not free)", *res.Usage.CostUSDMicro)
+	}
+}

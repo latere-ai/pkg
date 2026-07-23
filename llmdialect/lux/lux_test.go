@@ -543,3 +543,109 @@ func FuzzDecodeRequest(f *testing.F) {
 		}
 	})
 }
+
+// TestDecodeResponseCostUSDMicro pins the gateway-reported cost on the
+// decode path against literal wire bytes, so the JSON name is part of
+// the contract and not merely symmetric with the encoder. The nil vs
+// zero distinction is the point: a consumer that fails closed on an
+// unknown cost must not read an unreported cost as free.
+func TestDecodeResponseCostUSDMicro(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want *int64
+	}{
+		{"absent", `{"id":"x","usage":{"input_tokens":1,"output_tokens":2}}`, nil},
+		{"reported", `{"id":"x","usage":{"input_tokens":1,"output_tokens":2,"cost_usd_micro":1200}}`, i64(1200)},
+		{"explicit zero", `{"id":"x","usage":{"input_tokens":1,"cost_usd_micro":0}}`, i64(0)},
+		{"unpriced sentinel", `{"id":"x","usage":{"input_tokens":1,"cost_usd_micro":-1}}`, i64(-1)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NewBackend().DecodeResponse([]byte(tc.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch {
+			case tc.want == nil && got.Usage.CostUSDMicro != nil:
+				t.Fatalf("CostUSDMicro = %d, want nil (unreported cost is unknown, not zero)", *got.Usage.CostUSDMicro)
+			case tc.want != nil && got.Usage.CostUSDMicro == nil:
+				t.Fatalf("CostUSDMicro = nil, want %d", *tc.want)
+			case tc.want != nil && *got.Usage.CostUSDMicro != *tc.want:
+				t.Fatalf("CostUSDMicro = %d, want %d", *got.Usage.CostUSDMicro, *tc.want)
+			}
+		})
+	}
+}
+
+// TestEncodeResponseCostUSDMicro pins the encoded wire name and the
+// omission rule: nil writes no key at all, an explicit zero writes the
+// key with 0.
+func TestEncodeResponseCostUSDMicro(t *testing.T) {
+	body, err := NewFrontend().EncodeResponse(&ir.Response{
+		ID:    "msg_1",
+		Model: "m",
+		Usage: ir.Usage{InputTokens: 1, CostUSDMicro: i64(0)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"cost_usd_micro":0`) {
+		t.Fatalf("zero cost must be encoded: %s", body)
+	}
+	body, err = NewFrontend().EncodeResponse(&ir.Response{ID: "msg_1", Model: "m", Usage: ir.Usage{InputTokens: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "cost_usd_micro") {
+		t.Fatalf("unreported cost must be omitted: %s", body)
+	}
+}
+
+// TestStreamUsageCostUSDMicro pins the same carriage on the streaming
+// path, where usage rides on message_delta.
+func TestStreamUsageCostUSDMicro(t *testing.T) {
+	var buf bytes.Buffer
+	enc := NewFrontend().NewEventEncoder(&buf)
+	ev := ir.Event{Type: ir.EventMessageDelta, StopReason: ir.StopEndTurn, Usage: &ir.Usage{OutputTokens: 7, CostUSDMicro: i64(4343)}}
+	if err := enc.Encode(ev); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), `"cost_usd_micro":4343`) {
+		t.Fatalf("frame missing cost: %s", buf.String())
+	}
+	in := "event: message_delta\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":7,\"cost_usd_micro\":4343}}\n\n" +
+		"event: message_delta\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":7}}\n\n"
+	r := NewStreamReader(strings.NewReader(in))
+	withCost, err := r.Next()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withCost.Usage == nil || withCost.Usage.CostUSDMicro == nil || *withCost.Usage.CostUSDMicro != 4343 {
+		t.Fatalf("bad usage: %#v", withCost.Usage)
+	}
+	without, err := r.Next()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if without.Usage == nil || without.Usage.CostUSDMicro != nil {
+		t.Fatalf("absent cost must decode to nil, got %#v", without.Usage)
+	}
+}
+
+// TestUsageCostUSDMicroNotAliased pins that the pointer does not alias
+// across the wire/IR boundary, so a caller mutating one usage value
+// cannot change the other.
+func TestUsageCostUSDMicroNotAliased(t *testing.T) {
+	wire := Usage{CostUSDMicro: i64(50)}
+	got := usageToIR(wire)
+	*got.CostUSDMicro = 99
+	if *wire.CostUSDMicro != 50 {
+		t.Fatalf("usageToIR aliases the cost pointer: wire = %d", *wire.CostUSDMicro)
+	}
+	back := usageFromIR(got)
+	*back.CostUSDMicro = 7
+	if *got.CostUSDMicro != 99 {
+		t.Fatalf("usageFromIR aliases the cost pointer: ir = %d", *got.CostUSDMicro)
+	}
+}
