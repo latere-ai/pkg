@@ -129,7 +129,12 @@ type Claims struct {
 	Kind    string
 	ActorID string
 
-	// Agent-only.
+	// Agent-only, and no longer emitted by the latere auth service: agent
+	// delegation was removed in auth spec 068, so a token from that issuer
+	// never carries these and every branch gated on them is unreachable.
+	// Kept as a wire vocabulary until the agent-identity redesign says
+	// whether it is reused; treat a non-empty value as coming from some
+	// other issuer, not as proof of a latere delegation.
 	Validation   ValidationStrategy // "local" or "strict"; empty for non-agents
 	DelegationID string
 	Act          *ActClaims // delegator identity (RFC 8693)
@@ -153,6 +158,12 @@ type ActClaims struct {
 
 // NeedsTokenInfo returns true when the token requires online validation
 // via the auth service's /tokeninfo endpoint.
+//
+// Now always false for a latere-issued token: it requires
+// PrincipalType==agent, which auth no longer mints (auth spec 068). The
+// strict-revalidation tier in authkit is therefore unreachable from that
+// issuer. Kept rather than deleted because whether a strict tier should exist
+// for service tokens is a design question the agent-identity redesign owns.
 func (c *Claims) NeedsTokenInfo() bool {
 	return c.PrincipalType == PrincipalAgent && c.Validation == ValidationStrict
 }

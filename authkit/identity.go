@@ -64,11 +64,15 @@ type Identity struct {
 	// owner-scoped downstream token (e.g. Cella resolving the sandbox
 	// owner) reads it to set that token's subject to the owner.
 	GrantorID string
-	// AgentID is the acting agent's principal id on a delegated
-	// (autonomous-run) token, from the "agent_id" claim. It is a REPORTING
-	// dimension only and does NOT affect tenancy (attribution stays
-	// (OrgID, Sub) = the owner): a metering consumer reads it to group spend
-	// by agent. Empty for ordinary identities.
+	// AgentID is the acting agent's id, set by whichever Authenticator
+	// resolved this Identity. It is a REPORTING and flow-gating dimension
+	// only and does NOT affect tenancy (attribution stays (OrgID, Sub)).
+	// Empty for ordinary identities.
+	//
+	// Its source is the authenticator's concern, not this package's. The
+	// auth service's delegated-agent JWT claim is gone (auth spec 068
+	// removed agent delegation); the surviving producer is Cella, which
+	// sets it from an agent-kind catalog token's baked-in binding claim.
 	AgentID string
 	// AuthMethod records which Authenticator resolved this Identity, for
 	// observability and conditional handler logic. Standard values are
