@@ -11,8 +11,9 @@ var (
 	SandboxExec   = Scope{Name: "exec:sandbox", Description: "Execute commands inside a sandbox.", Category: "Sandbox"}
 	SandboxAttach = Scope{Name: "attach:sandbox", Description: "Open interactive PTY sessions inside a sandbox.", Category: "Sandbox"}
 	SandboxAdmin  = Scope{Name: "admin:sandbox", Description: "Lifecycle ops: force-stop, disk resize, evictions.", Category: "Sandbox"}
+	SandboxSpawn  = Scope{Name: "sandbox:spawn", Description: "Autonomous sandbox-to-sandbox spawning under a propagated budget.", Category: "Sandbox"}
 )
 
 func sandbox() []Scope {
-	return []Scope{SandboxRead, SandboxWrite, SandboxExec, SandboxAttach, SandboxAdmin}
+	return []Scope{SandboxRead, SandboxWrite, SandboxExec, SandboxAttach, SandboxAdmin, SandboxSpawn}
 }

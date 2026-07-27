@@ -35,6 +35,7 @@ func All() []Scope {
 	s = append(s, oidc()...)
 	s = append(s, sandbox()...)
 	s = append(s, policy()...)
+	s = append(s, agents()...)
 	s = append(s, billing()...)
 	s = append(s, wallfacer()...)
 	sort.SliceStable(s, func(i, j int) bool {
