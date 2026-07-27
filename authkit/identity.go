@@ -57,13 +57,6 @@ type Identity struct {
 	// (OrgID, Sub).
 	Kind    string
 	ActorID string
-	// GrantorID is the RFC 8693 delegator's principal sub (the owner who
-	// delegated to an agent), from the token's "grantor_id" claim. Empty
-	// for non-delegated tokens. It does not affect tenancy of THIS token
-	// (attribution stays (OrgID, Sub)); a consumer that mints an
-	// owner-scoped downstream token (e.g. Cella resolving the sandbox
-	// owner) reads it to set that token's subject to the owner.
-	GrantorID string
 	// AgentID is the acting agent's id, set by whichever Authenticator
 	// resolved this Identity. It is a REPORTING and flow-gating dimension
 	// only and does NOT affect tenancy (attribution stays (OrgID, Sub)).
@@ -80,12 +73,6 @@ type Identity struct {
 	// additional AuthMethod values. The zero value ("") means "unspecified".
 	AuthMethod AuthMethod
 }
-
-// Delegator returns the principal sub this identity acts for, or "" for a
-// non-delegated identity. THE accessor for delegator identity (dr-21) —
-// GrantorID stays populated regardless of which wire claim (RFC 8693 act or
-// legacy flat grantor_id) the issuer emitted, because jwtauth folds the two.
-func (i Identity) Delegator() string { return i.GrantorID }
 
 // AuthMethod is the discriminator stamped on Identity by an Authenticator to
 // record how the request was authenticated. Built-in values are listed below;

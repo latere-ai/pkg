@@ -94,15 +94,6 @@ type PrincipalType string
 const (
 	PrincipalUser    PrincipalType = "user"
 	PrincipalService PrincipalType = "service"
-	PrincipalAgent   PrincipalType = "agent"
-)
-
-// ValidationStrategy indicates how an agent token must be validated.
-type ValidationStrategy string
-
-const (
-	ValidationLocal  ValidationStrategy = "local"
-	ValidationStrict ValidationStrategy = "strict"
 )
 
 // ── Claims ──────────────────────────────────────────────────────────────────
@@ -128,59 +119,6 @@ type Claims struct {
 	// which is the RFC 8693 delegation actor (a principal sub).
 	Kind    string
 	ActorID string
-
-	// Agent-only, and no longer emitted by the latere auth service: agent
-	// delegation was removed in auth spec 068, so a token from that issuer
-	// never carries these and every branch gated on them is unreachable.
-	// Kept as a wire vocabulary until the agent-identity redesign says
-	// whether it is reused; treat a non-empty value as coming from some
-	// other issuer, not as proof of a latere delegation.
-	Validation   ValidationStrategy // "local" or "strict"; empty for non-agents
-	DelegationID string
-	Act          *ActClaims // delegator identity (RFC 8693)
-	// GrantorID is the RFC 8693 delegator's principal sub as emitted by
-	// the auth service's flat "grantor_id" claim on agent/actor tokens
-	// (the owner who delegated to the agent). Empty for non-delegated
-	// tokens. Same delegator concept as Act.Sub, different wire shape.
-	GrantorID string
-	// AgentID is the acting agent's principal id, from the flat "agent_id"
-	// claim on a delegated (autonomous-run) token. It is a REPORTING
-	// dimension, never tenancy: the token's Sub is the owner (after the
-	// grantor swap), and AgentID rides alongside so downstream metering can
-	// group spend by agent. Empty for non-agent tokens.
-	AgentID string
-}
-
-// ActClaims carries the RFC 8693 "act" delegator identity.
-type ActClaims struct {
-	Sub string
-}
-
-// NeedsTokenInfo returns true when the token requires online validation
-// via the auth service's /tokeninfo endpoint.
-//
-// Now always false for a latere-issued token: it requires
-// PrincipalType==agent, which auth no longer mints (auth spec 068). The
-// strict-revalidation tier in authkit is therefore unreachable from that
-// issuer. Kept rather than deleted because whether a strict tier should exist
-// for service tokens is a design question the agent-identity redesign owns.
-func (c *Claims) NeedsTokenInfo() bool {
-	return c.PrincipalType == PrincipalAgent && c.Validation == ValidationStrict
-}
-
-// Delegator returns the principal sub of the user this token acts for,
-// or "" for a non-delegated token. It is THE accessor for delegator
-// identity (dr-21): consumers must not read GrantorID or Act directly,
-// so the wire shape (RFC 8693 act vs legacy flat grantor_id) stays an
-// issuer concern. GrantorID wins when both are present.
-func (c *Claims) Delegator() string {
-	if c.GrantorID != "" {
-		return c.GrantorID
-	}
-	if c.Act != nil {
-		return c.Act.Sub
-	}
-	return ""
 }
 
 // ── Errors ──────────────────────────────────────────────────────────────────
@@ -350,24 +288,6 @@ func claimsFromRawPayload(raw rawPayload) *Claims {
 		Roles:         raw.Roles,
 		Kind:          raw.Kind,
 		ActorID:       raw.ActorID,
-		Validation:    ValidationStrategy(raw.Validation),
-		DelegationID:  raw.DelegationID,
-		GrantorID:     raw.GrantorID,
-		AgentID:       raw.AgentID,
-	}
-	// The RFC 8693 act claim and the flat grantor_id express the same
-	// delegator; the fold is two-way so both fields are always populated
-	// for a delegated token regardless of which shape the issuer emitted.
-	// grantor_id wins when both are present (dr-21: act is canonical on
-	// the wire going forward, grantor_id is the deprecated alias).
-	if raw.Act != nil {
-		claims.Act = &ActClaims{Sub: raw.Act.Sub}
-		if claims.GrantorID == "" {
-			claims.GrantorID = raw.Act.Sub
-		}
-	}
-	if claims.Act == nil && claims.GrantorID != "" {
-		claims.Act = &ActClaims{Sub: claims.GrantorID}
 	}
 	return claims
 }
@@ -651,30 +571,21 @@ func verifySignature(keys []jwkEntry, kid string, digest, sig []byte) bool {
 
 // rawPayload is the JWT payload as emitted by the auth service.
 type rawPayload struct {
-	Sub             string     `json:"sub"`
-	Iss             string     `json:"iss"`
-	Aud             jsonAud    `json:"aud"`
-	Exp             float64    `json:"exp"`
-	Nbf             float64    `json:"nbf"`
-	PrincipalType   string     `json:"principal_type"`
-	Email           string     `json:"email"`
-	OrgID           string     `json:"org_id"`
-	IsSuperadmin    bool       `json:"is_superadmin"`
-	Scopes          []string   `json:"scp"`
-	Roles           []string   `json:"roles"`
-	ClientID        string     `json:"client_id"`
-	Kind            string     `json:"kind"`
-	ActorID         string     `json:"actor_id"`
-	AuthorizedParty string     `json:"azp"`
-	Validation      string     `json:"validation"`
-	DelegationID    string     `json:"delegation_id"`
-	GrantorID       string     `json:"grantor_id"`
-	AgentID         string     `json:"agent_id"`
-	Act             *rawActSub `json:"act"`
-}
-
-type rawActSub struct {
-	Sub string `json:"sub"`
+	Sub             string   `json:"sub"`
+	Iss             string   `json:"iss"`
+	Aud             jsonAud  `json:"aud"`
+	Exp             float64  `json:"exp"`
+	Nbf             float64  `json:"nbf"`
+	PrincipalType   string   `json:"principal_type"`
+	Email           string   `json:"email"`
+	OrgID           string   `json:"org_id"`
+	IsSuperadmin    bool     `json:"is_superadmin"`
+	Scopes          []string `json:"scp"`
+	Roles           []string `json:"roles"`
+	ClientID        string   `json:"client_id"`
+	Kind            string   `json:"kind"`
+	ActorID         string   `json:"actor_id"`
+	AuthorizedParty string   `json:"azp"`
 }
 
 // jsonAud handles the RFC 7519 "aud" claim which can be a string or []string.

@@ -1,10 +1,7 @@
 package authkit
 
 import (
-	"cmp"
 	"crypto/subtle"
-	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -21,20 +18,25 @@ type validator interface {
 // underlying validator caches JWKS internally; we keep its Middleware out of
 // the path so callers can apply their own request-id logging before auth.
 //
-// For tokens whose claims return NeedsTokenInfo() == true (strict agent
-// tokens), JWT calls the auth service's GET /tokeninfo on every request and
-// uses the returned payload as the authoritative source of Sub, OrgID, and
-// Scopes — because a delegation can be revoked between token issuance and
-// expiry. A nil TokenInfo lookup in this case fails closed: such tokens are
-// rejected outright.
+// Validation is local: the signature and claims of the presented token decide
+// the Identity. There is no longer a claim that makes this authenticator call
+// /tokeninfo on its own. That tier existed for strict agent tokens, whose
+// delegation could be revoked mid-lifetime; agent delegation is gone (auth
+// spec 068) and no surviving token has that property — a service token's own
+// short expiry is its revocation window.
+//
+// A consumer that still wants online revalidation calls TokenInfoClient
+// explicitly, which is the honest shape: the decision belongs to the consumer,
+// not to a claim on the token.
 type JWT struct {
 	V         validator
 	TokenInfo TokenInfoLookup
 }
 
 // NewJWT wires a JWT authenticator. v is the JWKS-backed validator from
-// latere.ai/x/pkg/jwtauth; ti is optional but required for strict agent
-// tokens (NeedsTokenInfo).
+// latere.ai/x/pkg/jwtauth. ti is retained for source compatibility and is no
+// longer consulted by Authenticate; pass nil unless you read j.TokenInfo
+// yourself.
 func NewJWT(v *jwtauth.Validator, ti TokenInfoLookup) *JWT {
 	return &JWT{V: v, TokenInfo: ti}
 }
@@ -53,35 +55,6 @@ func (j *JWT) Authenticate(r *http.Request) (Identity, error) {
 	// jwtauth.Claims surfaces the originating OAuth client (client_id, azp
 	// fallback) from the signature-verified token — no second decode needed.
 	clientID := claims.ClientID
-	if claims.NeedsTokenInfo() {
-		if j.TokenInfo == nil {
-			return Identity{}, errors.New("strict agent token but tokeninfo client not configured")
-		}
-		ti, err := j.TokenInfo.Lookup(r.Context(), raw)
-		if err != nil {
-			return Identity{}, fmt.Errorf("tokeninfo: %w", err)
-		}
-		return Identity{
-			Sub:           ti.Sub,
-			OrgID:         ti.OrgID,
-			Email:         ti.Email,
-			PrincipalType: ti.PrincipalType,
-			IsSuperadmin:  false, // superadmin is not re-asserted via tokeninfo
-			Scopes:        ti.Scopes,
-			Roles:         ti.Roles, // tokeninfo re-authorizes org roles alongside scopes
-			ClientID:      cmp.Or(ti.ClientID, clientID),
-			TokenID:       ti.Sub,
-			// Preserve the actor binding from the signature-verified JWT:
-			// tokeninfo re-authorizes the revocable fields (Sub/OrgID/Scopes)
-			// but carries no Kind/ActorID, so taking them from the verified
-			// claims keeps the strict path consistent with the non-strict one.
-			Kind:       claims.Kind,
-			ActorID:    claims.ActorID,
-			GrantorID:  claims.GrantorID,
-			AgentID:    claims.AgentID,
-			AuthMethod: MethodBearer,
-		}, nil
-	}
 	return Identity{
 		Sub:           claims.Sub,
 		OrgID:         claims.OrgID,
@@ -94,8 +67,6 @@ func (j *JWT) Authenticate(r *http.Request) (Identity, error) {
 		TokenID:       claims.Sub,
 		Kind:          claims.Kind,
 		ActorID:       claims.ActorID,
-		GrantorID:     claims.GrantorID,
-		AgentID:       claims.AgentID,
 		AuthMethod:    MethodBearer,
 	}, nil
 }

@@ -11,31 +11,23 @@ import (
 )
 
 // TokenInfo is the subset of the auth service's GET /tokeninfo response that
-// we consult for online validation of strict agent tokens. Field names match
-// the upstream handler (latere.ai/auth/internal/authz/tokeninfo.go).
+// we consult when a consumer explicitly wants online revalidation. Field names
+// match the upstream handler (latere.ai/auth/internal/authz/tokeninfo.go),
+// which no longer reports any delegation fields (auth spec 068).
 type TokenInfo struct {
-	Sub                 string   `json:"sub"`
-	PrincipalType       string   `json:"principal_type"`
-	Email               string   `json:"email,omitempty"`
-	OrgID               string   `json:"org_id,omitempty"`
-	Scopes              []string `json:"scopes"`
-	Roles               []string `json:"roles"`
-	Validation          string   `json:"validation,omitempty"`
-	DelegationID        string   `json:"delegation_id,omitempty"`
-	ClientID            string   `json:"client_id,omitempty"`
-	DelegationExpiresAt string   `json:"delegation_expires_at,omitempty"`
-	// GrantorID mirrors the flat "grantor_id" claim (deprecated alias of
-	// act.sub, dr-21); Act is the canonical RFC 8693 delegator identity.
-	// The auth service reports both; read Delegator() rather than either.
-	GrantorID string `json:"grantor_id,omitempty"`
-	Act       *struct {
-		Sub string `json:"sub"`
-	} `json:"act,omitempty"`
+	Sub           string   `json:"sub"`
+	PrincipalType string   `json:"principal_type"`
+	Email         string   `json:"email,omitempty"`
+	OrgID         string   `json:"org_id,omitempty"`
+	Scopes        []string `json:"scopes"`
+	Roles         []string `json:"roles"`
+	ClientID      string   `json:"client_id,omitempty"`
 }
 
-// TokenInfoLookup is the online-validation contract used by JWT
-// authentication. TokenInfoClient provides authoritative per-request lookups;
-// CachedTokenInfo implements the same contract for explicitly read-only tiers.
+// TokenInfoLookup is the online-validation contract. TokenInfoClient provides
+// authoritative per-request lookups; CachedTokenInfo implements the same
+// contract for explicitly read-only tiers. Consumers invoke it deliberately —
+// no token claim triggers it on their behalf.
 type TokenInfoLookup interface {
 	Lookup(ctx context.Context, rawToken string) (*TokenInfo, error)
 }
@@ -44,18 +36,6 @@ var (
 	_ TokenInfoLookup = (*TokenInfoClient)(nil)
 	_ TokenInfoLookup = (*CachedTokenInfo)(nil)
 )
-
-// Delegator returns the principal sub this token acts for, or "" for a
-// non-delegated token. Mirrors jwtauth.Claims.Delegator (dr-21).
-func (ti *TokenInfo) Delegator() string {
-	if ti.GrantorID != "" {
-		return ti.GrantorID
-	}
-	if ti.Act != nil {
-		return ti.Act.Sub
-	}
-	return ""
-}
 
 // TokenInfoClient calls GET {URL} with Authorization: Bearer <token>. It is
 // stateless: every Lookup is an online call and the auth service is

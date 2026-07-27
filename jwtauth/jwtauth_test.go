@@ -158,9 +158,6 @@ func TestValidateUserToken(t *testing.T) {
 	if len(claims.Aud) != 1 || claims.Aud[0] != "my-client" {
 		t.Errorf("Aud = %v", claims.Aud)
 	}
-	if claims.NeedsTokenInfo() {
-		t.Error("user should not need tokeninfo")
-	}
 }
 
 func TestValidateUsesConfiguredHTTPClient(t *testing.T) {
@@ -192,65 +189,7 @@ func TestValidateServiceToken(t *testing.T) {
 	if claims.PrincipalType != PrincipalService {
 		t.Errorf("PrincipalType = %q, want service", claims.PrincipalType)
 	}
-	if claims.NeedsTokenInfo() {
-		t.Error("service should not need tokeninfo")
-	}
 }
-
-func TestValidateAgentTokenLocal(t *testing.T) {
-	key := genKey(t)
-	v := testValidator(t, key)
-	payload := defaultPayload()
-	payload["principal_type"] = "agent"
-	payload["scp"] = []string{"read:projects"}
-	payload["validation"] = "local"
-	payload["act"] = map[string]any{"sub": "delegator-789"}
-	token := signToken(t, key, defaultHeader(key), payload)
-
-	claims, err := v.Validate(token)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if claims.PrincipalType != PrincipalAgent {
-		t.Errorf("PrincipalType = %q, want agent", claims.PrincipalType)
-	}
-	if claims.Validation != ValidationLocal {
-		t.Errorf("Validation = %q, want local", claims.Validation)
-	}
-	if claims.Act == nil || claims.Act.Sub != "delegator-789" {
-		t.Errorf("Act = %v, want {Sub: delegator-789}", claims.Act)
-	}
-	if claims.NeedsTokenInfo() {
-		t.Error("local agent should not need tokeninfo")
-	}
-}
-
-func TestValidateAgentTokenStrict(t *testing.T) {
-	key := genKey(t)
-	v := testValidator(t, key)
-	payload := defaultPayload()
-	payload["principal_type"] = "agent"
-	payload["scp"] = []string{"write:projects"}
-	payload["validation"] = "strict"
-	payload["delegation_id"] = "del-001"
-	payload["act"] = map[string]any{"sub": "delegator-789"}
-	token := signToken(t, key, defaultHeader(key), payload)
-
-	claims, err := v.Validate(token)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if claims.Validation != ValidationStrict {
-		t.Errorf("Validation = %q, want strict", claims.Validation)
-	}
-	if claims.DelegationID != "del-001" {
-		t.Errorf("DelegationID = %q, want del-001", claims.DelegationID)
-	}
-	if !claims.NeedsTokenInfo() {
-		t.Error("strict agent should need tokeninfo")
-	}
-}
-
 func TestValidateExpiredToken(t *testing.T) {
 	key := genKey(t)
 	v := testValidator(t, key)
@@ -845,33 +784,6 @@ func TestClaimsFromContextNil(t *testing.T) {
 		t.Error("expected nil claims")
 	}
 }
-
-// ── NeedsTokenInfo tests ────────────────────────────────────────────────────
-
-func TestNeedsTokenInfo(t *testing.T) {
-	cases := []struct {
-		name  string
-		pt    PrincipalType
-		val   ValidationStrategy
-		wants bool
-	}{
-		{"user", PrincipalUser, "", false},
-		{"service", PrincipalService, "", false},
-		{"agent-local", PrincipalAgent, ValidationLocal, false},
-		{"agent-strict", PrincipalAgent, ValidationStrict, true},
-		{"agent-empty", PrincipalAgent, "", false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			c := &Claims{PrincipalType: tc.pt, Validation: tc.val}
-			if c.NeedsTokenInfo() != tc.wants {
-				t.Errorf("NeedsTokenInfo() = %v, want %v", c.NeedsTokenInfo(), tc.wants)
-			}
-		})
-	}
-}
-
-// ── jsonAud tests ───────────────────────────────────────────────────────────
 
 func TestJsonAudString(t *testing.T) {
 	var a jsonAud

@@ -23,17 +23,16 @@ func countingTokenInfo(t *testing.T, verdicts map[string]int) (*TokenInfoClient,
 		}
 		w.WriteHeader(status)
 		if status == http.StatusOK {
-			_, _ = w.Write([]byte(`{"sub":"agent-1","principal_type":"agent","grantor_id":"owner-9"}`))
+			_, _ = w.Write([]byte(`{"sub":"svc-1","principal_type":"service","org_id":"org-9"}`))
 		}
 	}))
 	t.Cleanup(srv.Close)
 	return NewTokenInfoClient(srv.URL), &hits
 }
 
-// delegatedTokenInfo serves a verdict carrying the full delegated shape —
-// act.sub, scopes and roles — so tests exercise every field the cache must
-// copy rather than share.
-func delegatedTokenInfo(t *testing.T, verdicts map[string]int) (*TokenInfoClient, *atomic.Int64) {
+// richTokenInfo serves a verdict carrying every field shape the cache must
+// copy rather than share: scalars plus both slices.
+func richTokenInfo(t *testing.T, verdicts map[string]int) (*TokenInfoClient, *atomic.Int64) {
 	t.Helper()
 	var hits atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,50 +43,12 @@ func delegatedTokenInfo(t *testing.T, verdicts map[string]int) (*TokenInfoClient
 		}
 		w.WriteHeader(status)
 		if status == http.StatusOK {
-			_, _ = w.Write([]byte(`{"sub":"agent-1","principal_type":"agent","grantor_id":"owner-9",` +
-				`"scopes":["read","write"],"roles":["member"],"act":{"sub":"owner-9"}}`))
+			_, _ = w.Write([]byte(`{"sub":"svc-1","principal_type":"service","org_id":"org-9",` +
+				`"scopes":["read","write"],"roles":["member"]}`))
 		}
 	}))
 	t.Cleanup(srv.Close)
 	return NewTokenInfoClient(srv.URL), &hits
-}
-
-// TestCachedTokenInfoSharedPointerPoisoning pins that a caller mutating the
-// *TokenInfo it received cannot poison the cached verdict served to the next
-// caller. Both the value stored and the value returned must be copies.
-func TestCachedTokenInfoSharedPointerPoisoning(t *testing.T) {
-	client, hits := delegatedTokenInfo(t, map[string]int{"Bearer good": http.StatusOK})
-	c := NewCachedTokenInfo(client, time.Minute)
-
-	first, err := c.Lookup(context.Background(), "good")
-	if err != nil {
-		t.Fatalf("first lookup: %v", err)
-	}
-	// A caller mutates its own copy — scalar, slice element and Act alike.
-	first.GrantorID = "attacker-owned"
-	first.Act.Sub = "attacker-owned"
-	first.Scopes[0] = "admin"
-	first.Roles[0] = "admin"
-
-	second, err := c.Lookup(context.Background(), "good")
-	if err != nil {
-		t.Fatalf("second lookup: %v", err)
-	}
-	if got := hits.Load(); got != 1 {
-		t.Fatalf("upstream hits = %d, want 1 (must be a cache hit, not a refetch)", got)
-	}
-	if got := second.Delegator(); got != "owner-9" {
-		t.Fatalf("cached verdict poisoned: second delegator = %q, want owner-9", got)
-	}
-	if second.Act.Sub != "owner-9" {
-		t.Fatalf("cached act poisoned: act.sub = %q, want owner-9", second.Act.Sub)
-	}
-	if second.Scopes[0] != "read" {
-		t.Fatalf("cached scopes poisoned: scopes[0] = %q, want read", second.Scopes[0])
-	}
-	if second.Roles[0] != "member" {
-		t.Fatalf("cached roles poisoned: roles[0] = %q, want member", second.Roles[0])
-	}
 }
 
 func TestCloneTokenInfoNil(t *testing.T) {
@@ -95,25 +56,6 @@ func TestCloneTokenInfoNil(t *testing.T) {
 		t.Fatalf("cloneTokenInfo(nil) = %#v, want nil", got)
 	}
 }
-
-func TestCachedTokenInfoReusesPositiveVerdict(t *testing.T) {
-	client, hits := countingTokenInfo(t, map[string]int{"Bearer good": http.StatusOK})
-	c := NewCachedTokenInfo(client, time.Minute)
-
-	for i := 0; i < 3; i++ {
-		ti, err := c.Lookup(context.Background(), "good")
-		if err != nil {
-			t.Fatalf("lookup %d: %v", i, err)
-		}
-		if ti.Delegator() != "owner-9" {
-			t.Fatalf("delegator = %q", ti.Delegator())
-		}
-	}
-	if got := hits.Load(); got != 1 {
-		t.Fatalf("upstream hits = %d, want 1 (cache must absorb repeats)", got)
-	}
-}
-
 func TestCachedTokenInfoExpiry(t *testing.T) {
 	client, hits := countingTokenInfo(t, map[string]int{"Bearer good": http.StatusOK})
 	c := NewCachedTokenInfo(client, 30*time.Second)
@@ -177,22 +119,54 @@ func TestCachedTokenInfoBounded(t *testing.T) {
 	}
 }
 
-func TestTokenInfoDelegatorFallback(t *testing.T) {
-	// grantor_id wins; act is the fallback; neither → empty.
-	act := &struct {
-		Sub string `json:"sub"`
-	}{Sub: "owner-act"}
-	cases := []struct {
-		ti   TokenInfo
-		want string
-	}{
-		{TokenInfo{GrantorID: "owner-flat", Act: act}, "owner-flat"},
-		{TokenInfo{Act: act}, "owner-act"},
-		{TokenInfo{}, ""},
+// TestCachedTokenInfoSharedPointerPoisoning pins that a caller mutating the
+// *TokenInfo it received cannot poison the cached verdict served to the next
+// caller. Both the value stored and the value returned must be copies.
+func TestCachedTokenInfoSharedPointerPoisoning(t *testing.T) {
+	client, hits := richTokenInfo(t, map[string]int{"Bearer good": http.StatusOK})
+	c := NewCachedTokenInfo(client, time.Minute)
+
+	first, err := c.Lookup(context.Background(), "good")
+	if err != nil {
+		t.Fatalf("first lookup: %v", err)
 	}
-	for i, tc := range cases {
-		if got := tc.ti.Delegator(); got != tc.want {
-			t.Errorf("case %d: Delegator() = %q, want %q", i, got, tc.want)
+	// A caller mutates its own copy — scalar and slice elements alike.
+	first.OrgID = "attacker-owned"
+	first.Scopes[0] = "admin"
+	first.Roles[0] = "admin"
+
+	second, err := c.Lookup(context.Background(), "good")
+	if err != nil {
+		t.Fatalf("second lookup: %v", err)
+	}
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("upstream hits = %d, want 1 (must be a cache hit, not a refetch)", got)
+	}
+	if second.OrgID != "org-9" {
+		t.Fatalf("cached verdict poisoned: org_id = %q, want org-9", second.OrgID)
+	}
+	if second.Scopes[0] != "read" {
+		t.Fatalf("cached scopes poisoned: scopes[0] = %q, want read", second.Scopes[0])
+	}
+	if second.Roles[0] != "member" {
+		t.Fatalf("cached roles poisoned: roles[0] = %q, want member", second.Roles[0])
+	}
+}
+
+func TestCachedTokenInfoReusesPositiveVerdict(t *testing.T) {
+	client, hits := countingTokenInfo(t, map[string]int{"Bearer good": http.StatusOK})
+	c := NewCachedTokenInfo(client, time.Minute)
+
+	for i := 0; i < 3; i++ {
+		ti, err := c.Lookup(context.Background(), "good")
+		if err != nil {
+			t.Fatalf("lookup %d: %v", i, err)
 		}
+		if ti.Sub != "svc-1" {
+			t.Fatalf("sub = %q, want svc-1", ti.Sub)
+		}
+	}
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("upstream hits = %d, want 1 (cache must absorb repeats)", got)
 	}
 }

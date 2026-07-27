@@ -128,9 +128,5 @@ func cloneTokenInfo(ti *TokenInfo) *TokenInfo {
 	if ti.Roles != nil {
 		out.Roles = append([]string(nil), ti.Roles...)
 	}
-	if ti.Act != nil {
-		act := *ti.Act
-		out.Act = &act
-	}
 	return &out
 }
