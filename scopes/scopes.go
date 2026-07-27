@@ -1,12 +1,12 @@
 // Package scopes is the source of truth for every OAuth/RBAC scope
 // the latere.ai auth service can issue.
 //
-// Each downstream service (sandbox, fs, latere-ai, latere-cli,
-// wallfacer, lux) registers the scopes it gates on in its own file in this
-// package; auth imports the union to populate /admin/scopes and the
-// OIDC discovery document's scopes_supported field. Adding a new
-// scope is a single-file change here plus an import where the scope
-// is enforced.
+// A service registers a scope here only when auth is the thing that issues it.
+// A product that issues its own credentials owns its own vocabulary and does
+// not appear in this registry: cella mints cella tokens and decides what they
+// may carry, so the sandbox scopes live in the sandbox repo. Auth imports the
+// union to populate /admin/scopes and the OIDC discovery document's
+// scopes_supported field.
 //
 // Use the typed Scope values (e.g. scopes.SandboxRead) at call sites
 // instead of bare string literals so a `gopls references` query
@@ -33,8 +33,6 @@ type Scope struct {
 func All() []Scope {
 	s := []Scope{}
 	s = append(s, oidc()...)
-	s = append(s, sandbox()...)
-	s = append(s, policy()...)
 	s = append(s, agents()...)
 	s = append(s, billing()...)
 	s = append(s, wallfacer()...)
