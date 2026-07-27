@@ -65,9 +65,7 @@
 //
 //	// In a handler:
 //	claims := jwtauth.ClaimsFromContext(r.Context())
-//	if claims.NeedsTokenInfo() {
-//	    // call auth service's GET /tokeninfo before proceeding
-//	}
+//	_ = claims.Sub
 package jwtauth
 
 import (
