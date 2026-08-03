@@ -9,6 +9,7 @@ Platform-wide Go packages for [Latere AI](https://latere.ai).
 | [`audit`](audit/) | Canonical audit-event envelope and the shared emitters (stdout, OTLP) products serialize it through |
 | [`authkit`](authkit/) | Product-agnostic authentication glue: the shared Identity type and Authenticator interface every service builds on |
 | [`batch`](batch/) | Generic non-blocking batching pump: producers add without blocking, one goroutine flushes by size or interval |
+| [`email`](email/) | Transactional mail transport — Mailgun, SMTP, or a log-only fallback — refusing header injection; each service composes its own subjects and bodies |
 | [`jwtauth`](jwtauth/) | JWKS-based RS256 JWT validation for services accepting auth-issued tokens |
 | [`llmdialect`](llmdialect/) | Translation between LLM inference wire dialects (Anthropic Messages, OpenAI Chat Completions, OpenAI Responses, lux-native) through a neutral intermediate representation |
 | [`luxsdk`](luxsdk/) | First-party Go client for the Lux gateway's native dialect: typed generate, streaming, and token counting |
