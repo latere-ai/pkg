@@ -44,3 +44,10 @@ jobs:
 
       - name: Fuzz
         run: make fuzz
+
+      # Fails on vulnerabilities in code this module calls or imports, and not
+      # on advisories against modules it merely requires. Every consumer
+      # inherits what this module reaches, so a finding at those depths is a
+      # fleet-wide exposure rather than a local one.
+      - name: Vulnerability scan
+        run: make vuln
