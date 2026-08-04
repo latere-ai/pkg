@@ -17,6 +17,17 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # This module is public and carries client primitives only. Internal
+      # planning docs live in a private repository, never here.
+      - name: No internal specs tracked
+        run: |
+          tracked=$(git ls-files specs/)
+          if [ -n "$tracked" ]; then
+            echo "::error::internal specs/ files are tracked in this public module:"
+            echo "$tracked"
+            exit 1
+          fi
+
       - name: Test with race detector
         run: go test -v -race -count=1 ./...
 

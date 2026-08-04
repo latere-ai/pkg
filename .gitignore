@@ -27,6 +27,11 @@ go.work.sum
 # env file
 .env
 
+# Internal engineering specs. This module is public and holds client
+# primitives only; spec authoring stays local or in a private repository.
+# CI additionally fails if anything under specs/ becomes tracked.
+specs/
+
 # Editor/IDE
 # .idea/
 # .vscode/
