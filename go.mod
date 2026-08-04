@@ -2,6 +2,12 @@ module latere.ai/x/pkg
 
 go 1.26
 
+// go1.26.5 fixes GO-2026-5856 (Encrypted Client Hello privacy leak in
+// crypto/tls) and GO-2026-4970 (os), both reachable from this module. The
+// language floor stays at 1.26 so consumers are not forced to upgrade; a
+// toolchain line only governs the build here.
+toolchain go1.26.5
+
 require (
 	github.com/goccy/go-yaml v1.19.2
 	github.com/golang-migrate/migrate/v4 v4.19.1
