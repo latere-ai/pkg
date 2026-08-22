@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -157,7 +158,7 @@ func TestAuthCodeURL_PKCEandNonce(t *testing.T) {
 	a := newAuth(t, idp, "client-1", "latere")
 	u := a.AuthCodeURL("state-1", "nonce-1", GenerateVerifier())
 	for _, want := range []string{"code_challenge=", "code_challenge_method=S256", "nonce=nonce-1", "state=state-1", "client_id=client-1"} {
-		if !contains(u, want) {
+		if !strings.Contains(u, want) {
 			t.Errorf("AuthCodeURL missing %q: %s", want, u)
 		}
 	}
@@ -403,15 +404,4 @@ func TestUnionStrings(t *testing.T) {
 	if len(got) != 3 {
 		t.Errorf("union = %v, want [a b c]", got)
 	}
-}
-
-func contains(s, sub string) bool { return len(s) >= len(sub) && indexOf(s, sub) >= 0 }
-
-func indexOf(s, sub string) int {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
 }
