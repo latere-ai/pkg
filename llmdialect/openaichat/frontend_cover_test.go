@@ -2,6 +2,7 @@ package openaichat
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	"latere.ai/x/pkg/llmdialect/ir"
@@ -39,7 +40,7 @@ func TestFrontendDecodeToolVariantsAndParallel(t *testing.T) {
 		t.Fatalf("tool choice wrong: %+v", req.ToolChoice)
 	}
 	for _, want := range []ir.LossField{"tools.web_search", "tools.strict"} {
-		if !contains(req.Loss.Fields(), want) {
+		if !slices.Contains(req.Loss.Fields(), want) {
 			t.Fatalf("loss %v missing %q", req.Loss.Fields(), want)
 		}
 	}

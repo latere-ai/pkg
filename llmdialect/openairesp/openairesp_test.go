@@ -92,7 +92,7 @@ func TestDecodeRequestCodexShape(t *testing.T) {
 	}
 	loss := req.Loss.Fields()
 	for _, want := range []ir.LossField{"reasoning", "reasoning.summary", "tools.strict", "tools.web_search"} {
-		if !contains(loss, want) {
+		if !slices.Contains(loss, want) {
 			t.Fatalf("loss %v missing %q", loss, want)
 		}
 	}
@@ -109,7 +109,7 @@ func TestDecodeRequestStringInputAndSchema(t *testing.T) {
 	if req.Schema == nil || req.Schema.Name != "out" || !req.Schema.Strict {
 		t.Fatalf("schema wrong: %+v", req.Schema)
 	}
-	if !contains(req.Loss.Fields(), "text.verbosity") {
+	if !slices.Contains(req.Loss.Fields(), "text.verbosity") {
 		t.Fatalf("verbosity loss missing: %v", req.Loss.Fields())
 	}
 }
@@ -353,10 +353,6 @@ func TestEventEncoderErrors(t *testing.T) {
 	if err := enc.Encode(ir.Event{Type: ir.EventBlockStart, Block: &ir.Block{Type: ir.BlockImage}}); err == nil {
 		t.Fatal("want unstreamable block error")
 	}
-}
-
-func contains(ss []ir.LossField, want ir.LossField) bool {
-	return slices.Contains(ss, want)
 }
 
 func FuzzDecodeRequest(f *testing.F) {

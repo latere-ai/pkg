@@ -98,7 +98,7 @@ func TestEncodeRequestFull(t *testing.T) {
 	if m := msgs[4].(map[string]any); m["content"] != "thanks" {
 		t.Fatalf("trailing user wrong: %v", m)
 	}
-	if !contains(req.Loss.Fields(), "cache_control") {
+	if !slices.Contains(req.Loss.Fields(), "cache_control") {
 		t.Fatalf("cache_control loss missing: %v", req.Loss.Fields())
 	}
 }
@@ -196,7 +196,7 @@ func TestEncodeRequestLossyParams(t *testing.T) {
 		t.Fatalf("stop should truncate to 4, got %v", stop)
 	}
 	for _, want := range []ir.LossField{"top_k", "stop_sequences"} {
-		if !contains(req.Loss.Fields(), want) {
+		if !slices.Contains(req.Loss.Fields(), want) {
 			t.Fatalf("loss %v missing %q", req.Loss.Fields(), want)
 		}
 	}
@@ -216,7 +216,7 @@ func TestEncodeRequestReasoning(t *testing.T) {
 		if got := encode(t, req, BackendOptions{}); got["reasoning_effort"] != want {
 			t.Fatalf("budget %d → %v want %s", budget, got["reasoning_effort"], want)
 		}
-		if !contains(req.Loss.Fields(), "thinking.budget_tokens") {
+		if !slices.Contains(req.Loss.Fields(), "thinking.budget_tokens") {
 			t.Fatal("budget approximation must be recorded as loss")
 		}
 	}
@@ -265,7 +265,7 @@ func TestEncodeRequestThinkingDroppedAndEmptySchema(t *testing.T) {
 	if !reflect.DeepEqual(fn["parameters"], map[string]any{"type": "object"}) {
 		t.Fatalf("empty schema should default: %v", fn)
 	}
-	if !contains(req.Loss.Fields(), "thinking") {
+	if !slices.Contains(req.Loss.Fields(), "thinking") {
 		t.Fatalf("thinking loss missing: %v", req.Loss.Fields())
 	}
 }
@@ -286,7 +286,7 @@ func TestEncodeRequestToolResultLosses(t *testing.T) {
 		t.Fatalf("tool content wrong: %v", tool)
 	}
 	for _, want := range []ir.LossField{"tool_result.image", "tool_result.is_error"} {
-		if !contains(req.Loss.Fields(), want) {
+		if !slices.Contains(req.Loss.Fields(), want) {
 			t.Fatalf("loss %v missing %q", req.Loss.Fields(), want)
 		}
 	}
@@ -526,10 +526,6 @@ func TestEventDecoderUsageOnlyStream(t *testing.T) {
 	if events[1].Usage == nil || events[1].Usage.InputTokens != 3 {
 		t.Fatalf("usage missing: %+v", events[1])
 	}
-}
-
-func contains(ss []ir.LossField, want ir.LossField) bool {
-	return slices.Contains(ss, want)
 }
 
 func FuzzDecodeResponse(f *testing.F) {

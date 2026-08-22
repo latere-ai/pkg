@@ -247,7 +247,7 @@ func TestDecodeRequestThinkingBlocksAndUnknowns(t *testing.T) {
 	}
 	loss := req.Loss.Fields()
 	for _, want := range []ir.LossField{"service_tier", "content.server_tool_use", "citations"} {
-		if !contains(loss, want) {
+		if !slices.Contains(loss, want) {
 			t.Fatalf("loss %v missing %q", loss, want)
 		}
 	}
@@ -268,7 +268,7 @@ func TestDecodeRequestToolVariants(t *testing.T) {
 	}
 	loss := req.Loss.Fields()
 	for _, want := range []ir.LossField{"tools.cache_control", "tools.bash_20250124"} {
-		if !contains(loss, want) {
+		if !slices.Contains(loss, want) {
 			t.Fatalf("loss %v missing %q", loss, want)
 		}
 	}
@@ -498,10 +498,6 @@ func TestEventEncoderErrors(t *testing.T) {
 	if err := enc.Encode(ir.Event{Type: ir.EventBlockStart, Block: &ir.Block{Type: ir.BlockImage}}); err == nil {
 		t.Fatal("want unstreamable block error")
 	}
-}
-
-func contains(ss []ir.LossField, want ir.LossField) bool {
-	return slices.Contains(ss, want)
 }
 
 func FuzzDecodeRequest(f *testing.F) {

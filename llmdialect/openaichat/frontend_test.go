@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -112,7 +113,7 @@ func TestFrontendDecodeRequestImagesAndSchema(t *testing.T) {
 	}
 	loss := req.Loss.Fields()
 	for _, want := range []ir.LossField{"seed", "content.input_audio"} {
-		if !contains(loss, want) {
+		if !slices.Contains(loss, want) {
 			t.Fatalf("loss %v missing %q", loss, want)
 		}
 	}

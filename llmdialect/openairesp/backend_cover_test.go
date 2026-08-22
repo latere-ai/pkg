@@ -89,7 +89,7 @@ func TestBackendEncodeRequestExtras(t *testing.T) {
 			r.StopSequences = []string{"END"}
 		}, func(t *testing.T, _ map[string]any, r *ir.Request) {
 			ls := r.Loss.Strings()
-			if !containsStr(ls, "top_k") || !containsStr(ls, "stop_sequences") {
+			if !slices.Contains(ls, "top_k") || !slices.Contains(ls, "stop_sequences") {
 				t.Errorf("loss = %v", ls)
 			}
 		}},
@@ -141,7 +141,7 @@ func TestBackendEncodeImagesAndLoss(t *testing.T) {
 	}
 	ls := req.Loss.Strings()
 	for _, want := range []string{"cache_control", "thinking", "tool_result.image", "tool_result.is_error"} {
-		if !containsStr(ls, want) {
+		if !slices.Contains(ls, want) {
 			t.Errorf("missing loss %q in %v", want, ls)
 		}
 	}
@@ -353,7 +353,7 @@ func TestBackendEncodeDefaults(t *testing.T) {
 	if fc["arguments"] != "{}" {
 		t.Errorf("default args = %v", fc["arguments"])
 	}
-	if !containsStr(req.Loss.Strings(), "cache_control") {
+	if !slices.Contains(req.Loss.Strings(), "cache_control") {
 		t.Errorf("cache loss missing: %v", req.Loss.Strings())
 	}
 }
@@ -395,7 +395,7 @@ func TestBackendEncodeUserCapped(t *testing.T) {
 	if len(u) > 64 {
 		t.Errorf("user len = %d, want <= 64", len(u))
 	}
-	if !containsStr(req.Loss.Strings(), "user.truncated") {
+	if !slices.Contains(req.Loss.Strings(), "user.truncated") {
 		t.Errorf("truncation loss missing: %v", req.Loss.Strings())
 	}
 	// A short user id passes through untouched with no loss.
@@ -405,7 +405,7 @@ func TestBackendEncodeUserCapped(t *testing.T) {
 	if mustJSON(t, raw2)["user"] != "u1" {
 		t.Errorf("short user changed")
 	}
-	if containsStr(req2.Loss.Strings(), "user.truncated") {
+	if slices.Contains(req2.Loss.Strings(), "user.truncated") {
 		t.Errorf("unexpected truncation loss for short user")
 	}
 }
@@ -498,8 +498,4 @@ func FuzzBackendEventDecoder(f *testing.F) {
 			}
 		}
 	})
-}
-
-func containsStr(ss []string, s string) bool {
-	return slices.Contains(ss, s)
 }

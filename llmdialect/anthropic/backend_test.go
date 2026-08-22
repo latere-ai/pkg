@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -72,7 +73,7 @@ func TestBackendEncodeRequestFull(t *testing.T) {
 		t.Fatalf("scalars wrong: %v", got)
 	}
 	// OpenAI temperature 1.4 clamps to the Anthropic max of 1.
-	if got["temperature"].(float64) != 1 || !contains(req.Loss.Fields(), "temperature") {
+	if got["temperature"].(float64) != 1 || !slices.Contains(req.Loss.Fields(), "temperature") {
 		t.Fatalf("temperature clamp wrong: %v loss=%v", got["temperature"], req.Loss.Fields())
 	}
 	if got["top_p"].(float64) != 0.9 || got["top_k"].(float64) != 40 {
@@ -157,7 +158,7 @@ func TestBackendEncodeThinkingAdaptive(t *testing.T) {
 		req := base(&ir.Reasoning{Effort: effort})
 		got := encodeBack(t, req, BackendOptions{})
 		assertShape(t, got, want)
-		if contains(req.Loss.Fields(), "reasoning_effort") {
+		if slices.Contains(req.Loss.Fields(), "reasoning_effort") {
 			t.Fatalf("effort %s passthrough must not record a loss", effort)
 		}
 	}
@@ -165,7 +166,7 @@ func TestBackendEncodeThinkingAdaptive(t *testing.T) {
 	req := base(&ir.Reasoning{Effort: ir.EffortMinimal})
 	got := encodeBack(t, req, BackendOptions{})
 	assertShape(t, got, "low")
-	if !contains(req.Loss.Fields(), "reasoning_effort") {
+	if !slices.Contains(req.Loss.Fields(), "reasoning_effort") {
 		t.Fatal("minimal→low must be a recorded loss")
 	}
 	// Anthropic-style budget bands to an effort and records the approximation.
@@ -173,7 +174,7 @@ func TestBackendEncodeThinkingAdaptive(t *testing.T) {
 		req := base(&ir.Reasoning{BudgetTokens: budget})
 		got := encodeBack(t, req, BackendOptions{})
 		assertShape(t, got, want)
-		if !contains(req.Loss.Fields(), "thinking.budget_tokens") {
+		if !slices.Contains(req.Loss.Fields(), "thinking.budget_tokens") {
 			t.Fatalf("budget %d banding must record a loss", budget)
 		}
 	}
@@ -200,7 +201,7 @@ func TestBackendEncodeThinkingReplayPolicy(t *testing.T) {
 	if first["type"] != "thinking" || first["signature"] != "sig1" {
 		t.Fatalf("signed thinking wrong: %v", first)
 	}
-	if !contains(req.Loss.Fields(), "thinking") {
+	if !slices.Contains(req.Loss.Fields(), "thinking") {
 		t.Fatalf("unsigned thinking drop must be a loss: %v", req.Loss.Fields())
 	}
 }
