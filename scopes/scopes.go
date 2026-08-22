@@ -13,7 +13,10 @@
 // finds every gate, and so renames are mechanical.
 package scopes
 
-import "sort"
+import (
+	"slices"
+	"sort"
+)
 
 // Scope is a single OAuth/RBAC scope along with metadata used to
 // surface it in admin UIs and OIDC discovery.
@@ -31,11 +34,7 @@ type Scope struct {
 // All returns the union of every scope known across latere.ai
 // services, sorted by (Category, Name) for stable rendering.
 func All() []Scope {
-	s := []Scope{}
-	s = append(s, oidc()...)
-	s = append(s, agents()...)
-	s = append(s, billing()...)
-	s = append(s, wallfacer()...)
+	s := slices.Concat(oidc(), agents(), billing(), wallfacer())
 	sort.SliceStable(s, func(i, j int) bool {
 		if s[i].Category != s[j].Category {
 			return s[i].Category < s[j].Category
