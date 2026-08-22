@@ -3,6 +3,7 @@ package authkit
 import (
 	"context"
 	"crypto/sha256"
+	"slices"
 	"sync"
 	"time"
 )
@@ -114,19 +115,17 @@ func (c *CachedTokenInfo) Lookup(ctx context.Context, rawToken string) (*TokenIn
 
 // cloneTokenInfo returns a deep-enough copy of ti that a caller mutating the
 // result cannot reach the original: the struct is copied by value and the
-// Scopes/Roles slices and the Act pointer are reallocated. Every value that
-// crosses the cache boundary passes through here, so a caller holding a
-// verdict never shares memory with the cached entry.
+// Scopes/Roles slices are reallocated. Every value that crosses the cache
+// boundary passes through here, so a caller holding a verdict never shares
+// memory with the cached entry. slices.Clone preserves nil-ness, so a cached
+// verdict carries the same distinction between an absent and an empty list
+// that TokenInfoClient.Lookup returns on the uncached path.
 func cloneTokenInfo(ti *TokenInfo) *TokenInfo {
 	if ti == nil {
 		return nil
 	}
 	out := *ti
-	if ti.Scopes != nil {
-		out.Scopes = append([]string(nil), ti.Scopes...)
-	}
-	if ti.Roles != nil {
-		out.Roles = append([]string(nil), ti.Roles...)
-	}
+	out.Scopes = slices.Clone(ti.Scopes)
+	out.Roles = slices.Clone(ti.Roles)
 	return &out
 }

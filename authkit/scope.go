@@ -1,5 +1,7 @@
 package authkit
 
+import "slices"
+
 // HasScope returns true if the identity is permitted for the given scope.
 // The admin parameter is the product-specific admin scope that implies all
 // other scopes (e.g. "admin:sandbox" or "admin:topos"). IsSuperadmin and the
@@ -15,10 +17,7 @@ func HasScope(id Identity, want, admin string) bool {
 	if id.IsSuperadmin {
 		return true
 	}
-	for _, s := range id.Scopes {
-		if s == want || s == admin {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(id.Scopes, func(s string) bool {
+		return s == want || s == admin
+	})
 }
