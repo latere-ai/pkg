@@ -25,10 +25,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"mime"
 	"net/http"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 
 	"latere.ai/x/pkg/llmdialect/ir"
@@ -398,13 +399,8 @@ func formatCostTags(tags map[string]string) string {
 	if len(tags) == 0 {
 		return ""
 	}
-	keys := make([]string, 0, len(tags))
-	for k := range tags {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
 	var b strings.Builder
-	for i, k := range keys {
+	for i, k := range slices.Sorted(maps.Keys(tags)) {
 		if i > 0 {
 			b.WriteByte(',')
 		}
