@@ -455,10 +455,7 @@ func (c *Client) SetSession(w http.ResponseWriter, sess *Session) error {
 		now := time.Now().UTC()
 		exp := c.sessionExpiry(sess, now)
 		sess.SessionExpiry = exp
-		maxAge = int(exp.Sub(now).Seconds())
-		if maxAge < 1 {
-			maxAge = 1
-		}
+		maxAge = max(int(exp.Sub(now).Seconds()), 1)
 	}
 	return c.setCookie(w, c.cfg.CookieName, sess, maxAge)
 }

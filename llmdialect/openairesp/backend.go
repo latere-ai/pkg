@@ -277,10 +277,7 @@ type respUsage struct {
 }
 
 func (u *respUsage) toUsage() ir.Usage {
-	in := u.InputTokens - u.InputTokensDetails.CachedTokens
-	if in < 0 {
-		in = 0
-	}
+	in := max(u.InputTokens-u.InputTokensDetails.CachedTokens, 0)
 	return ir.Usage{
 		InputTokens:          in,
 		OutputTokens:         u.OutputTokens,

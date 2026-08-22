@@ -144,7 +144,7 @@ func TestStreamOpenAIToAnthropic(t *testing.T) {
 
 	var names []string
 	var payloads []map[string]any
-	for _, frame := range strings.Split(strings.TrimSpace(body), "\n\n") {
+	for frame := range strings.SplitSeq(strings.TrimSpace(body), "\n\n") {
 		lines := strings.SplitN(frame, "\n", 2)
 		names = append(names, strings.TrimPrefix(lines[0], "event: "))
 		var p map[string]any

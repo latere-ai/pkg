@@ -11,7 +11,10 @@
 // counters).
 package ir
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"slices"
+)
 
 // Dialect names an LLM inference wire dialect. Every codec package
 // exports its own DialectName typed as this.
@@ -236,10 +239,8 @@ type Loss struct {
 
 // Add records a lost field once.
 func (l *Loss) Add(field LossField) {
-	for _, f := range l.fields {
-		if f == field {
-			return
-		}
+	if slices.Contains(l.fields, field) {
+		return
 	}
 	l.fields = append(l.fields, field)
 }

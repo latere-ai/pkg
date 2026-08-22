@@ -132,7 +132,7 @@ func FuzzReader(f *testing.F) {
 	f.Add([]byte(": c\r\ndata:x"))
 	f.Fuzz(func(t *testing.T, in []byte) {
 		r := NewReader(bytes.NewReader(in))
-		for i := 0; i < 1000; i++ {
+		for range 1000 {
 			if _, err := r.Next(); err != nil {
 				return
 			}

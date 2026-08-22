@@ -71,14 +71,14 @@ func TestDeviceAuth_HappyPath(t *testing.T) {
 // downstream rely on this to render "Waiting for approval..." once
 // before the token comes back.
 func TestDeviceAccessToken_HonorsAuthorizationPending(t *testing.T) {
-	var calls int32
+	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/token" {
 			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		n := atomic.AddInt32(&calls, 1)
+		n := calls.Add(1)
 		if n == 1 {
 			w.WriteHeader(http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{
@@ -107,7 +107,7 @@ func TestDeviceAccessToken_HonorsAuthorizationPending(t *testing.T) {
 	if tok.AccessToken != "tok-abc" {
 		t.Errorf("AccessToken = %q", tok.AccessToken)
 	}
-	if got := atomic.LoadInt32(&calls); got != 2 {
+	if got := calls.Load(); got != 2 {
 		t.Errorf("polled %d times, want 2 (one pending + one success)", got)
 	}
 }

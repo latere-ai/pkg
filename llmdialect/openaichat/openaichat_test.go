@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -528,12 +529,7 @@ func TestEventDecoderUsageOnlyStream(t *testing.T) {
 }
 
 func contains(ss []ir.LossField, want ir.LossField) bool {
-	for _, s := range ss {
-		if s == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ss, want)
 }
 
 func FuzzDecodeResponse(f *testing.F) {
@@ -549,7 +545,7 @@ func FuzzEventDecoder(f *testing.F) {
 	f.Add([]byte("data: {\n\n"))
 	f.Fuzz(func(t *testing.T, stream []byte) {
 		dec := NewBackend(BackendOptions{}).NewEventDecoder(strings.NewReader(string(stream)))
-		for i := 0; i < 10000; i++ {
+		for range 10000 {
 			if _, err := dec.Next(); err != nil {
 				return
 			}

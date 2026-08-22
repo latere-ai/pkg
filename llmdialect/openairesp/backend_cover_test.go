@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 
@@ -465,7 +466,7 @@ func TestBackendEventDecoderReadError(t *testing.T) {
 	r := &errReader{data: []byte("data: {\"type\":\"response.created\",\"response\":{\"id\":\"r\"}}\n\n")}
 	dec := NewBackend().NewEventDecoder(r)
 	// first event is MessageStart; a later Next hits the read error
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		_, err := dec.Next()
 		if err == io.EOF {
 			t.Fatal("expected a read error, got clean EOF")
@@ -491,7 +492,7 @@ func FuzzBackendEventDecoder(f *testing.F) {
 	f.Add("data: {\"type\":\"response.output_text.delta\",\"delta\":\"x\"}\n\n")
 	f.Fuzz(func(t *testing.T, stream string) {
 		dec := NewBackend().NewEventDecoder(strings.NewReader(stream))
-		for i := 0; i < 1000; i++ {
+		for range 1000 {
 			if _, err := dec.Next(); err != nil {
 				return // io.EOF or a decode error — both fine, just no panic
 			}
@@ -500,10 +501,5 @@ func FuzzBackendEventDecoder(f *testing.F) {
 }
 
 func containsStr(ss []string, s string) bool {
-	for _, x := range ss {
-		if x == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ss, s)
 }

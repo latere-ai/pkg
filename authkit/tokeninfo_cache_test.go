@@ -87,7 +87,7 @@ func TestCachedTokenInfoNeverCachesNegatives(t *testing.T) {
 	client, hits := countingTokenInfo(t, map[string]int{}) // everything 401s
 	c := NewCachedTokenInfo(client, time.Minute)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if _, err := c.Lookup(context.Background(), "revoked"); err == nil {
 			t.Fatalf("lookup %d: expected error", i)
 		}
@@ -157,7 +157,7 @@ func TestCachedTokenInfoReusesPositiveVerdict(t *testing.T) {
 	client, hits := countingTokenInfo(t, map[string]int{"Bearer good": http.StatusOK})
 	c := NewCachedTokenInfo(client, time.Minute)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		ti, err := c.Lookup(context.Background(), "good")
 		if err != nil {
 			t.Fatalf("lookup %d: %v", i, err)

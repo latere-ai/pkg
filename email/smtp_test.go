@@ -176,8 +176,8 @@ func runSMTPMock(t *testing.T, ln net.Listener, opts mockOpts) <-chan string {
 			if err != nil {
 				return
 			}
-			cmds := strings.Split(line, "\r\n")
-			for _, cmd := range cmds {
+			cmds := strings.SplitSeq(line, "\r\n")
+			for cmd := range cmds {
 				if cmd == "" {
 					continue
 				}

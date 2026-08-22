@@ -311,11 +311,11 @@ func decodeImageURL(url string) (*ir.Image, error) {
 		return &ir.Image{URL: url}, nil
 	}
 	rest := strings.TrimPrefix(url, "data:")
-	semi := strings.Index(rest, ";base64,")
-	if semi < 0 {
+	before, after, ok := strings.Cut(rest, ";base64,")
+	if !ok {
 		return nil, fmt.Errorf("unsupported data URI (want ;base64,)")
 	}
-	return &ir.Image{MediaType: rest[:semi], Data: rest[semi+len(";base64,"):]}, nil
+	return &ir.Image{MediaType: before, Data: after}, nil
 }
 
 func decodeToolChoice(raw json.RawMessage) (*ir.ToolChoice, error) {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -355,12 +356,7 @@ func TestEventEncoderErrors(t *testing.T) {
 }
 
 func contains(ss []ir.LossField, want ir.LossField) bool {
-	for _, s := range ss {
-		if s == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ss, want)
 }
 
 func FuzzDecodeRequest(f *testing.F) {

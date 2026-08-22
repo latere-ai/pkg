@@ -322,10 +322,7 @@ type wireUsage struct {
 // cache reads (Anthropic convention), while prompt_tokens includes
 // them.
 func (u *wireUsage) toUsage() *ir.Usage {
-	in := u.PromptTokens - u.PromptTokensDetails.CachedTokens
-	if in < 0 {
-		in = 0
-	}
+	in := max(u.PromptTokens-u.PromptTokensDetails.CachedTokens, 0)
 	return &ir.Usage{
 		InputTokens:          in,
 		OutputTokens:         u.CompletionTokens,
