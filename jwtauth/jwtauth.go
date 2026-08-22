@@ -79,6 +79,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -393,7 +394,7 @@ func (c *jwksCache) getKeysForKid(kid string) ([]jwkEntry, error) {
 	if err != nil {
 		return keys, err
 	}
-	if kid == "" || hasKid(keys, kid) {
+	if kid == "" || slices.ContainsFunc(keys, func(k jwkEntry) bool { return k.kid == kid }) {
 		return keys, nil
 	}
 
@@ -408,15 +409,6 @@ func (c *jwksCache) getKeysForKid(kid string) ([]jwkEntry, error) {
 	c.mu.Unlock()
 
 	return c.load(true)
-}
-
-func hasKid(keys []jwkEntry, kid string) bool {
-	for _, k := range keys {
-		if k.kid == kid {
-			return true
-		}
-	}
-	return false
 }
 
 // load returns the cached JWKS, fetching from the network only when the cache
@@ -604,16 +596,9 @@ func (a *jsonAud) UnmarshalJSON(data []byte) error {
 }
 
 func audMatch(tokenAud jsonAud, expected []string) bool {
-	set := make(map[string]struct{}, len(expected))
-	for _, a := range expected {
-		set[a] = struct{}{}
-	}
-	for _, a := range tokenAud {
-		if _, ok := set[a]; ok {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(tokenAud, func(a string) bool {
+		return slices.Contains(expected, a)
+	})
 }
 
 // WriteUnauthorized writes the standard 401 JSON envelope
