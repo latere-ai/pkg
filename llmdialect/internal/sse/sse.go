@@ -56,7 +56,7 @@ func (r *Reader) Next() (Event, error) {
 			got = true
 		case bytes.HasPrefix(line, []byte("data:")):
 			d := bytes.TrimPrefix(bytes.TrimPrefix(line, []byte("data:")), []byte(" "))
-			data = append(data, append([]byte(nil), d...))
+			data = append(data, bytes.Clone(d))
 			got = true
 		}
 	}
