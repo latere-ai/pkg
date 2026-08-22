@@ -42,6 +42,13 @@ jobs:
             exit 1
           fi
 
+      # go fix runs the toolchain modernizers, which rewrite hand-written code
+      # into the standard library call that already covers it. They overlap
+      # golangci-lint's modernize linter but add three it does not carry:
+      # buildtag, hostport, and the go:fix inline directives.
+      - name: Modernize
+        run: make lint-modernize
+
       - name: Fuzz
         run: make fuzz
 
