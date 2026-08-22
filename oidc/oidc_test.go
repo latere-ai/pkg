@@ -714,21 +714,6 @@ func TestFlowCookieAttributes(t *testing.T) {
 	}
 }
 
-// --- getenv ---
-
-func TestGetenvWithValue(t *testing.T) {
-	t.Setenv("TEST_GETENV_KEY", "custom")
-	if got := getenv("TEST_GETENV_KEY", "default"); got != "custom" {
-		t.Errorf("getenv = %q, want %q", got, "custom")
-	}
-}
-
-func TestGetenvFallback(t *testing.T) {
-	if got := getenv("TEST_GETENV_MISSING_KEY_12345", "fallback"); got != "fallback" {
-		t.Errorf("getenv = %q, want %q", got, "fallback")
-	}
-}
-
 // --- SetCookie marshal error ---
 
 func TestSetCookieMarshalError(t *testing.T) {

@@ -13,6 +13,7 @@
 package oidc
 
 import (
+	"cmp"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -142,7 +143,7 @@ type Client struct {
 // plain HTTP. It must never be set in production.
 func LoadConfig() Config {
 	return Config{
-		AuthURL:         getenv("AUTH_URL", "https://auth.latere.ai"),
+		AuthURL:         cmp.Or(os.Getenv("AUTH_URL"), "https://auth.latere.ai"),
 		ClientID:        os.Getenv("AUTH_CLIENT_ID"),
 		ClientSecret:    os.Getenv("AUTH_CLIENT_SECRET"),
 		RedirectURL:     os.Getenv("AUTH_REDIRECT_URL"),
@@ -151,13 +152,6 @@ func LoadConfig() Config {
 		Scopes:          SplitScopes(os.Getenv("AUTH_SCOPES")),
 		InsecureCookies: envutil.IsTruthy(os.Getenv("AUTH_INSECURE_COOKIES")),
 	}
-}
-
-func getenv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }
 
 // Enabled returns true if the required configuration is present.
