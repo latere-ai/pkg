@@ -8,7 +8,7 @@ import (
 )
 
 // newConfiguredClient builds a Client with a non-default cookie name, TTL, and
-// insecure flag — the shape a relying party like cella uses.
+// insecure flag, the shape a relying party with a custom cookie name uses.
 func newConfiguredClient(t *testing.T, ttl time.Duration) *Client {
 	t.Helper()
 	c := New(Config{

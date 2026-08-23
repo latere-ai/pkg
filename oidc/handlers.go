@@ -118,7 +118,7 @@ func SessionFromToken(token *oauth2.Token, ttl time.Duration) *Session {
 	// IssuedAt/SessionExpiry exist for the dashboard-session-lifetime feature
 	// (SessionTTL > 0). Leaving them zero for the default config keeps the
 	// serialized cookie identical to the pre-feature shape (the json omitzero
-	// tag drops both), so lux/lectio/latere-ai cookies don't change.
+	// tag drops both), so existing relying-party cookies don't change.
 	if ttl > 0 {
 		sess.IssuedAt = now
 		sess.SessionExpiry = now.Add(ttl)
@@ -317,7 +317,7 @@ func (c *Client) HandleLogout(w http.ResponseWriter, r *http.Request) {
 		returnTo = "/"
 	}
 	// Build an absolute URL so the auth service can redirect back. Behind a
-	// TLS-terminating ingress (cella/lux/lectio) r.TLS is nil, so trust
+	// TLS-terminating ingress r.TLS is nil, so trust
 	// X-Forwarded-Proto first; fall back to r.TLS, then the localhost dev
 	// heuristic.
 	scheme := "https"

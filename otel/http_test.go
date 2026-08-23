@@ -267,7 +267,7 @@ func TestHandlerRouteFromServeMuxPattern(t *testing.T) {
 	mux.HandleFunc("GET /v1/parse/{id}", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	wrapped := Handler(mux, "lectiod")
+	wrapped := Handler(mux, "testsvc")
 
 	wrapped.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/v1/parse/prs_abc123", nil))
 

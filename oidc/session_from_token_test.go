@@ -85,7 +85,7 @@ func TestSessionFromToken(t *testing.T) {
 
 // TestDefaultConfigSessionJSONOmitsTimeFields checks the SERIALIZED cookie
 // bytes (not just in-memory IsZero): with no TTL the session must not carry
-// iat/sexp at all, so lux/lectio/latere-ai cookies stay shape-identical. A
+// iat/sexp at all, so existing relying-party cookies stay shape-identical. A
 // configured TTL must include sexp. Guards against the time.Time omitempty
 // no-op (omitzero is required, and IssuedAt must not be stamped for ttl<=0).
 func TestDefaultConfigSessionJSONOmitsTimeFields(t *testing.T) {

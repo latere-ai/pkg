@@ -69,8 +69,8 @@ func CSRFHeaderName() string { return csrfHeader }
 func CSRFFieldName() string { return csrfField }
 
 // randomURLToken returns a URL-safe random token built from n random bytes
-// encoded with base64.RawURLEncoding. Inlined from sandbox's cryptoutil to
-// avoid importing a sandbox-internal package.
+// encoded with base64.RawURLEncoding. Inlined rather than imported so this
+// package keeps its dependency surface to the standard library.
 func randomURLToken(n int) (string, error) {
 	b := make([]byte, n)
 	if _, err := randRead(b); err != nil {

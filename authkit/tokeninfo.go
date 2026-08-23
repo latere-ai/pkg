@@ -12,8 +12,8 @@ import (
 
 // TokenInfo is the subset of the auth service's GET /tokeninfo response that
 // we consult when a consumer explicitly wants online revalidation. Field names
-// match the upstream handler (latere.ai/auth/internal/authz/tokeninfo.go),
-// which no longer reports any delegation fields (auth spec 068).
+// match the issuing service's handler, which no longer reports any
+// delegation fields.
 type TokenInfo struct {
 	Sub           string   `json:"sub"`
 	PrincipalType string   `json:"principal_type"`

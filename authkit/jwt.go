@@ -21,8 +21,8 @@ type validator interface {
 // Validation is local: the signature and claims of the presented token decide
 // the Identity. There is no longer a claim that makes this authenticator call
 // /tokeninfo on its own. That tier existed for strict agent tokens, whose
-// delegation could be revoked mid-lifetime; agent delegation is gone (auth
-// spec 068) and no surviving token has that property — a service token's own
+// delegation could be revoked mid-lifetime. Agent delegation has since been
+// removed and no surviving token has that property, so a service token's own
 // short expiry is its revocation window.
 //
 // A consumer that still wants online revalidation calls TokenInfoClient

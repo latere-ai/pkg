@@ -1,6 +1,6 @@
 // Package lux implements the lux-native dialect for llmdialect: the
 // neutral IR itself, made public as a stable, snake_case JSON wire
-// format (spec lux/33). Because the dialect is the IR, the frontend
+// format. Because the dialect is the IR, the frontend
 // leg is lossless by construction — the only representational loss on
 // a lux-fronted call happens on the backend leg.
 //

@@ -4,7 +4,7 @@
 // # Design
 //
 // The auth service issues RS256 JWTs with claims that vary by principal type.
-// Downstream services (FS, API, etc.) validate these tokens locally using the
+// Downstream services validate these tokens locally using the
 // public keys published at the auth service's JWKS endpoint, without any
 // round-trip to the auth service.
 //

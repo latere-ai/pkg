@@ -1,7 +1,7 @@
 // Package authkit provides product-agnostic authentication glue for
 // Latere AI services. It defines the shared Identity type and
-// Authenticator interface so sandbox, Topos, and future services can
-// share one implementation instead of drifting copies.
+// Authenticator interface so independent services share one
+// implementation instead of maintaining drifting copies.
 //
 // Typical usage:
 //
@@ -63,9 +63,9 @@ type Identity struct {
 	// Empty for ordinary identities.
 	//
 	// Its source is the authenticator's concern, not this package's. The
-	// auth service's delegated-agent JWT claim is gone (auth spec 068
-	// removed agent delegation); the surviving producer is Cella, which
-	// sets it from an agent-kind catalog token's baked-in binding claim.
+	// auth service no longer issues a delegated-agent JWT claim, so the
+	// remaining producers set it from an agent-kind catalog token's own
+	// binding claim.
 	AgentID string
 	// AuthMethod records which Authenticator resolved this Identity, for
 	// observability and conditional handler logic. Standard values are

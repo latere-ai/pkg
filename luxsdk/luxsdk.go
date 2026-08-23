@@ -1,5 +1,5 @@
 // Package luxsdk is the first-party Go client for the Latere Lux
-// gateway's native dialect (spec lux/33): one typed request /
+// gateway's native dialect: one typed request /
 // response / streaming shape, POST /lux/v1/generate, any provider Lux
 // routes to. Authenticate with a Lux virtual key or a Latere Auth
 // bearer; both travel as Authorization: Bearer.

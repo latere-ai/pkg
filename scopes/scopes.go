@@ -3,10 +3,10 @@
 //
 // A service registers a scope here only when auth is the thing that issues it.
 // A product that issues its own credentials owns its own vocabulary and does
-// not appear in this registry: cella mints cella tokens and decides what they
-// may carry, so the sandbox scopes live in the sandbox repo. Auth imports the
-// union to populate /admin/scopes and the OIDC discovery document's
-// scopes_supported field.
+// not appear in this registry: it mints its own tokens, decides what they may
+// carry, and keeps that scope list beside the code that enforces it. Auth
+// imports the union to populate /admin/scopes and the OIDC discovery
+// document's scopes_supported field.
 //
 // Use the typed Scope values (e.g. scopes.SandboxRead) at call sites
 // instead of bare string literals so a `gopls references` query

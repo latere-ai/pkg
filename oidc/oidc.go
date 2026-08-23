@@ -489,15 +489,16 @@ func (c *Client) GetSessionByName(r *http.Request, name string) (*Session, error
 
 // ClearSession expires the default session cookie (__Host-latere-session, with
 // Secure set). This package-level form is the public API for relying parties
-// that clear without a *Client (lux/lectio org-switch, latere-ai re-export).
-// Clients configured with a custom cookie name must use the method below.
+// that clear a session without holding a *Client, such as an org-switch
+// handler or a re-exported logout route. Clients configured with a custom
+// cookie name must use the method below.
 func ClearSession(w http.ResponseWriter) {
 	clearCookie(w, SessionCookieName, true)
 }
 
 // ClearSession expires the session cookie using the client's configured cookie
-// name and Secure setting — the form a relying party with a custom CookieName
-// (e.g. cella's __cella_session) must use.
+// name and Secure setting, the form a relying party with a custom CookieName
+// (e.g. "__myapp_session") must use.
 func (c *Client) ClearSession(w http.ResponseWriter) {
 	clearCookie(w, c.effectiveCookieName(c.cfg.CookieName), !c.cfg.InsecureCookies)
 }

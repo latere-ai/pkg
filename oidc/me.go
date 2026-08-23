@@ -31,7 +31,7 @@ type Me struct {
 // (persisting it so a request crossing the expiry boundary doesn't refresh
 // twice or use a stale token on one of the two downstream calls), then defers
 // to BuildMeFromToken for the assembly. Use this from apps that store the
-// session in the pkg/oidc cookie (e.g. lectio, latere-ai).
+// session in this package's cookie.
 //
 // Returns (nil, nil) when not authenticated; (me, nil) on success; (me, err)
 // when authenticated but a downstream call degraded (see BuildMeFromToken).
@@ -65,10 +65,10 @@ func (c *Client) BuildMe(w http.ResponseWriter, r *http.Request) (*Me, error) {
 }
 
 // BuildMeFromToken is the single shared /me assembly, independent of how the
-// caller stores its session — apps with a server-side session store (cella),
-// authkit middleware (lux), or a cookie (lectio/latere-ai) all funnel their
-// access token through here so identity, profile, orgs, initials and the
-// active org name are resolved IDENTICALLY:
+// caller stores its session. An app with a server-side session store, one
+// using authkit bearer middleware, and one using this package's cookie all
+// funnel their access token through here so identity, profile, orgs, initials
+// and the active org name are resolved IDENTICALLY:
 //
 //   - decode sub/email/org_id from the JWT (no round-trip);
 //   - fetch name + avatar from /userinfo and the org list from /me/orgs with
