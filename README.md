@@ -118,7 +118,8 @@ make vuln       # fail on vulnerabilities in imported or called code
 ```
 
 CI runs the race detector, the coverage floor, the toolchain modernizers, the
-fuzz targets, and a vulnerability scan on every push and pull request. `make
+fuzz targets, and a vulnerability scan on pushes to `main` and on every
+pull request. `make
 cover` needs `bc`; `make vuln` needs `jq` and installs `govulncheck` if it is
 not already present.
 
