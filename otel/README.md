@@ -1,10 +1,10 @@
 # otel
 
-OpenTelemetry traces, metrics, and structured logs for Latere services. Disabled by default (zero overhead). Set `OTEL_EXPORTER_OTLP_ENDPOINT` to enable OTLP/HTTP export.
+OpenTelemetry traces, metrics, and structured logs for Go services. Disabled by default (zero overhead). Set `OTEL_EXPORTER_OTLP_ENDPOINT` to enable OTLP/HTTP export.
 
-## Onboard a new service
+## Getting started
 
-`Bootstrap` wires logging, traces, and metrics in one call and sets the slog default. This is all most services need.
+`Bootstrap` wires logging, traces, and metrics in one call and sets the slog default. That is all most services need.
 
 ### HTTP service
 
@@ -43,7 +43,7 @@ defer shutdown(context.Background())
 
 ### Calling another service
 
-Use the instrumented client for every service-to-service call so the trace continues across the hop. Without it, both sides have spans but they are not linked.
+The instrumented client propagates the trace context, so a downstream service's spans join the caller's trace. A plain `http.Client` leaves both sides with spans that are never linked.
 
 ```go
 client := otel.HTTPClient()              // or otel.Transport(base) to wrap a custom RoundTripper
@@ -52,15 +52,15 @@ resp, err := client.Do(req.WithContext(ctx))
 
 ### Deploy
 
-Set the OTLP endpoint in the service's `deploy/prod/deployment.yaml` (see `terraform/deploy/_base/otel-env.yaml`):
+Export starts when the deployment sets the OTLP endpoint. In Kubernetes that is an env var pointing at the collector service:
 
 ```yaml
 env:
   - name: OTEL_EXPORTER_OTLP_ENDPOINT
-    value: http://otel-collector.observability.svc:4318
+    value: http://otel-collector.<namespace>.svc:4318
 ```
 
-A service is fully observable only when it both imports this package **and** sets that env var. Code without the env var is a silent noop in production.
+Without it the instrumentation is a noop: spans are created and discarded, and nothing reaches a backend. Importing the package and setting the variable are both required for a service to be observable.
 
 ## Functions
 
@@ -77,8 +77,8 @@ A service is fully observable only when it both imports this package **and** set
 ## Logging
 
 The otelslog bridge wired by `Bootstrap` attaches `TraceId`/`SpanId` to a log
-record only when the call carries the request context. The convention across
-services:
+record only when the call carries the request context. What that means in
+practice:
 
 - Request-path logs (handlers, middleware, anything whose context derives from
   `r.Context()`) use the `*Context` variants: `slog.InfoContext(ctx, ...)`,
@@ -90,9 +90,8 @@ services:
 - Where threading a context is disproportionate, append `LogAttrs(ctx)...` to
   a plain call instead.
 
-Outbound HTTP follows the same rule: every client wraps `Transport` and
-builds requests with `http.NewRequestWithContext`, otherwise the trace dies at
-the hop.
+Outbound HTTP follows the same rule: wrap `Transport` and build requests with
+`http.NewRequestWithContext`, otherwise the trace ends at the hop.
 
 ## Environment Variables
 
