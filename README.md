@@ -1,10 +1,10 @@
 # pkg
 
-Go building blocks shared across [Latere AI](https://latere.ai) services: OIDC
-and JWT authentication, LLM wire-dialect translation, OpenTelemetry setup,
-audit events, transactional email, and Postgres migrations. Every package is
-importable on its own, keeps its dependency surface small, and carries its
-own tests.
+Go building blocks shared across [Latere AI](https://latere.ai) services:
+authentication, LLM wire-dialect translation, telemetry, audit events,
+transactional email, Postgres migrations, git and subprocess execution, and a
+set of small concurrency and text utilities. Every package is importable on its
+own, keeps its dependency surface small, and carries its own tests.
 
 [![CI](https://github.com/latere-ai/pkg/actions/workflows/ci.yml/badge.svg)](https://github.com/latere-ai/pkg/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/latere.ai/x/pkg.svg)](https://pkg.go.dev/latere.ai/x/pkg)
@@ -70,6 +70,8 @@ res, err := c.Generate(ctx, &luxsdk.Request{
 
 ## Packages
 
+### Infrastructure
+
 | Package | What it gives you |
 |---|---|
 | [`audit`](audit/) | A canonical audit-event envelope plus emitters (stdout, OTLP) to serialize it through, so storage adapters stay a per-product concern |
@@ -85,6 +87,42 @@ res, err := c.Generate(ctx, &luxsdk.Request{
 | [`otel`](otel/) | One-call OpenTelemetry bootstrap for traces, metrics, and structured logs, plus HTTP server and client instrumentation |
 | [`pgxmigrate`](pgxmigrate/) | Applies embedded golang-migrate migrations and reliably closes migrate's own connection pool afterward |
 | [`scopes`](scopes/) | Typed registry of the OAuth/RBAC scopes the Latere auth service issues, for call-site gating and OIDC discovery |
+
+### Utilities
+
+Smaller pieces with no product knowledge in them. Most were extracted once a
+second service needed the same thing.
+
+| Package | What it gives you |
+|---|---|
+| [`atomicfile`](atomicfile/) | Write-then-rename file replacement, so a reader never observes a half-written file |
+| [`cache`](cache/) | Generic TTL cache with optional LRU bounding and an injectable clock |
+| [`circuitbreaker`](circuitbreaker/) | Trip-on-failure gate that stops hammering a dependency that is already down |
+| [`cmdexec`](cmdexec/) | Fluent subprocess builder and a transactional sequencer that rolls back completed steps when a later one fails |
+| [`dag`](dag/) | Topological ordering with cycle detection |
+| [`dircp`](dircp/) | Recursive directory copy |
+| [`envutil`](envutil/) | Typed environment reads with defaults: integers, bounded integers, durations, and the conventional boolean spellings |
+| [`gitutil`](gitutil/) | The git CLI behind structured results and typed errors: worktrees, rebase with conflict recovery, stashes, branch discovery |
+| [`httpjson`](httpjson/) | Strict JSON request decoding (unknown fields and trailing content rejected) and response writing |
+| [`keyedmu`](keyedmu/) | Per-key mutex, so unrelated keys do not serialize against each other |
+| [`lazyval`](lazyval/) | Once-computed value with error memoization |
+| [`metrics`](metrics/) | Prometheus text-exposition registry with labeled counters, histograms, and scrape-time gauges, with no client-library dependency |
+| [`ndjson`](ndjson/) | NDJSON file reading and appending, plus the terminal-result scan agent output parsers need |
+| [`pagination`](pagination/) | Cursor pagination helpers |
+| [`pubsub`](pubsub/) | In-process topic fanout with per-subscriber buffering |
+| [`registry`](registry/) | Generic slug-keyed registry |
+| [`routine`](routine/) | Periodic fire-and-forget callbacks keyed by UUID, one timer each, with an injectable clock |
+| [`sanitize`](sanitize/) | Rune-safe display truncation and container-safe slug generation |
+| [`set`](set/) | Generic set |
+| [`slugutil`](slugutil/) | Kebab-case identifier validation |
+| [`sortedkeys`](sortedkeys/) | Deterministic map iteration |
+| [`statemachine`](statemachine/) | Declarative transition table with guarded moves |
+| [`syncmap`](syncmap/) | Type-safe `sync.Map` |
+| [`tail`](tail/) | Last-n elements of a slice, without copying |
+| [`trackedwg`](trackedwg/) | Wait group that reports what is still outstanding |
+| [`tree`](tree/) | Generic tree construction and rendering |
+| [`uuidutil`](uuidutil/) | UUID parsing helpers |
+| [`watcher`](watcher/) | Filesystem change notification with debouncing |
 
 Package-level documentation, including the streaming grammar and per-provider
 notes, is on [pkg.go.dev](https://pkg.go.dev/latere.ai/x/pkg).
