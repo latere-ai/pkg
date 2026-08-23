@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"latere.ai/x/pkg/internal/envutil"
+	"latere.ai/x/pkg/envutil"
 	"latere.ai/x/pkg/oidc"
 )
 

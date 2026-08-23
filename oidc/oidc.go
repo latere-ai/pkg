@@ -34,7 +34,7 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"latere.ai/x/pkg/internal/envutil"
+	"latere.ai/x/pkg/envutil"
 )
 
 const (
