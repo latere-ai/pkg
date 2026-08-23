@@ -38,8 +38,9 @@ c := luxsdk.New("")
 
 Explicit arguments always win: the environment only fills what the
 caller left unset, so exporting `LUX_BASE_URL` can never redirect a
-client that passed its own. The three SDKs share this precedence
-exactly; the convention fragments the moment one of them disagrees.
+client that passed its own. The Go, TypeScript, and Python clients
+apply the same precedence, so one environment configures all three
+identically.
 
 `Provider` is a closed enum: `ProviderAnthropic`, `ProviderOpenAI`
 (reasoning models are routed to `/v1/responses` automatically),
