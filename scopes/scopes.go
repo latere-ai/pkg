@@ -8,7 +8,7 @@
 // imports the union to populate /admin/scopes and the OIDC discovery
 // document's scopes_supported field.
 //
-// Use the typed Scope values (e.g. scopes.SandboxRead) at call sites
+// Use the typed Scope values (e.g. scopes.AgentsRead) at call sites
 // instead of bare string literals so a `gopls references` query
 // finds every gate, and so renames are mechanical.
 package scopes
@@ -22,12 +22,12 @@ import (
 // surface it in admin UIs and OIDC discovery.
 type Scope struct {
 	// Name is the wire identifier sent on the OAuth `scope` parameter
-	// and persisted on oauth_clients.allowed_scopes, e.g. "read:sandbox".
+	// and persisted on oauth_clients.allowed_scopes, e.g. "read:agents".
 	Name string
 	// Description is a one-line operator-facing summary shown in admin
 	// dropdowns and consent screens.
 	Description string
-	// Category groups related scopes for display, e.g. "OIDC", "Sandbox".
+	// Category groups related scopes for display, e.g. "OIDC", "Agents".
 	Category string
 }
 
