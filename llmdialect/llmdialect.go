@@ -2,8 +2,8 @@
 // Anthropic Messages, OpenAI Chat Completions, OpenAI Responses, and
 // the lux-native dialect (the IR itself as a public wire format) —
 // through a neutral intermediate representation (package ir), so a
-// caller speaking one dialect can drive a model served
-// behind another.
+// caller speaking one dialect can drive a model served behind
+// another.
 //
 // Translation is hub-and-spoke: each dialect implements a Frontend
 // (caller side) and/or Backend (upstream side) codec against the IR,

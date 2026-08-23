@@ -3,7 +3,8 @@
 Go building blocks shared across [Latere AI](https://latere.ai) services: OIDC
 and JWT authentication, LLM wire-dialect translation, OpenTelemetry setup,
 audit events, transactional email, and Postgres migrations. Every package is
-importable on its own, standard-library-first, and carries its own tests.
+importable on its own, keeps its dependency surface small, and carries its
+own tests.
 
 [![CI](https://github.com/latere-ai/pkg/actions/workflows/ci.yml/badge.svg)](https://github.com/latere-ai/pkg/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/latere.ai/x/pkg.svg)](https://pkg.go.dev/latere.ai/x/pkg)
@@ -79,8 +80,8 @@ res, err := c.Generate(ctx, &luxsdk.Request{
 | [`llmdialect`](llmdialect/) | Translation between LLM inference wire dialects (Anthropic Messages, OpenAI Chat Completions, OpenAI Responses, lux-native) through a neutral intermediate representation, with an explicit loss report instead of silent drops |
 | [`luxsdk`](luxsdk/) | First-party Go client for the Lux gateway's native dialect: typed generate, streaming, and token counting |
 | [`md`](md/) | YAML frontmatter parsing and GFM-to-HTML rendering |
-| [`oidc`](oidc/) | OIDC Relying Party client with PKCE, encrypted cookie sessions, token refresh, and a shared `/me` assembly |
-| [`oidclogin`](oidclogin/) | Portable, IDP-agnostic Relying Party for the browser Authorization Code + PKCE flow; point it at any RS256 issuer by configuration |
+| [`oidc`](oidc/) | Relying Party client for the Latere auth service: PKCE, encrypted cookie sessions, token refresh, org switching, and a shared `/me` assembly |
+| [`oidclogin`](oidclogin/) | Standard OIDC only, no vendor extensions: discovers an issuer, drives a browser PKCE login, and maps ID-token claims through a per-provider mapper. Point it at Keycloak, Google, Cognito, or Latere auth by configuration |
 | [`otel`](otel/) | One-call OpenTelemetry bootstrap for traces, metrics, and structured logs, plus HTTP server and client instrumentation |
 | [`pgxmigrate`](pgxmigrate/) | Applies embedded golang-migrate migrations and reliably closes migrate's own connection pool afterward |
 | [`scopes`](scopes/) | Typed registry of the OAuth/RBAC scopes the Latere auth service issues, for call-site gating and OIDC discovery |
@@ -96,8 +97,9 @@ before upgrading. Package layout and the module path are stable.
 
 ## Testing
 
-The suite is hermetic. No database, no network access, and no credentials are
-required, and nothing is skipped for missing configuration:
+The suite is hermetic. It needs no database, no credentials, and no outbound
+network access (HTTP tests run against `httptest` servers on loopback), and
+nothing is skipped for missing configuration:
 
 ```bash
 go test ./...

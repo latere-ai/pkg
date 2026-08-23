@@ -1,5 +1,5 @@
 // Package oidc provides an OAuth 2.0 / OIDC Relying Party client for
-// integrating latere-ai services with the auth service. It handles
+// integrating Latere AI services with the auth service. It handles
 // Authorization Code + PKCE flows, encrypted cookie-based sessions,
 // token refresh, and userinfo fetching.
 //
