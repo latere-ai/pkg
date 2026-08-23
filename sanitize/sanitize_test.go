@@ -91,3 +91,27 @@ func TestSlugMaxLen(t *testing.T) {
 		t.Errorf("Slug result length %d exceeds maxLen 10: %q", len(got), got)
 	}
 }
+
+// A negative budget used to slice the rune array at a negative index and panic.
+// It now reads as zero, which is the only interpretation that keeps the
+// "at most n runes" contract meaningful.
+func TestTruncateNegativeBudget(t *testing.T) {
+	cases := []struct {
+		in   string
+		n    int
+		want string
+	}{
+		{"", -1, ""},
+		{"hello", -1, "…"},
+		{"hello", -100, "…"},
+		{"αβγ", -1, "…"},
+	}
+	for _, c := range cases {
+		if got := Truncate(c.in, c.n); got != c.want {
+			t.Errorf("Truncate(%q, %d) = %q, want %q", c.in, c.n, got, c.want)
+		}
+		if got := TruncateTrimRight(c.in, c.n, " -"); got != c.want {
+			t.Errorf("TruncateTrimRight(%q, %d) = %q, want %q", c.in, c.n, got, c.want)
+		}
+	}
+}
