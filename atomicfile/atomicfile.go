@@ -15,6 +15,7 @@ var (
 	closeFile  = func(f *os.File) error { return f.Close() }
 	chmodPath  = os.Chmod
 	renamePath = os.Rename
+	syncDirAt  = syncDir
 )
 
 // Write atomically writes data to path by first writing to a temporary
@@ -32,10 +33,17 @@ func Write(path string, data []byte, perm os.FileMode) error {
 	return write(path, data, perm, false)
 }
 
-// WriteSync behaves like [Write] but fsyncs the temp file before renaming, so
-// a crash right after the (atomic) rename cannot leave a renamed-but-empty
-// file. Use it for low-frequency writes where durability matters (e.g. the
-// specs README); prefer [Write] on hot, append-heavy paths.
+// WriteSync behaves like [Write] but makes the result durable rather than
+// merely atomic. It fsyncs the temp file before renaming, so a crash right
+// after the rename cannot leave a renamed-but-empty file, and fsyncs the
+// containing directory after renaming, so the new directory entry itself
+// survives. Both halves are needed: syncing only the file leaves the rename
+// recoverable-away, which is the failure the fsync was meant to prevent.
+//
+// On Windows the directory half is a no-op; see syncDir there.
+//
+// Use it for low-frequency writes where durability matters (e.g. the specs
+// README); prefer [Write] on hot, append-heavy paths.
 func WriteSync(path string, data []byte, perm os.FileMode) error {
 	return write(path, data, perm, true)
 }
@@ -79,6 +87,15 @@ func write(path string, data []byte, perm os.FileMode, sync bool) error {
 	if err := renamePath(tmp, path); err != nil {
 		_ = os.Remove(tmp)
 		return err
+	}
+	// After this point the target exists under its final name, so there is no
+	// temp file left to clean up on failure -- a directory-sync error means
+	// "the write happened but may not survive a crash", not "the write did
+	// not happen", and is reported without undoing it.
+	if sync {
+		if err := syncDirAt(dir); err != nil {
+			return err
+		}
 	}
 	return nil
 }

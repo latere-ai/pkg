@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -309,5 +310,96 @@ func TestWrite_Concurrent(t *testing.T) {
 	}
 	if len(got) != 1 {
 		t.Fatalf("expected 1 byte, got %d", len(got))
+	}
+}
+
+// WriteSync's contract is durability, not just atomicity. Syncing the temp file
+// alone is not enough: until the containing directory is synced the rename can
+// be recovered away, which is exactly the loss the fsync was meant to prevent.
+func TestWriteSyncSyncsTheContainingDirectory(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "durable.txt")
+
+	var synced []string
+	orig := syncDirAt
+	syncDirAt = func(d string) error {
+		synced = append(synced, d)
+		return nil
+	}
+	t.Cleanup(func() { syncDirAt = orig })
+
+	if err := WriteSync(path, []byte("payload"), 0o644); err != nil {
+		t.Fatalf("WriteSync: %v", err)
+	}
+	if len(synced) != 1 || synced[0] != dir {
+		t.Fatalf("directories synced = %v, want exactly [%s]", synced, dir)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != "payload" {
+		t.Fatalf("ReadFile = %q, %v", got, err)
+	}
+}
+
+// Write is the throughput path and deliberately trades durability away, so it
+// must not pay for a directory fsync it does not promise.
+func TestWriteDoesNotSyncTheContainingDirectory(t *testing.T) {
+	dir := t.TempDir()
+
+	called := false
+	orig := syncDirAt
+	syncDirAt = func(string) error {
+		called = true
+		return nil
+	}
+	t.Cleanup(func() { syncDirAt = orig })
+
+	if err := Write(filepath.Join(dir, "fast.txt"), []byte("payload"), 0o644); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if called {
+		t.Fatal("Write fsynced the directory; that cost belongs to WriteSync only")
+	}
+}
+
+// A directory sync that fails leaves a file that exists but may not survive a
+// crash. That is worth reporting, and the file is deliberately left in place:
+// the write did happen.
+func TestWriteSyncReportsDirectorySyncFailure(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "durable.txt")
+
+	orig := syncDirAt
+	syncDirAt = func(string) error { return errors.New("no space left on device") }
+	t.Cleanup(func() { syncDirAt = orig })
+
+	err := WriteSync(path, []byte("payload"), 0o644)
+	if err == nil {
+		t.Fatal("expected the directory-sync failure to be reported")
+	}
+	if !strings.Contains(err.Error(), "no space left") {
+		t.Fatalf("err = %v, want the underlying sync error", err)
+	}
+	if got, rerr := os.ReadFile(path); rerr != nil || string(got) != "payload" {
+		t.Fatalf("file should still be in place: ReadFile = %q, %v", got, rerr)
+	}
+}
+
+// The real syncDir must work against an ordinary directory on this platform.
+// On Windows it is a documented no-op and still returns nil.
+func TestSyncDirOnRealDirectory(t *testing.T) {
+	if err := syncDir(t.TempDir()); err != nil {
+		t.Fatalf("syncDir on a real directory: %v", err)
+	}
+}
+
+// A directory that cannot be opened is reported rather than being mistaken for
+// a successful sync. (No-op on Windows, where syncDir never opens anything.)
+func TestSyncDirOnMissingDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("syncDir is a documented no-op on Windows")
+	}
+	err := syncDir(filepath.Join(t.TempDir(), "does-not-exist"))
+	if err == nil {
+		t.Fatal("expected an error for a directory that cannot be opened")
 	}
 }
