@@ -80,10 +80,34 @@ func finishDecode(w http.ResponseWriter, dec *json.Decoder) bool {
 }
 
 // Write serialises v as JSON and writes it with the given HTTP status code.
+//
+// v is marshalled in full before any byte of the response is committed, so a
+// value that cannot be encoded answers 500 rather than the requested status
+// followed by a truncated body. Committing the status first is the tempting
+// shape -- it streams, and it needs no buffer -- but it makes the one failure
+// that matters invisible: the client reads a success status and an empty or
+// half-written body, and has no way to tell that apart from a legitimately
+// empty result.
+//
+// The 500 is plain text. This package has no opinion on what an error body
+// should look like, and every service that uses it has its own envelope; a
+// caller that cares should marshal-check the value itself rather than inherit
+// a shape from here.
+//
+// The encoded body keeps the trailing newline that [json.Encoder.Encode]
+// writes, so the bytes on the wire are unchanged for values that marshal.
 func Write[T any](w http.ResponseWriter, status int, v T) {
+	body, err := json.Marshal(v)
+	if err != nil {
+		slog.Error("write json", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	body = append(body, '\n')
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
+	if _, err := w.Write(body); err != nil {
 		slog.Error("write json", "error", err)
 	}
 }

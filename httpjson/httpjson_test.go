@@ -1,7 +1,9 @@
 package httpjson
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -310,14 +312,60 @@ func TestDecodeOptionalBody_UnknownFields(t *testing.T) {
 	}
 }
 
-func TestWrite_EncodingError(t *testing.T) {
-	// json.Encoder.Encode returns an error for channels.
+// A value that cannot be marshalled must not reach the client as the status the
+// caller asked for. Committing the status before encoding used to answer
+// "200 OK" with an empty body, which a client cannot distinguish from a
+// legitimately empty success.
+func TestWrite_EncodingErrorDoesNotCommitTheRequestedStatus(t *testing.T) {
 	w := httptest.NewRecorder()
-	Write(w, http.StatusOK, make(chan int))
-	// The status is already written before encoding fails, so we just
-	// verify it doesn't panic and still sets the content type.
-	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
-		t.Fatalf("expected application/json, got %s", ct)
+
+	Write(w, http.StatusOK, make(chan int)) // channels are unmarshallable
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+	if body := w.Body.String(); strings.TrimSpace(body) == "" {
+		t.Fatal("body is empty; a failed encode must say something, not answer silently")
+	}
+}
+
+// The same rule applies at any status: a caller asking for 201 with a value
+// that cannot marshal must not get 201.
+func TestWrite_EncodingErrorAtNonDefaultStatus(t *testing.T) {
+	w := httptest.NewRecorder()
+
+	Write(w, http.StatusCreated, map[string]any{"bad": make(chan int)})
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
+// Values that do marshal must produce byte-identical output to what
+// json.Encoder.Encode wrote, trailing newline included. Callers and their
+// clients compare bodies.
+func TestWrite_WireBytesMatchEncoder(t *testing.T) {
+	type payload struct {
+		Name string `json:"name"`
+		N    int    `json:"n"`
+	}
+	cases := []any{
+		payload{"alice", 1},
+		[]int{1, 2, 3},
+		map[string]string{"k": "v"},
+		"bare string",
+		nil,
+	}
+	for _, v := range cases {
+		var want bytes.Buffer
+		if err := json.NewEncoder(&want).Encode(v); err != nil {
+			t.Fatalf("reference encode of %#v: %v", v, err)
+		}
+		w := httptest.NewRecorder()
+		Write(w, http.StatusOK, v)
+		if got := w.Body.String(); got != want.String() {
+			t.Errorf("Write(%#v) body = %q, want %q", v, got, want.String())
+		}
 	}
 }
 
@@ -407,5 +455,31 @@ func TestDecodeBody_MalformedTrailingContent(t *testing.T) {
 	}
 	if strings.Contains(w.Body.String(), "unexpected trailing content") {
 		t.Fatalf("body = %q, want the syntax error rather than the trailing-content message", w.Body.String())
+	}
+}
+
+// failingWriter accepts headers but rejects the body write, standing in for a
+// client that disconnects between the status line and the payload.
+type failingWriter struct {
+	http.ResponseWriter
+	err error
+}
+
+func (f failingWriter) Write([]byte) (int, error) { return 0, f.err }
+
+// A body write that fails after the status is committed cannot be reported to
+// the client -- the status line is already gone. It must be logged rather than
+// panicking or being dropped silently.
+func TestWrite_BodyWriteErrorIsSurvivable(t *testing.T) {
+	rec := httptest.NewRecorder()
+	w := failingWriter{ResponseWriter: rec, err: errors.New("client went away")}
+
+	Write(w, http.StatusOK, map[string]string{"k": "v"})
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("body = %q, want nothing to have reached the recorder", rec.Body.String())
 	}
 }
