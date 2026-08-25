@@ -4,8 +4,7 @@ import (
 	"testing"
 )
 
-// The load-bearing compatibility property of the environment fallback is
-// that it fills only what the caller left unset. Every existing call site
+// The environment fallback fills only what the caller left unset. Every existing call site
 // passes an explicit base and credential, so if the environment could
 // override either, setting LUX_BASE_URL in a shell would silently
 // redirect programs that never opted in.

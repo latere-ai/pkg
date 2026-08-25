@@ -3,10 +3,9 @@
 //
 // Every latere service that owns a Postgres schema ran the same bring-up dance
 // (open an iofs source, build a migrate instance, defer-close it, apply Up,
-// treat ErrNoChange as success). The defer-close is load-bearing:
-// migrate.NewWithSourceInstance opens its own database/sql pool, separate from
-// any pgxpool the caller keeps, and skipping the close leaks idle connections
-// for the process lifetime. This package is that dance, in one place.
+// treat ErrNoChange as success). migrate.NewWithSourceInstance opens its own
+// database/sql pool, separate from any pgxpool the caller keeps, so skipping
+// the defer-close leaks idle connections for the process lifetime. This package is that dance, in one place.
 package pgxmigrate
 
 import (
