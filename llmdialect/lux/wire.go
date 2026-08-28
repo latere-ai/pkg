@@ -7,6 +7,7 @@ package lux
 // file absorb drift.
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -29,6 +30,23 @@ type Request struct {
 	Reasoning     *Reasoning      `json:"reasoning,omitempty"`
 	Schema        *ResponseSchema `json:"schema,omitempty"`
 	UserID        string          `json:"user_id,omitempty"`
+	LogProbs      bool            `json:"logprobs,omitempty"`
+	TopLogProbs   int             `json:"top_logprobs,omitempty"`
+}
+
+// TokenLogProb is one token and its log probability under the
+// distribution it was drawn from. A token the policy masked scores
+// -Inf, which travels as null: JSON has no infinity, and a floor value
+// is a number a consumer averages.
+//
+// Bytes is the base64 string encoding/json gives a []byte. The lux
+// dialect is the IR made public, so its members are spelled the way Go
+// spells them rather than in a second dialect's shape.
+type TokenLogProb struct {
+	Token   string         `json:"token"`
+	Bytes   []byte         `json:"bytes,omitempty"`
+	LogProb ir.LogProb     `json:"logprob"`
+	Top     []TokenLogProb `json:"top,omitempty"`
 }
 
 // Message is one conversation turn.
@@ -117,12 +135,13 @@ type Usage struct {
 
 // Response is a lux-dialect non-streaming response.
 type Response struct {
-	ID           string        `json:"id"`
-	Model        string        `json:"model"`
-	Blocks       []Block       `json:"blocks"`
-	StopReason   ir.StopReason `json:"stop_reason"`
-	StopSequence string        `json:"stop_sequence,omitempty"`
-	Usage        Usage         `json:"usage"`
+	ID           string         `json:"id"`
+	Model        string         `json:"model"`
+	Blocks       []Block        `json:"blocks"`
+	StopReason   ir.StopReason  `json:"stop_reason"`
+	StopSequence string         `json:"stop_sequence,omitempty"`
+	Usage        Usage          `json:"usage"`
+	LogProbs     []TokenLogProb `json:"logprobs,omitempty"`
 }
 
 // Event is one lux-dialect streaming event, carried as the data of an
@@ -131,15 +150,16 @@ type Response struct {
 //
 //	message_start (block_start (text_delta|args_delta|thinking_delta|signature_delta)* block_stop)* message_delta message_stop
 type Event struct {
-	Type         ir.EventType  `json:"type"`
-	ID           string        `json:"id,omitempty"`
-	Model        string        `json:"model,omitempty"`
-	Index        int           `json:"index"`
-	Block        *Block        `json:"block,omitempty"`
-	Delta        string        `json:"delta,omitempty"`
-	StopReason   ir.StopReason `json:"stop_reason,omitempty"`
-	StopSequence string        `json:"stop_sequence,omitempty"`
-	Usage        *Usage        `json:"usage,omitempty"`
+	Type         ir.EventType   `json:"type"`
+	ID           string         `json:"id,omitempty"`
+	Model        string         `json:"model,omitempty"`
+	Index        int            `json:"index"`
+	Block        *Block         `json:"block,omitempty"`
+	Delta        string         `json:"delta,omitempty"`
+	StopReason   ir.StopReason  `json:"stop_reason,omitempty"`
+	StopSequence string         `json:"stop_sequence,omitempty"`
+	Usage        *Usage         `json:"usage,omitempty"`
+	LogProbs     []TokenLogProb `json:"logprobs,omitempty"`
 }
 
 // validEventTypes is the closed set of event names on the wire.
@@ -239,6 +259,41 @@ func blockFromIR(b ir.Block) (Block, error) {
 	}
 }
 
+// logProbsToIR and logProbsFromIR copy rather than alias, for the
+// reason copyInt64 gives: the wire struct and the IR must never share
+// backing memory, so a mutation on one side cannot reach the other.
+func logProbsToIR(in []TokenLogProb) []ir.TokenLogProb {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]ir.TokenLogProb, len(in))
+	for i, p := range in {
+		out[i] = ir.TokenLogProb{
+			Token:   p.Token,
+			Bytes:   bytes.Clone(p.Bytes),
+			LogProb: p.LogProb,
+			Top:     logProbsToIR(p.Top),
+		}
+	}
+	return out
+}
+
+func logProbsFromIR(in []ir.TokenLogProb) []TokenLogProb {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]TokenLogProb, len(in))
+	for i, p := range in {
+		out[i] = TokenLogProb{
+			Token:   p.Token,
+			Bytes:   bytes.Clone(p.Bytes),
+			LogProb: p.LogProb,
+			Top:     logProbsFromIR(p.Top),
+		}
+	}
+	return out
+}
+
 func usageToIR(u Usage) ir.Usage {
 	return ir.Usage{
 		InputTokens:           u.InputTokens,
@@ -290,6 +345,7 @@ func eventFromIR(ev ir.Event) (Event, error) {
 		Delta:        ev.Delta,
 		StopReason:   ev.StopReason,
 		StopSequence: ev.StopSequence,
+		LogProbs:     logProbsFromIR(ev.LogProbs),
 	}
 	if ev.Block != nil {
 		blk, err := blockFromIR(*ev.Block)
@@ -318,6 +374,7 @@ func eventToIR(ev Event) (ir.Event, error) {
 		Delta:        ev.Delta,
 		StopReason:   ev.StopReason,
 		StopSequence: ev.StopSequence,
+		LogProbs:     logProbsToIR(ev.LogProbs),
 	}
 	if ev.Block != nil {
 		var loss ir.Loss

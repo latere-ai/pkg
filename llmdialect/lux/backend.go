@@ -35,6 +35,8 @@ func (*Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 		StopSequences: req.StopSequences,
 		Stream:        req.Stream,
 		UserID:        req.UserID,
+		LogProbs:      req.LogProbs,
+		TopLogProbs:   req.TopLogProbs,
 	}
 	for _, b := range req.System {
 		blk, err := blockFromIR(b)
@@ -94,6 +96,7 @@ func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 		StopReason:   wire.StopReason,
 		StopSequence: wire.StopSequence,
 		Usage:        usageToIR(wire.Usage),
+		LogProbs:     logProbsToIR(wire.LogProbs),
 	}
 	var loss ir.Loss
 	for _, b := range wire.Blocks {

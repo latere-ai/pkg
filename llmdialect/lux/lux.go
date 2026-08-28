@@ -38,6 +38,7 @@ var requestKeys = map[string]bool{
 	"tool_choice": true, "max_tokens": true, "temperature": true,
 	"top_p": true, "top_k": true, "stop_sequences": true, "stream": true,
 	"reasoning": true, "schema": true, "user_id": true,
+	"logprobs": true, "top_logprobs": true,
 }
 
 // DecodeRequest parses a lux request body into the IR.
@@ -72,6 +73,11 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	req.StopSequences = wire.StopSequences
 	req.Stream = wire.Stream
 	req.UserID = wire.UserID
+	req.LogProbs = wire.LogProbs
+	req.TopLogProbs = wire.TopLogProbs
+	if wire.TopLogProbs < 0 {
+		return nil, fmt.Errorf("lux: top_logprobs is %d; it is a count of alternatives", wire.TopLogProbs)
+	}
 
 	for _, b := range wire.System {
 		if b.Type != ir.BlockText {
@@ -161,6 +167,7 @@ func (*Frontend) EncodeResponse(resp *ir.Response) ([]byte, error) {
 		StopReason:   resp.StopReason,
 		StopSequence: resp.StopSequence,
 		Usage:        usageFromIR(resp.Usage),
+		LogProbs:     logProbsFromIR(resp.LogProbs),
 	}
 	if out.StopReason == "" {
 		out.StopReason = ir.StopEndTurn

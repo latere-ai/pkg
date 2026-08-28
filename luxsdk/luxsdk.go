@@ -51,6 +51,7 @@ type (
 	ResponseSchema = lux.ResponseSchema
 	Usage          = lux.Usage
 	Event          = lux.Event
+	TokenLogProb   = lux.TokenLogProb
 	// StreamError is a mid-stream error frame from the gateway.
 	StreamError = lux.StreamError
 )
