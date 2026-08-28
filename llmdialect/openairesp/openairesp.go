@@ -42,7 +42,7 @@ var requestKeys = map[string]bool{
 	"stream": true, "tools": true, "tool_choice": true,
 	"parallel_tool_calls": true, "reasoning": true, "text": true,
 	"store": true, "previous_response_id": true, "user": true,
-	"metadata": true, "include": true,
+	"metadata": true, "include": true, "top_logprobs": true,
 }
 
 // DecodeRequest parses a stateless Responses API request into the IR.
@@ -87,6 +87,7 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 		PreviousResponseID string          `json:"previous_response_id"`
 		User               string          `json:"user"`
 		Include            json.RawMessage `json:"include"`
+		TopLogProbs        *int            `json:"top_logprobs"`
 	}
 	if err := json.Unmarshal(body, &wire); err != nil {
 		return nil, fmt.Errorf("openairesp: malformed request: %w", err)
@@ -101,7 +102,13 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 		return nil, fmt.Errorf("openairesp: store:true is not supported on this surface (stateless only)")
 	}
 	if len(wire.Include) > 0 {
-		req.Loss.Add(ir.LossInclude)
+		decodeInclude(req, wire.Include)
+	}
+	if n := wire.TopLogProbs; n != nil {
+		if *n < 0 {
+			return nil, fmt.Errorf("openairesp: top_logprobs is %d; it is a count of alternatives", *n)
+		}
+		req.TopLogProbs = *n
 	}
 
 	req.Model = wire.Model
@@ -165,6 +172,30 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 		}
 	}
 	return req, nil
+}
+
+// includeLogProbs is the include member that asks this dialect for
+// per-token log probabilities. Unlike Chat Completions, the count alone
+// asks for nothing: top_logprobs sizes the alternatives, and this
+// member is what makes the response carry any.
+const includeLogProbs = "message.output_text.logprobs"
+
+// decodeInclude reads the include list. The one entry this layer can
+// serve is honoured; the rest name response parts that exist only in
+// the upstream's own store and land in the loss report.
+func decodeInclude(req *ir.Request, raw json.RawMessage) {
+	var want []string
+	if err := json.Unmarshal(raw, &want); err != nil {
+		req.Loss.Add(ir.LossInclude)
+		return
+	}
+	for _, w := range want {
+		if w == includeLogProbs {
+			req.LogProbs = true
+			continue
+		}
+		req.Loss.Add(ir.LossInclude)
+	}
 }
 
 type respTool struct {
@@ -346,7 +377,7 @@ func decodeToolChoice(raw json.RawMessage) (*ir.ToolChoice, error) {
 // buildOutput renders IR blocks as Responses output items. Text blocks
 // coalesce into a single message item; thinking becomes a reasoning
 // item with a summary; tool calls become function_call items.
-func buildOutput(id string, blocks []ir.Block) []map[string]any {
+func buildOutput(id string, blocks []ir.Block, probs []ir.TokenLogProb) []map[string]any {
 	var output []map[string]any
 	var texts []string
 	itemID := func(prefix string) string {
@@ -360,6 +391,7 @@ func buildOutput(id string, blocks []ir.Block) []map[string]any {
 			"type": "message", "id": itemID("msg"), "status": "completed", "role": "assistant",
 			"content": []map[string]any{{
 				"type": "output_text", "text": strings.Join(texts, "\n\n"), "annotations": []any{},
+				"logprobs": encodeLogProbs(probs, true),
 			}},
 		})
 		texts = nil
@@ -421,7 +453,7 @@ func responseEnvelope(resp *ir.Response) map[string]any {
 		"created_at":         0,
 		"status":             status,
 		"model":              resp.Model,
-		"output":             buildOutput(resp.ID, resp.Blocks),
+		"output":             buildOutput(resp.ID, resp.Blocks, resp.LogProbs),
 		"incomplete_details": incomplete,
 		"usage":              encodeUsage(resp.Usage),
 	}
@@ -430,6 +462,46 @@ func responseEnvelope(resp *ir.Response) map[string]any {
 // EncodeResponse renders an IR response as a Responses API body.
 func (*Frontend) EncodeResponse(resp *ir.Response) ([]byte, error) {
 	return json.Marshal(responseEnvelope(resp))
+}
+
+// encodeLogProbs renders the per-token sequence this dialect declares.
+// withBytes picks between its two shapes: the output_text content part
+// carries each token's UTF-8 bytes, its streaming events do not.
+//
+// The result is never nil, because the member is required wherever it
+// appears; a request that did not ask gets an empty array, which is the
+// dialect's way of saying nothing was reported.
+func encodeLogProbs(probs []ir.TokenLogProb, withBytes bool) []map[string]any {
+	out := make([]map[string]any, len(probs))
+	for i, p := range probs {
+		entry := map[string]any{"token": p.Token, "logprob": p.LogProb}
+		top := make([]map[string]any, len(p.Top))
+		for j, alt := range p.Top {
+			top[j] = map[string]any{"token": alt.Token, "logprob": alt.LogProb}
+			if withBytes {
+				top[j]["bytes"] = encodeTokenBytes(alt.Bytes)
+			}
+		}
+		entry["top_logprobs"] = top
+		if withBytes {
+			entry["bytes"] = encodeTokenBytes(p.Bytes)
+		}
+		out[i] = entry
+	}
+	return out
+}
+
+// encodeTokenBytes renders a token's bytes as the integer array this
+// dialect declares; encoding/json would render a []byte as base64.
+func encodeTokenBytes(b []byte) any {
+	if b == nil {
+		return nil
+	}
+	out := make([]int, len(b))
+	for i, v := range b {
+		out[i] = int(v)
+	}
+	return out
 }
 
 // ── streaming ───────────────────────────────────────────────────────
@@ -453,6 +525,7 @@ type eventEncoder struct {
 	itemID      string
 	textAcc     strings.Builder
 	argsAcc     strings.Builder
+	probsAcc    []ir.TokenLogProb
 	toolID      string
 	toolName    string
 	done        []map[string]any // completed output items, in order
@@ -479,6 +552,7 @@ func (e *eventEncoder) Encode(ev ir.Event) error {
 		e.openKind = ev.Block.Type
 		e.textAcc.Reset()
 		e.argsAcc.Reset()
+		e.probsAcc = nil
 		switch ev.Block.Type {
 		case ir.BlockText:
 			e.itemID = fmt.Sprintf("msg_%d", e.outputIndex)
@@ -512,8 +586,12 @@ func (e *eventEncoder) Encode(ev ir.Event) error {
 		}
 	case ir.EventTextDelta:
 		e.textAcc.WriteString(ev.Delta)
+		// The .done event and the finished content part repeat the
+		// whole sequence, so the deltas accumulate as they pass.
+		e.probsAcc = append(e.probsAcc, ev.LogProbs...)
 		return e.write("response.output_text.delta", map[string]any{
 			"item_id": e.itemID, "output_index": e.outputIndex, "content_index": 0, "delta": ev.Delta,
+			"logprobs": encodeLogProbs(ev.LogProbs, false),
 		})
 	case ir.EventThinkingDelta:
 		e.textAcc.WriteString(ev.Delta)
@@ -573,11 +651,13 @@ func (e *eventEncoder) closeItem() error {
 		text := e.textAcc.String()
 		if err := e.write("response.output_text.done", map[string]any{
 			"item_id": e.itemID, "output_index": e.outputIndex, "content_index": 0, "text": text,
+			"logprobs": encodeLogProbs(e.probsAcc, false),
 		}); err != nil {
 			return err
 		}
 		item = map[string]any{"type": "message", "id": e.itemID, "status": "completed", "role": "assistant",
-			"content": []map[string]any{{"type": "output_text", "text": text, "annotations": []any{}}}}
+			"content": []map[string]any{{"type": "output_text", "text": text, "annotations": []any{},
+				"logprobs": encodeLogProbs(e.probsAcc, true)}}}
 	case ir.BlockToolUse:
 		args := e.argsAcc.String()
 		if args == "" {

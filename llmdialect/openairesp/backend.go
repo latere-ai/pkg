@@ -133,6 +133,15 @@ func (*Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 		}
 		body["text"] = map[string]any{"format": format}
 	}
+	if req.LogProbs {
+		// The count alone reports nothing on this dialect: include is
+		// what makes a response carry logprobs, and top_logprobs only
+		// sizes the alternatives, so the pair travels together.
+		body["include"] = []string{includeLogProbs}
+		if req.TopLogProbs > 0 {
+			body["top_logprobs"] = req.TopLogProbs
+		}
+	}
 	if req.UserID != "" {
 		// The Responses API caps `user` at 64 chars; harnesses send
 		// longer session ids, so truncate rather than 400 upstream.
@@ -339,6 +348,7 @@ func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 			for _, t := range decodeOutputText(item.Content) {
 				resp.Blocks = append(resp.Blocks, ir.Block{Type: ir.BlockText, Text: t})
 			}
+			resp.LogProbs = append(resp.LogProbs, decodeOutputLogProbs(item.Content)...)
 		case "function_call":
 			sawTool = true
 			args := item.Args
@@ -375,6 +385,72 @@ func responseStop(status, incompleteReason string, sawTool bool) ir.StopReason {
 		return ir.StopToolUse
 	}
 	return ir.StopEndTurn
+}
+
+// respTokenLogProb is one token's entry on this dialect. bytes is a
+// JSON array of integers, not the base64 string encoding/json gives a
+// []byte, so it decodes through []int -- and the streaming shape omits
+// the member entirely, which leaves it nil.
+type respTokenLogProb struct {
+	Token   string             `json:"token"`
+	LogProb ir.LogProb         `json:"logprob"`
+	Bytes   []int              `json:"bytes"`
+	Top     []respTokenLogProb `json:"top_logprobs"`
+}
+
+func logProbsToIR(in []respTokenLogProb) []ir.TokenLogProb {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]ir.TokenLogProb, len(in))
+	for i, w := range in {
+		out[i] = ir.TokenLogProb{
+			Token:   w.Token,
+			Bytes:   bytesFromInts(w.Bytes),
+			LogProb: w.LogProb,
+			Top:     logProbsToIR(w.Top),
+		}
+	}
+	return out
+}
+
+// bytesFromInts narrows the wire's integer array. A value outside a
+// byte is not a UTF-8 byte and the entry is dropped rather than
+// truncated: a wrong byte reconstructs wrong text.
+func bytesFromInts(in []int) []byte {
+	if in == nil {
+		return nil
+	}
+	out := make([]byte, 0, len(in))
+	for _, v := range in {
+		if v < 0 || v > 255 {
+			return nil
+		}
+		out = append(out, byte(v))
+	}
+	return out
+}
+
+// decodeOutputLogProbs pulls the per-token sequence off a message
+// item's output_text parts.
+func decodeOutputLogProbs(raw json.RawMessage) []ir.TokenLogProb {
+	if len(raw) == 0 {
+		return nil
+	}
+	var parts []struct {
+		Type     string             `json:"type"`
+		LogProbs []respTokenLogProb `json:"logprobs"`
+	}
+	if err := json.Unmarshal(raw, &parts); err != nil {
+		return nil
+	}
+	var out []ir.TokenLogProb
+	for _, p := range parts {
+		if p.Type == "output_text" || p.Type == "text" {
+			out = append(out, logProbsToIR(p.LogProbs)...)
+		}
+	}
+	return out
 }
 
 // decodeOutputText pulls the output_text strings out of a message
@@ -471,10 +547,11 @@ func (d *EventDecoder) closeOpen() {
 
 func (d *EventDecoder) consume(data []byte) error {
 	var ev struct {
-		Type     string `json:"type"`
-		Code     string `json:"code"`
-		Message  string `json:"message"`
-		Delta    string `json:"delta"`
+		Type     string             `json:"type"`
+		Code     string             `json:"code"`
+		Message  string             `json:"message"`
+		Delta    string             `json:"delta"`
+		LogProbs []respTokenLogProb `json:"logprobs"`
 		Response struct {
 			ID                string `json:"id"`
 			Model             string `json:"model"`
@@ -529,7 +606,11 @@ func (d *EventDecoder) consume(data []byte) error {
 			d.pending = append(d.pending, ir.Event{Type: ir.EventBlockStart, Index: d.openIdx, Block: &ir.Block{Type: ir.BlockThinking}})
 		}
 	case "response.output_text.delta":
-		d.pending = append(d.pending, ir.Event{Type: ir.EventTextDelta, Index: d.openIdx, Delta: ev.Delta})
+		// The frame's logprobs are the tokens this delta decodes from,
+		// so they ride the same IR event. The .done frame repeats the
+		// whole sequence and is skipped for that reason.
+		d.pending = append(d.pending, ir.Event{Type: ir.EventTextDelta, Index: d.openIdx, Delta: ev.Delta,
+			LogProbs: logProbsToIR(ev.LogProbs)})
 	case "response.reasoning_summary_text.delta":
 		d.pending = append(d.pending, ir.Event{Type: ir.EventThinkingDelta, Index: d.openIdx, Delta: ev.Delta})
 	case "response.function_call_arguments.delta":
