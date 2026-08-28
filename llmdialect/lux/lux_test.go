@@ -536,6 +536,8 @@ func TestNames(t *testing.T) {
 func FuzzDecodeRequest(f *testing.F) {
 	f.Add([]byte(`{"model":"m","messages":[{"role":"user","blocks":[{"type":"text","text":"hi"}]}]}`))
 	f.Add([]byte(`{"model":"m","messages":[{"role":"user","blocks":[{"type":"tool_result","tool_result":{"tool_use_id":"t"}}]}]}`))
+	f.Add([]byte(`{"model":"m","messages":[{"role":"user","blocks":[{"type":"text","text":"hi"}]}],` +
+		`"logprobs":true,"top_logprobs":2}`))
 	f.Fuzz(func(t *testing.T, body []byte) {
 		req, err := NewFrontend().DecodeRequest(body)
 		if err == nil && req.Model == "" {

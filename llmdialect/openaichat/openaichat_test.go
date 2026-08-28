@@ -530,6 +530,8 @@ func TestEventDecoderUsageOnlyStream(t *testing.T) {
 
 func FuzzDecodeResponse(f *testing.F) {
 	f.Add([]byte(`{"id":"x","choices":[{"message":{"content":"y"}}]}`))
+	f.Add([]byte(`{"id":"x","choices":[{"message":{"content":"y"},"logprobs":{"content":[` +
+		`{"token":"y","logprob":null,"bytes":[121],"top_logprobs":[]}]}}]}`))
 	f.Add([]byte(`{`))
 	f.Fuzz(func(t *testing.T, body []byte) {
 		_, _ = NewBackend(BackendOptions{}).DecodeResponse(body) // must not panic
@@ -538,6 +540,8 @@ func FuzzDecodeResponse(f *testing.F) {
 
 func FuzzEventDecoder(f *testing.F) {
 	f.Add([]byte("data: {\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"x\"}}]}\n\ndata: [DONE]\n\n"))
+	f.Add([]byte("data: {\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"x\"}," +
+		"\"logprobs\":{\"content\":[{\"token\":\"x\",\"logprob\":null,\"bytes\":null}]}}]}\n\ndata: [DONE]\n\n"))
 	f.Add([]byte("data: {\n\n"))
 	f.Fuzz(func(t *testing.T, stream []byte) {
 		dec := NewBackend(BackendOptions{}).NewEventDecoder(strings.NewReader(string(stream)))

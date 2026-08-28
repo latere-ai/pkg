@@ -358,6 +358,7 @@ func TestEventEncoderErrors(t *testing.T) {
 func FuzzDecodeRequest(f *testing.F) {
 	f.Add([]byte(`{"model":"m","input":"hi"}`))
 	f.Add([]byte(`{"model":"m","input":[{"type":"function_call","call_id":"c","name":"f","arguments":"{}"}]}`))
+	f.Add([]byte(`{"model":"m","input":"hi","top_logprobs":2,"include":["message.output_text.logprobs"]}`))
 	f.Add([]byte(`{`))
 	f.Fuzz(func(t *testing.T, body []byte) {
 		_, _ = NewFrontend().DecodeRequest(body) // must not panic

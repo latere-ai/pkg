@@ -482,6 +482,8 @@ func FuzzBackendDecodeResponse(f *testing.F) {
 	f.Add(`{"id":"resp_x","model":"m","status":"completed","output":[]}`)
 	f.Add(`{"error":{"message":"e","type":"t"}}`)
 	f.Add(`{"output":[{"type":"function_call","call_id":"c","name":"n","arguments":"{}"}]}`)
+	f.Add(`{"output":[{"type":"message","content":[{"type":"output_text","text":"x",` +
+		`"logprobs":[{"token":"x","logprob":null,"bytes":[120],"top_logprobs":[]}]}]}]}`)
 	f.Fuzz(func(t *testing.T, body string) {
 		_, _ = NewBackend().DecodeResponse([]byte(body)) // must not panic
 	})
@@ -490,6 +492,8 @@ func FuzzBackendDecodeResponse(f *testing.F) {
 func FuzzBackendEventDecoder(f *testing.F) {
 	f.Add("data: {\"type\":\"response.created\",\"response\":{\"id\":\"r\"}}\n\n")
 	f.Add("data: {\"type\":\"response.output_text.delta\",\"delta\":\"x\"}\n\n")
+	f.Add("data: {\"type\":\"response.output_text.delta\",\"delta\":\"x\"," +
+		"\"logprobs\":[{\"token\":\"x\",\"logprob\":null}]}\n\n")
 	f.Fuzz(func(t *testing.T, stream string) {
 		dec := NewBackend().NewEventDecoder(strings.NewReader(stream))
 		for range 1000 {

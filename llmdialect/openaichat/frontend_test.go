@@ -306,6 +306,7 @@ func TestFrontendEventEncoderErrors(t *testing.T) {
 func FuzzFrontendDecodeRequest(f *testing.F) {
 	f.Add([]byte(`{"model":"m","messages":[{"role":"user","content":"hi"}]}`))
 	f.Add([]byte(`{"model":"m","messages":[{"role":"tool","tool_call_id":"t","content":"x"},{"role":"tool","tool_call_id":"u","content":"y"}]}`))
+	f.Add([]byte(`{"model":"m","messages":[{"role":"user","content":"hi"}],"logprobs":true,"top_logprobs":3}`))
 	f.Add([]byte(`{`))
 	f.Fuzz(func(t *testing.T, body []byte) {
 		_, _ = NewFrontend().DecodeRequest(body) // must not panic
