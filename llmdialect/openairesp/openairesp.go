@@ -95,11 +95,19 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	if wire.Model == "" {
 		return nil, fmt.Errorf("openairesp: model is required")
 	}
+	// Tagged ir.ScopeSurface: these two are the surface's own refusals,
+	// not limits of the translation. Relaying either to a native target
+	// would resolve the caller's conversation state against whatever
+	// account the gateway's upstream credential belongs to, which is not
+	// the caller's. A gateway that forwards undecodable bodies to native
+	// targets must still keep these terminal.
 	if wire.PreviousResponseID != "" {
-		return nil, fmt.Errorf("openairesp: previous_response_id is not supported on this surface (stateless only)")
+		return nil, ir.RefuseSurface(fmt.Errorf(
+			"openairesp: previous_response_id is not supported on this surface (stateless only)"))
 	}
 	if wire.Store != nil && *wire.Store {
-		return nil, fmt.Errorf("openairesp: store:true is not supported on this surface (stateless only)")
+		return nil, ir.RefuseSurface(fmt.Errorf(
+			"openairesp: store:true is not supported on this surface (stateless only)"))
 	}
 	if len(wire.Include) > 0 {
 		decodeInclude(req, wire.Include)

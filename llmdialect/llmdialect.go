@@ -57,6 +57,22 @@ type Backend interface {
 	NewEventDecoder(r io.Reader) EventDecoder
 }
 
+// RefusalScope says how far a DecodeRequest refusal reaches: a limit of
+// the translation (ScopeDialect, advisory to a caller forwarding the
+// body to a native target) or a refusal the surface makes on any target
+// (ScopeSurface, always terminal). See ir.RefusalScopeOf.
+type RefusalScope = ir.RefusalScope
+
+// Refusal scopes.
+const (
+	ScopeNone    = ir.ScopeNone
+	ScopeDialect = ir.ScopeDialect
+	ScopeSurface = ir.ScopeSurface
+)
+
+// RefusalScopeOf classifies a DecodeRequest error. See ir.RefusalScopeOf.
+func RefusalScopeOf(err error) RefusalScope { return ir.RefusalScopeOf(err) }
+
 // EventEncoder writes one dialect-native SSE frame set per IR event.
 type EventEncoder = ir.EventEncoder
 
