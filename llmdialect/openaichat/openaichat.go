@@ -137,6 +137,14 @@ func (b *Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 	if req.UserID != "" {
 		body["user"] = req.UserID
 	}
+	if req.LogProbs {
+		body["logprobs"] = true
+		// top_logprobs without logprobs:true is a 400 upstream, so the
+		// count travels only with the flag that makes it legal.
+		if req.TopLogProbs > 0 {
+			body["top_logprobs"] = req.TopLogProbs
+		}
+	}
 	if req.Stream {
 		body["stream"] = true
 		// Always opt into the final usage chunk so gateways can meter
@@ -331,6 +339,62 @@ func (u *wireUsage) toUsage() *ir.Usage {
 	}
 }
 
+// wireLogProbs is the per-choice logprobs object, on the response body
+// and on every stream chunk alike.
+type wireLogProbs struct {
+	Content []wireTokenLogProb `json:"content"`
+}
+
+// wireTokenLogProb is one token's entry. Bytes is a JSON array of
+// integers here, not the base64 string encoding/json gives a []byte, so
+// it decodes through []int.
+type wireTokenLogProb struct {
+	Token   string             `json:"token"`
+	LogProb ir.LogProb         `json:"logprob"`
+	Bytes   []int              `json:"bytes"`
+	Top     []wireTokenLogProb `json:"top_logprobs"`
+}
+
+func (w *wireLogProbs) toIR() []ir.TokenLogProb {
+	if w == nil {
+		return nil
+	}
+	return tokenLogProbsToIR(w.Content)
+}
+
+func tokenLogProbsToIR(in []wireTokenLogProb) []ir.TokenLogProb {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]ir.TokenLogProb, len(in))
+	for i, w := range in {
+		out[i] = ir.TokenLogProb{
+			Token:   w.Token,
+			Bytes:   bytesFromInts(w.Bytes),
+			LogProb: w.LogProb,
+			Top:     tokenLogProbsToIR(w.Top),
+		}
+	}
+	return out
+}
+
+// bytesFromInts narrows the wire's integer array. A value outside a
+// byte is not a UTF-8 byte and the entry is dropped rather than
+// truncated: a wrong byte reconstructs wrong text.
+func bytesFromInts(in []int) []byte {
+	if in == nil {
+		return nil
+	}
+	out := make([]byte, 0, len(in))
+	for _, v := range in {
+		if v < 0 || v > 255 {
+			return nil
+		}
+		out = append(out, byte(v))
+	}
+	return out
+}
+
 type wireToolCall struct {
 	Index    *int   `json:"index"`
 	ID       string `json:"id"`
@@ -353,7 +417,8 @@ func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 				ReasoningContent string         `json:"reasoning_content"`
 				ToolCalls        []wireToolCall `json:"tool_calls"`
 			} `json:"message"`
-			FinishReason string `json:"finish_reason"`
+			LogProbs     *wireLogProbs `json:"logprobs"`
+			FinishReason string        `json:"finish_reason"`
 		} `json:"choices"`
 		Usage *wireUsage `json:"usage"`
 		Error *wireError `json:"error"`
@@ -385,6 +450,7 @@ func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 			ID: tc.ID, Name: tc.Function.Name, Args: json.RawMessage(tc.Function.Arguments),
 		}})
 	}
+	resp.LogProbs = choice.LogProbs.toIR()
 	if resp.StopReason == "" {
 		resp.StopReason = stopReason(choice.FinishReason, len(choice.Message.ToolCalls) > 0)
 	}
@@ -514,7 +580,8 @@ func (d *EventDecoder) consume(data []byte) error {
 				ReasoningContent string         `json:"reasoning_content"`
 				ToolCalls        []wireToolCall `json:"tool_calls"`
 			} `json:"delta"`
-			FinishReason string `json:"finish_reason"`
+			LogProbs     *wireLogProbs `json:"logprobs"`
+			FinishReason string        `json:"finish_reason"`
 		} `json:"choices"`
 		Usage *wireUsage `json:"usage"`
 		Error *wireError `json:"error"`
@@ -542,7 +609,11 @@ func (d *EventDecoder) consume(data []byte) error {
 		}
 		if c.Delta.Content != nil && *c.Delta.Content != "" {
 			d.ensureBlock(blockText, ir.Block{Type: ir.BlockText})
-			d.pending = append(d.pending, ir.Event{Type: ir.EventTextDelta, Index: d.openIndex, Delta: *c.Delta.Content})
+			// The chunk's logprobs are the tokens this text delta
+			// decodes from, so they ride the same IR event and the
+			// stream stays translatable one event at a time.
+			d.pending = append(d.pending, ir.Event{Type: ir.EventTextDelta, Index: d.openIndex,
+				Delta: *c.Delta.Content, LogProbs: c.LogProbs.toIR()})
 		}
 		for _, tc := range c.Delta.ToolCalls {
 			d.consumeToolDelta(tc)
