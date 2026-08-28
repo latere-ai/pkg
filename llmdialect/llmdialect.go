@@ -14,7 +14,10 @@
 //
 // Fields the target dialect cannot represent are collected in the
 // request's loss report (ir.Request.Loss) rather than silently
-// dropped.
+// dropped. Per-token log probabilities are one such field: the two
+// OpenAI dialects and the lux dialect serve them, each in its own
+// shape, and Anthropic Messages has no member for them in either
+// direction, so an ask routed there is reported as loss.
 package llmdialect
 
 import (
