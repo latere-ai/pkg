@@ -13,6 +13,7 @@ package ir
 
 import (
 	"encoding/json"
+	"math"
 	"slices"
 )
 
@@ -152,6 +153,60 @@ type Reasoning struct {
 	BudgetTokens int64
 }
 
+// LogProb is a natural-log probability that survives JSON. A token the
+// sampling policy masked scores math.Inf(-1) — it could not have been
+// drawn at all — and JSON has no infinity, so any non-finite value
+// encodes as null and null decodes back to math.Inf(-1). null is what
+// "this token could not be drawn" means; a floor value is worse,
+// because a consumer averages it.
+type LogProb float64
+
+// MarshalJSON renders the value, or null when it is not finite.
+func (l LogProb) MarshalJSON() ([]byte, error) {
+	f := float64(l)
+	if math.IsInf(f, 0) || math.IsNaN(f) {
+		return []byte("null"), nil
+	}
+	return json.Marshal(f)
+}
+
+// UnmarshalJSON reads the value, mapping null back to math.Inf(-1).
+func (l *LogProb) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		*l = LogProb(math.Inf(-1))
+		return nil
+	}
+	var f float64
+	if err := json.Unmarshal(data, &f); err != nil {
+		return err
+	}
+	*l = LogProb(f)
+	return nil
+}
+
+// TokenLogProb is one token and its log probability under the
+// distribution it was drawn from: the post-policy distribution, after
+// bias, penalties, temperature and top-k/top-p. That is the number a
+// provider must report, because a raw softmax over the untruncated
+// vocabulary describes a distribution nothing sampled from.
+type TokenLogProb struct {
+	Token string
+
+	// Bytes is the UTF-8 encoding of Token. A byte-level vocabulary
+	// splits many characters across several tokens, so a consumer that
+	// joins bytes can reconstruct text that one joining strings cannot.
+	// Nil when the dialect reports none (the Responses streaming shape
+	// carries no bytes member).
+	Bytes []byte
+
+	LogProb LogProb
+
+	// Top is the most likely alternatives at this position, most likely
+	// first, as many as the request asked for. Entries in Top have no
+	// Top of their own.
+	Top []TokenLogProb
+}
+
 // ResponseSchema requests structured output conforming to Schema.
 type ResponseSchema struct {
 	Name        string
@@ -177,6 +232,14 @@ type Request struct {
 	Schema        *ResponseSchema
 	UserID        string // caller-supplied end-user identifier
 
+	// LogProbs asks for the log probability of every token the model
+	// emits, and TopLogProbs for that many alternatives at each
+	// position. TopLogProbs > 0 implies LogProbs: alternatives to a
+	// number the caller did not ask for is not what any OpenAI client
+	// means by it, so decoders set both.
+	LogProbs    bool
+	TopLogProbs int
+
 	// Loss accumulates fields dropped or approximated during decode
 	// and encode.
 	Loss Loss
@@ -193,6 +256,7 @@ const (
 	LossCacheControl      LossField = "cache_control"
 	LossCitations         LossField = "citations"
 	LossInclude           LossField = "include"
+	LossLogProbs          LossField = "logprobs"
 	LossReasoningEffort   LossField = "reasoning_effort"
 	LossReasoningItems    LossField = "reasoning"
 	LossReasoningSummary  LossField = "reasoning.summary"
@@ -206,6 +270,7 @@ const (
 	LossToolResultIsError LossField = "tool_result.is_error"
 	LossToolStrict        LossField = "tools.strict"
 	LossTopK              LossField = "top_k"
+	LossTopLogProbs       LossField = "top_logprobs"
 	LossUserTruncated     LossField = "user.truncated"
 )
 
@@ -298,6 +363,12 @@ type Response struct {
 	StopReason   StopReason
 	StopSequence string
 	Usage        Usage
+
+	// LogProbs is one entry per token of the response text, in
+	// emission order, and empty unless Request.LogProbs asked for
+	// them. It is flat rather than per block because the dialects that
+	// carry it report one sequence per choice.
+	LogProbs []TokenLogProb
 }
 
 // EventType discriminates streaming events.
@@ -349,6 +420,14 @@ type Event struct {
 
 	// Delta is the incremental payload for the delta event types.
 	Delta string
+
+	// LogProbs is the tokens Delta decodes from, on a TextDelta event
+	// and only when the request asked. It is per event rather than per
+	// message because both dialects that carry logprobs put them on the
+	// same frame as the text, so a stream stays translatable one event
+	// at a time. A delta can decode from several tokens, or from part
+	// of one, so the count does not track the event count.
+	LogProbs []TokenLogProb
 
 	// MessageDelta fields. Usage also appears on MessageStart when the
 	// backend reports input tokens up front (Anthropic does; OpenAI
