@@ -12,10 +12,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 
 	"latere.ai/x/pkg/llmdialect/internal/sse"
 	"latere.ai/x/pkg/llmdialect/ir"
 )
+
+// unknownValue rejects a closed-vocabulary value, naming the JSON path
+// it sits at, the value found there, and the whole set that would have
+// been accepted. Each of those vocabularies is defined a few lines from
+// its check, so the accepted set is mechanically derivable and there is
+// no reason to make a caller read this source to learn it.
+//
+// The message reaches end users verbatim: Lux puts err.Error() into the
+// 400 body its /compat/anthropic surface returns.
+//
+// Errors from here are bare. The "anthropic:" prefix is added once, by
+// the exported method at the boundary, so a caller can tell which layer
+// rejected the request without reading it twice.
+func unknownValue(path, got string, want ...string) error {
+	return fmt.Errorf("%s: unknown value %q; expected one of: %s", path, got, strings.Join(want, ", "))
+}
 
 // DialectName identifies this dialect.
 const DialectName = ir.DialectAnthropicMessages
@@ -98,27 +115,28 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	req.UserID = wire.Metadata.UserID
 
 	if len(wire.System) > 0 {
-		sys, err := decodeSystem(wire.System, &req.Loss)
+		sys, err := decodeSystem(wire.System, &req.Loss, "system")
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("anthropic: %w", err)
 		}
 		req.System = sys
 	}
 	for i, m := range wire.Messages {
+		path := fmt.Sprintf("messages[%d]", i)
 		// The native Messages API also accepts system-role turns
 		// inside messages (Claude Code sends them); fold those into
 		// the system prompt like the openaichat frontend does.
 		if m.Role == "system" {
-			sys, err := decodeSystem(m.Content, &req.Loss)
+			sys, err := decodeSystem(m.Content, &req.Loss, path+".content")
 			if err != nil {
-				return nil, fmt.Errorf("anthropic: messages[%d]: %w", i, err)
+				return nil, fmt.Errorf("anthropic: %w", err)
 			}
 			req.System = append(req.System, sys...)
 			continue
 		}
-		msg, err := decodeMessage(m, &req.Loss)
+		msg, err := decodeMessage(m, &req.Loss, path)
 		if err != nil {
-			return nil, fmt.Errorf("anthropic: messages[%d]: %w", i, err)
+			return nil, fmt.Errorf("anthropic: %w", err)
 		}
 		req.Messages = append(req.Messages, msg)
 	}
@@ -139,7 +157,7 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	if wire.ToolChoice != nil {
 		tc, err := decodeToolChoice(*wire.ToolChoice)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("anthropic: %w", err)
 		}
 		req.ToolChoice = tc
 	}
@@ -156,7 +174,7 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	}
 	if wire.OutputFormat != nil {
 		if wire.OutputFormat.Type != "json_schema" {
-			return nil, fmt.Errorf("anthropic: unsupported output_format type %q", wire.OutputFormat.Type)
+			return nil, fmt.Errorf("anthropic: %w", unknownValue("output_format.type", wire.OutputFormat.Type, "json_schema"))
 		}
 		req.Schema = &ir.ResponseSchema{Name: "output", Schema: wire.OutputFormat.Schema}
 	}
@@ -208,14 +226,14 @@ type wireImage struct {
 }
 
 // decodeSystem accepts the string and block-array forms of `system`.
-func decodeSystem(raw json.RawMessage, loss *ir.Loss) ([]ir.Block, error) {
+func decodeSystem(raw json.RawMessage, loss *ir.Loss, path string) ([]ir.Block, error) {
 	var s string
 	if err := json.Unmarshal(raw, &s); err == nil {
 		return []ir.Block{{Type: ir.BlockText, Text: s}}, nil
 	}
 	var blocks []wireBlock
 	if err := json.Unmarshal(raw, &blocks); err != nil {
-		return nil, fmt.Errorf("anthropic: system must be a string or block array")
+		return nil, fmt.Errorf("%s: must be a string or a block array", path)
 	}
 	var out []ir.Block
 	for _, b := range blocks {
@@ -228,7 +246,7 @@ func decodeSystem(raw json.RawMessage, loss *ir.Loss) ([]ir.Block, error) {
 	return out, nil
 }
 
-func decodeMessage(m wireMessage, loss *ir.Loss) (ir.Message, error) {
+func decodeMessage(m wireMessage, loss *ir.Loss, path string) (ir.Message, error) {
 	var role ir.Role
 	switch m.Role {
 	case "user":
@@ -236,9 +254,11 @@ func decodeMessage(m wireMessage, loss *ir.Loss) (ir.Message, error) {
 	case "assistant":
 		role = ir.RoleAssistant
 	default:
-		return ir.Message{}, fmt.Errorf("unknown role %q", m.Role)
+		// "system" is in the accepted set because DecodeRequest folds a
+		// system-role turn into the system prompt before it gets here.
+		return ir.Message{}, unknownValue(path+".role", m.Role, "user", "assistant", "system")
 	}
-	blocks, err := decodeContent(m.Content, loss)
+	blocks, err := decodeContent(m.Content, loss, path+".content")
 	if err != nil {
 		return ir.Message{}, err
 	}
@@ -246,19 +266,20 @@ func decodeMessage(m wireMessage, loss *ir.Loss) (ir.Message, error) {
 }
 
 // decodeContent accepts the string and block-array forms of message
-// (and tool_result) content.
-func decodeContent(raw json.RawMessage, loss *ir.Loss) ([]ir.Block, error) {
+// (and tool_result) content. path names the content member itself, so
+// a block error can point at its own index inside it.
+func decodeContent(raw json.RawMessage, loss *ir.Loss, path string) ([]ir.Block, error) {
 	var s string
 	if err := json.Unmarshal(raw, &s); err == nil {
 		return []ir.Block{{Type: ir.BlockText, Text: s}}, nil
 	}
 	var wire []wireBlock
 	if err := json.Unmarshal(raw, &wire); err != nil {
-		return nil, fmt.Errorf("content must be a string or block array")
+		return nil, fmt.Errorf("%s: must be a string or a block array", path)
 	}
 	var out []ir.Block
-	for _, b := range wire {
-		blk, ok, err := decodeBlock(b, loss)
+	for i, b := range wire {
+		blk, ok, err := decodeBlock(b, loss, fmt.Sprintf("%s[%d]", path, i))
 		if err != nil {
 			return nil, err
 		}
@@ -269,7 +290,7 @@ func decodeContent(raw json.RawMessage, loss *ir.Loss) ([]ir.Block, error) {
 	return out, nil
 }
 
-func decodeBlock(b wireBlock, loss *ir.Loss) (ir.Block, bool, error) {
+func decodeBlock(b wireBlock, loss *ir.Loss, path string) (ir.Block, bool, error) {
 	cache := len(b.CacheControl) > 0
 	if len(b.Citations) > 0 && string(b.Citations) != "null" {
 		loss.Add(ir.LossCitations)
@@ -279,7 +300,7 @@ func decodeBlock(b wireBlock, loss *ir.Loss) (ir.Block, bool, error) {
 		return ir.Block{Type: ir.BlockText, Text: b.Text, CacheHint: cache}, true, nil
 	case "image":
 		if b.Source == nil {
-			return ir.Block{}, false, fmt.Errorf("image block missing source")
+			return ir.Block{}, false, fmt.Errorf("%s: image block missing source", path)
 		}
 		switch b.Source.Type {
 		case "base64":
@@ -287,16 +308,16 @@ func decodeBlock(b wireBlock, loss *ir.Loss) (ir.Block, bool, error) {
 		case "url":
 			return ir.Block{Type: ir.BlockImage, Image: &ir.Image{URL: b.Source.URL}, CacheHint: cache}, true, nil
 		default:
-			return ir.Block{}, false, fmt.Errorf("unsupported image source type %q", b.Source.Type)
+			return ir.Block{}, false, unknownValue(path+".source.type", b.Source.Type, "base64", "url")
 		}
 	case "tool_use":
 		return ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: b.ID, Name: b.Name, Args: b.Input}, CacheHint: cache}, true, nil
 	case "tool_result":
 		var blocks []ir.Block
 		if len(b.Content) > 0 {
-			inner, err := decodeContent(b.Content, loss)
+			inner, err := decodeContent(b.Content, loss, path+".content")
 			if err != nil {
-				return ir.Block{}, false, fmt.Errorf("tool_result content: %w", err)
+				return ir.Block{}, false, err
 			}
 			blocks = inner
 		}
@@ -324,7 +345,7 @@ func decodeToolChoice(tc wireToolChoice) (*ir.ToolChoice, error) {
 		out.Mode = ir.ToolChoiceTool
 		out.Name = tc.Name
 	default:
-		return nil, fmt.Errorf("anthropic: unknown tool_choice type %q", tc.Type)
+		return nil, unknownValue("tool_choice.type", tc.Type, "auto", "any", "none", "tool")
 	}
 	return out, nil
 }

@@ -313,10 +313,10 @@ func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 	}
 	resp := &ir.Response{ID: wire.ID, Model: wire.Model, Usage: wire.Usage.toUsage()}
 	var loss ir.Loss // response-side unknown block types are skipped
-	for _, wb := range wire.Content {
-		blk, ok, err := decodeBlock(wb, &loss)
+	for i, wb := range wire.Content {
+		blk, ok, err := decodeBlock(wb, &loss, fmt.Sprintf("content[%d]", i))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("anthropic: %w", err)
 		}
 		if ok {
 			resp.Blocks = append(resp.Blocks, blk)
@@ -433,9 +433,9 @@ func (d *backendEventDecoder) consume(data []byte) error {
 			return fmt.Errorf("anthropic: content_block_start missing content_block")
 		}
 		var loss ir.Loss
-		blk, ok, err := decodeBlock(*frame.ContentBlock, &loss)
+		blk, ok, err := decodeBlock(*frame.ContentBlock, &loss, "content_block")
 		if err != nil {
-			return err
+			return fmt.Errorf("anthropic: %w", err)
 		}
 		if !ok {
 			blk = ir.Block{Type: ir.BlockText}

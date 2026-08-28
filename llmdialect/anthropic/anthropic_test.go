@@ -508,3 +508,58 @@ func FuzzDecodeRequest(f *testing.F) {
 		_, _ = NewFrontend().DecodeRequest(body) // must not panic
 	})
 }
+
+// TestDecodeRequestErrorsNameTheAcceptedValues pins the four
+// closed-vocabulary rejections: each one names the JSON path, the value
+// found there, and every value that would have been accepted. The
+// assertion runs on the exported decoder's string because that is what
+// a Lux caller reads in the 400 body, and a helper's own return can be
+// well-formed while the wrapped result is not.
+func TestDecodeRequestErrorsNameTheAcceptedValues(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want []string
+	}{{
+		name: "role",
+		body: `{"model":"m","messages":[{"role":"user","content":"x"},{"role":"tool","content":"x"}]}`,
+		want: []string{"messages[1].role", `"tool"`, "user", "assistant", "system"},
+	}, {
+		name: "tool_choice type",
+		body: `{"model":"m","messages":[{"role":"user","content":"x"}],"tool_choice":{"type":"required"}}`,
+		want: []string{"tool_choice.type", `"required"`, "auto", "any", "none", "tool"},
+	}, {
+		name: "image source type",
+		body: `{"model":"m","messages":[{"role":"user","content":[{"type":"text","text":"x"},` +
+			`{"type":"image","source":{"type":"gcs"}}]}]}`,
+		want: []string{"messages[0].content[1].source.type", `"gcs"`, "base64", "url"},
+	}, {
+		name: "output_format type",
+		body: `{"model":"m","messages":[{"role":"user","content":"x"}],"output_format":{"type":"grammar"}}`,
+		want: []string{"output_format.type", `"grammar"`, "json_schema"},
+	}, {
+		name: "nested tool_result image source type",
+		body: `{"model":"m","messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"t",` +
+			`"content":[{"type":"image","source":{"type":"gcs"}}]}]}]}`,
+		want: []string{"messages[0].content[0].content[0].source.type", `"gcs"`, "base64", "url"},
+	}}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := NewFrontend().DecodeRequest([]byte(tc.body))
+			if err == nil {
+				t.Fatal("want error")
+			}
+			got := err.Error()
+			for _, want := range tc.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("error %q does not name %q", got, want)
+				}
+			}
+			// One prefix, from the boundary. Two means an inner layer
+			// added its own and the caller cannot tell them apart.
+			if n := strings.Count(got, "anthropic:"); n != 1 {
+				t.Errorf("error %q carries the dialect prefix %d times, want 1", got, n)
+			}
+		})
+	}
+}
