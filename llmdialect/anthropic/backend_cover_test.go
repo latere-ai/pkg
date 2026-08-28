@@ -3,6 +3,7 @@ package anthropic
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -143,4 +144,28 @@ func jsonEqual(got any, want map[string]any) bool {
 	raw, _ := json.Marshal(got)
 	var m map[string]any
 	return json.Unmarshal(raw, &m) == nil && len(m) == len(want)
+}
+
+// TestEncodeRequestReportsLogProbsAsLoss: the Messages API has no
+// logprobs member, so an ask reaches the loss report rather than the
+// upstream body. A gateway surfaces that report; silently dropping it
+// would tell a caller their request was served whole.
+func TestEncodeRequestReportsLogProbsAsLoss(t *testing.T) {
+	req := &ir.Request{
+		Model:       "claude-sonnet-5",
+		Messages:    []ir.Message{{Role: ir.RoleUser, Blocks: []ir.Block{{Type: ir.BlockText, Text: "hi"}}}},
+		LogProbs:    true,
+		TopLogProbs: 3,
+	}
+	raw, err := NewBackend(BackendOptions{DefaultMaxTokens: 16}).EncodeRequest(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "logprobs") {
+		t.Fatalf("a member this dialect does not have reached the body: %s", raw)
+	}
+	got := req.Loss.Strings()
+	if !slices.Contains(got, "logprobs") || !slices.Contains(got, "top_logprobs") {
+		t.Fatalf("loss = %v, want both members", got)
+	}
 }

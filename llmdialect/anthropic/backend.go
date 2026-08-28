@@ -128,6 +128,16 @@ func (b *Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 	if len(req.StopSequences) > 0 {
 		body["stop_sequences"] = req.StopSequences
 	}
+	// The Messages API has no logprobs member anywhere in its request or
+	// its response, so an ask cannot be forwarded and an answer could not
+	// be carried back. That is a loss, not an error: the completion is
+	// still the one the caller asked for.
+	if req.LogProbs {
+		req.Loss.Add(ir.LossLogProbs)
+	}
+	if req.TopLogProbs > 0 {
+		req.Loss.Add(ir.LossTopLogProbs)
+	}
 	if req.Reasoning != nil {
 		// Newer Claude models (opus-4.7/4.8, sonnet-5, fable-5) reject the
 		// deprecated thinking:{enabled, budget_tokens} and require
