@@ -149,19 +149,38 @@ or where changing a temporary directory's mode has no effect. Everything else
 runs everywhere.
 
 ```bash
-make test       # run tests
-make race       # run tests with the race detector
-make fuzz       # run every fuzz target for 30s (FUZZTIME to change)
-make cover      # run tests and enforce the 95% statement-coverage floor
-make cover-html # open the coverage report in a browser
-make vuln       # fail on vulnerabilities in imported or called code
+make test           # go vet + go test
+make test-race      # run tests with the race detector
+make test-hermetic  # run tests with only the toolchain on PATH
+make cover          # enforce a 90% floor per package
+make cover-html     # open the coverage report in a browser
+make fuzz           # run every fuzz target for 30s (FUZZTIME to change)
+make validate       # the checks specific to what this module promises
+make vuln           # fail on vulnerabilities in imported or called code
 ```
 
-CI runs the race detector, the coverage floor, the toolchain modernizers, the
-fuzz targets, and a vulnerability scan on pushes to `main` and on every
-pull request. `make
-cover` needs `bc`; `make vuln` needs `jq` and installs `govulncheck` if it is
-not already present.
+**`make cover` gates each package, not the module.** An average lets a
+well-tested package carry an untested one: this module passed at 95% overall
+while `pgxmigrate` sat at 82.1%, invisible behind it. All 48 packages clear
+90% on their own.
+
+**`make test-hermetic` runs the suite with `PATH` stripped** to the Go
+toolchain and the directories `.lateregate.yaml` names. A test that depends on
+what happens to be installed passes on a laptop and fails on a runner, which
+is the worst order to find out. Two packages here legitimately drive real
+binaries — `cmdexec` and `gitutil` — and the config says so.
+
+**`make validate`** is `no-tracked-specs`, `deps`, `cgo-free`, `vuln` and
+`fuzz`: no internal specs in this public module, `llmdialect` staying
+stdlib-only, no cgo anywhere, and the two scans.
+
+CI runs all of it on pushes to `main` and on every pull request, through the
+shared pipeline in
+[`latere-ai/ci`](https://github.com/latere-ai/ci). The checks themselves are
+[`latere.ai/x/ci-gate`](https://github.com/latere-ai/ci-gate), pinned as a tool
+dependency in `go.mod`, so every gate runs the same here as on a runner — a
+gate you can only run in CI tells you too late. `make vuln` needs `jq` and
+installs `govulncheck` if it is not already present.
 
 ## Contributing
 

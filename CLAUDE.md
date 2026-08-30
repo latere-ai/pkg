@@ -15,8 +15,12 @@ Every package in this repo must meet these requirements:
 
 ### Coverage
 
-- Statement coverage must be **>= 95%** at all times.
-- CI enforces this threshold; a PR that drops coverage below 95% will fail.
+- **Every package** must be at **>= 90%**, which is stricter than a module
+  average even though the number is lower: an average lets one package sit
+  under the line while the others carry it, which is how `pgxmigrate` ran at
+  82.1% behind a passing 95%.
+- CI enforces it per package; exemptions live in `.lateregate.yaml` and the
+  value in the map is the reason, so an entry cannot exist without one.
 - Use package-level function variables for external constructors to make error paths testable without adding dependencies.
 
 ### Dependencies
@@ -28,9 +32,11 @@ Every package in this repo must meet these requirements:
 ## Commands
 
 ```
-make test       # run tests
-make race       # run tests with race detector
-make fuzz       # run fuzz tests (30s)
-make cover      # run tests + enforce 95% coverage floor
-make cover-html # open coverage report in browser
+make test           # go vet + go test
+make test-race      # run tests with race detector
+make test-hermetic  # run tests with only the toolchain on PATH
+make fuzz           # run fuzz tests (30s)
+make cover          # enforce a 90% floor per package
+make cover-html     # open coverage report in browser
+make validate       # no-tracked-specs, deps, cgo-free, vuln, fuzz
 ```
