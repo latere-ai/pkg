@@ -439,7 +439,7 @@ func (c *jwksCache) load(force bool) ([]jwkEntry, error) {
 	if err != nil {
 		return c.cachedOr(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return c.cachedOr(fmt.Errorf("jwtauth: JWKS status %d", resp.StatusCode))

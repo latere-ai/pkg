@@ -73,7 +73,7 @@ func TelemetryProxy(prefix string) http.Handler {
 			http.Error(w, "upstream unavailable", http.StatusBadGateway)
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		w.WriteHeader(resp.StatusCode)
 		_, _ = io.Copy(w, io.LimitReader(resp.Body, maxTelemetryBody))
 	})

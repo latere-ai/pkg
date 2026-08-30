@@ -210,10 +210,6 @@ func TestStdoutEmitterWriteError(t *testing.T) {
 	}
 }
 
-type unmarshalable struct{}
-
-func (unmarshalable) MarshalJSON() ([]byte, error) { return nil, errors.New("nope") }
-
 func TestStdoutEmitterMarshalError(t *testing.T) {
 	em := NewStdoutEmitter(&bytes.Buffer{})
 	// Construct an Event whose Payload errors during marshaling. json.RawMessage

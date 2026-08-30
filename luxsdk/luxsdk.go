@@ -274,7 +274,7 @@ func (c *Client) Generate(ctx context.Context, req *Request) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, decodeError(resp)
 	}
@@ -327,7 +327,7 @@ func (c *Client) CountTokens(ctx context.Context, req *Request) (*TokenCount, er
 	if err != nil {
 		return nil, fmt.Errorf("lux: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, decodeError(resp)
 	}
@@ -346,11 +346,11 @@ func (c *Client) Stream(ctx context.Context, req *Request) (*Stream, error) {
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		return nil, decodeError(resp)
 	}
 	if mt, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type")); mt != "text/event-stream" {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		return nil, fmt.Errorf("lux: expected an event stream, got %q", resp.Header.Get("Content-Type"))
 	}
 	r := lux.NewStreamReader(resp.Body)

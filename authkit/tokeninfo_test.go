@@ -15,7 +15,9 @@ func TestTokenInfoLookupOK(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"sub":"u-1","principal_type":"user","org_id":"org-1","scopes":["read:x"],"roles":[]}`))
+		if _, err := w.Write([]byte(`{"sub":"u-1","principal_type":"user","org_id":"org-1","scopes":["read:x"],"roles":[]}`)); err != nil {
+			t.Errorf("write tokeninfo body: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -61,7 +63,9 @@ func TestTokenInfoLookup403(t *testing.T) {
 func TestTokenInfoLookup500(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("server error"))
+		if _, err := w.Write([]byte("server error")); err != nil {
+			t.Errorf("write tokeninfo body: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -75,7 +79,9 @@ func TestTokenInfoLookup500(t *testing.T) {
 func TestTokenInfoLookupEmptySub(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"sub":"","principal_type":"user","scopes":[],"roles":[]}`))
+		if _, err := w.Write([]byte(`{"sub":"","principal_type":"user","scopes":[],"roles":[]}`)); err != nil {
+			t.Errorf("write tokeninfo body: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -89,7 +95,9 @@ func TestTokenInfoLookupEmptySub(t *testing.T) {
 func TestTokenInfoLookupMalformedJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{not json`))
+		if _, err := w.Write([]byte(`{not json`)); err != nil {
+			t.Errorf("write tokeninfo body: %v", err)
+		}
 	}))
 	defer srv.Close()
 

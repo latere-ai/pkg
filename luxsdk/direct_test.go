@@ -63,7 +63,7 @@ func TestDirectAnthropicStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 	var text strings.Builder
 	var sawStop bool
 	for {
@@ -128,7 +128,7 @@ func TestDirectOpenAIChat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 	if gotPath != "/v1/chat/completions" || gotAuth != "Bearer sk-oa" {
 		t.Fatalf("bad upstream call: path=%q auth=%q", gotPath, gotAuth)
 	}
@@ -356,7 +356,7 @@ func TestDirectGenerateBodyReadError(t *testing.T) {
 			t.Fatal("server does not support hijacking")
 		}
 		conn, _, _ := hj.Hijack()
-		conn.Close()
+		_ = conn.Close()
 	})
 	d, err := NewDirect(ProviderAnthropic, "k", srv.URL)
 	if err != nil {

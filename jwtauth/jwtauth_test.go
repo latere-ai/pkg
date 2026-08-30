@@ -70,8 +70,8 @@ func jwksJSON(t *testing.T, keys ...*rsa.PrivateKey) []byte {
 			Kid: rsaKid(&k.PublicKey),
 			Alg: "RS256",
 			Use: "sig",
-			N:   base64.RawURLEncoding.EncodeToString(k.PublicKey.N.Bytes()),
-			E:   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(k.PublicKey.E)).Bytes()),
+			N:   base64.RawURLEncoding.EncodeToString(k.N.Bytes()),
+			E:   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(k.E)).Bytes()),
 		})
 	}
 	b, _ := json.Marshal(out)
@@ -83,7 +83,9 @@ func serveJWKS(t *testing.T, keys ...*rsa.PrivateKey) *httptest.Server {
 	data := jwksJSON(t, keys...)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		if _, err := w.Write(data); err != nil {
+			t.Errorf("write JWKS response: %v", err)
+		}
 	}))
 	t.Cleanup(srv.Close)
 	return srv
@@ -409,14 +411,22 @@ func TestJWKSCacheRespectsTTL(t *testing.T) {
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		w.Write(jwksJSON(t, key))
+		if _, err := w.Write(jwksJSON(t, key)); err != nil {
+			t.Errorf("write JWKS response: %v", err)
+		}
 	}))
 	t.Cleanup(srv.Close)
 
 	cache := &jwksCache{url: srv.URL, ttl: time.Hour}
-	cache.getKeys()
-	cache.getKeys()
-	cache.getKeys()
+	if _, err := cache.getKeys(); err != nil {
+		t.Fatalf("getKeys: %v", err)
+	}
+	if _, err := cache.getKeys(); err != nil {
+		t.Fatalf("getKeys: %v", err)
+	}
+	if _, err := cache.getKeys(); err != nil {
+		t.Fatalf("getKeys: %v", err)
+	}
 
 	if calls != 1 {
 		t.Errorf("expected 1 JWKS fetch, got %d", calls)
@@ -428,7 +438,9 @@ func TestJWKSCacheRefetchesAfterTTL(t *testing.T) {
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		w.Write(jwksJSON(t, key))
+		if _, err := w.Write(jwksJSON(t, key)); err != nil {
+			t.Errorf("write JWKS response: %v", err)
+		}
 	}))
 	t.Cleanup(srv.Close)
 
@@ -438,11 +450,15 @@ func TestJWKSCacheRefetchesAfterTTL(t *testing.T) {
 	t.Cleanup(func() { timeNow = orig })
 
 	cache := &jwksCache{url: srv.URL, ttl: time.Minute}
-	cache.getKeys()
+	if _, err := cache.getKeys(); err != nil {
+		t.Fatalf("getKeys: %v", err)
+	}
 
 	// Advance past TTL.
 	now = now.Add(2 * time.Minute)
-	cache.getKeys()
+	if _, err := cache.getKeys(); err != nil {
+		t.Fatalf("getKeys: %v", err)
+	}
 
 	if calls != 2 {
 		t.Errorf("expected 2 JWKS fetches, got %d", calls)
@@ -455,7 +471,9 @@ func TestJWKSCacheStaleOnError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if first {
 			first = false
-			w.Write(jwksJSON(t, key))
+			if _, err := w.Write(jwksJSON(t, key)); err != nil {
+				t.Errorf("write JWKS response: %v", err)
+			}
 			return
 		}
 		http.Error(w, "fail", 500)
@@ -490,10 +508,14 @@ func TestJWKSCacheEmptyKeysServesStale(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if first {
 			first = false
-			w.Write(jwksJSON(t, key))
+			if _, err := w.Write(jwksJSON(t, key)); err != nil {
+				t.Errorf("write JWKS response: %v", err)
+			}
 			return
 		}
-		w.Write([]byte(`{"keys":[]}`))
+		if _, err := w.Write([]byte(`{"keys":[]}`)); err != nil {
+			t.Errorf("write JWKS response: %v", err)
+		}
 	}))
 	t.Cleanup(srv.Close)
 
@@ -539,7 +561,9 @@ func TestJWKSCacheCachedReadNotBlockedByInflightFetch(t *testing.T) {
 			once.Do(func() { close(started) })
 			<-release
 		}
-		w.Write(jwksJSON(t, keyA))
+		if _, err := w.Write(jwksJSON(t, keyA)); err != nil {
+			t.Errorf("write JWKS response: %v", err)
+		}
 	}))
 	t.Cleanup(srv.Close)
 
@@ -550,14 +574,19 @@ func TestJWKSCacheCachedReadNotBlockedByInflightFetch(t *testing.T) {
 
 	fetchDone := make(chan struct{})
 	go func() {
-		cache.getKeysForKid("absent-kid") // kid miss -> forced refetch, blocks in handler
+		// The kid is absent by construction, so the error is the expected
+		// outcome. The call is here for the forced refetch it triggers, which
+		// blocks in the handler until release.
+		_, _ = cache.getKeysForKid("absent-kid")
 		close(fetchDone)
 	}()
 	<-started // the forced fetch is now blocked mid-round-trip
 
 	read := make(chan struct{})
 	go func() {
-		cache.getKeys() // fresh cache: must return without waiting on the fetch
+		// Fresh cache: the assertion is that this returns without waiting on
+		// the in-flight fetch, not what it returns.
+		_, _ = cache.getKeys()
 		close(read)
 	}()
 	select {
@@ -590,7 +619,9 @@ func TestJWKSCacheNon2xxStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte(`{"keys":[]}`))
+		if _, err := w.Write([]byte(`{"keys":[]}`)); err != nil {
+			t.Errorf("write JWKS response: %v", err)
+		}
 	}))
 	t.Cleanup(srv.Close)
 
@@ -606,12 +637,16 @@ func TestJWKSCacheNon2xxStatusServesStale(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if first {
 			first = false
-			w.Write(jwksJSON(t, key))
+			if _, err := w.Write(jwksJSON(t, key)); err != nil {
+				t.Errorf("write JWKS response: %v", err)
+			}
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte(`{"keys":[]}`))
+		if _, err := w.Write([]byte(`{"keys":[]}`)); err != nil {
+			t.Errorf("write JWKS response: %v", err)
+		}
 	}))
 	t.Cleanup(srv.Close)
 
@@ -639,7 +674,9 @@ func TestValidateForcesRefreshOnKidMiss(t *testing.T) {
 		mu.Lock()
 		k := current
 		mu.Unlock()
-		w.Write(jwksJSON(t, k))
+		if _, err := w.Write(jwksJSON(t, k)); err != nil {
+			t.Errorf("write JWKS response: %v", err)
+		}
 	}))
 	t.Cleanup(srv.Close)
 
@@ -678,7 +715,9 @@ func TestValidateConcurrentKidMiss(t *testing.T) {
 func TestJWKSCacheSkipsNonRSA(t *testing.T) {
 	data := `{"keys":[{"kty":"EC","kid":"ec1","alg":"ES256","use":"sig","crv":"P-256","x":"abc","y":"def"}]}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(data))
+		if _, err := w.Write([]byte(data)); err != nil {
+			t.Errorf("write JWKS response: %v", err)
+		}
 	}))
 	t.Cleanup(srv.Close)
 
@@ -691,7 +730,9 @@ func TestJWKSCacheSkipsNonRSA(t *testing.T) {
 
 func TestJWKSCacheMalformedJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("not json"))
+		if _, err := w.Write([]byte("not json")); err != nil {
+			t.Errorf("write JWKS response: %v", err)
+		}
 	}))
 	t.Cleanup(srv.Close)
 
@@ -855,7 +896,9 @@ func TestWriteUnauthorized(t *testing.T) {
 		t.Errorf("Content-Type = %q", ct)
 	}
 	var body map[string]string
-	json.Unmarshal(rr.Body.Bytes(), &body)
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("WriteUnauthorized must emit JSON: %v", err)
+	}
 	if body["message"] != "test message" {
 		t.Errorf("body = %v", body)
 	}
@@ -942,15 +985,21 @@ func TestJWKSCacheStaleOnReadError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if first {
 			first = false
-			w.Write(jwksJSON(t, key))
+			if _, err := w.Write(jwksJSON(t, key)); err != nil {
+				t.Errorf("write JWKS response: %v", err)
+			}
 			return
 		}
 		// Write partial response then close to cause ReadAll error.
 		w.Header().Set("Content-Length", "9999")
-		w.Write([]byte("{"))
+		if _, err := w.Write([]byte("{")); err != nil {
+			t.Errorf("write JWKS response: %v", err)
+		}
 		// Closing the connection will cause io.ReadAll to get less than expected,
 		// but it won't error. Use malformed JSON to trigger unmarshal error with stale.
-		w.Write([]byte("not json"))
+		if _, err := w.Write([]byte("not json")); err != nil {
+			t.Errorf("write JWKS response: %v", err)
+		}
 	}))
 	t.Cleanup(srv.Close)
 
@@ -977,7 +1026,9 @@ func TestJWKSCacheBadKeyValues(t *testing.T) {
 	// JWKS with RSA key that has bad base64 in N field.
 	data := `{"keys":[{"kty":"RSA","kid":"bad","alg":"RS256","use":"sig","n":"!!!","e":"AQAB"}]}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(data))
+		if _, err := w.Write([]byte(data)); err != nil {
+			t.Errorf("write JWKS response: %v", err)
+		}
 	}))
 	t.Cleanup(srv.Close)
 
@@ -997,7 +1048,7 @@ func FuzzValidate(f *testing.F) {
 	f.Fuzz(func(t *testing.T, token string) {
 		key := genKey(t)
 		v := testValidator(t, key)
-		v.Validate(token) // must not panic
+		_, _ = v.Validate(token) // must not panic
 	})
 }
 
@@ -1006,11 +1057,13 @@ func FuzzParseJWKS(f *testing.F) {
 	f.Add([]byte(`not json`))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Write(data)
+			if _, err := w.Write(data); err != nil {
+				t.Errorf("write JWKS response: %v", err)
+			}
 		}))
 		defer srv.Close()
 		cache := &jwksCache{url: srv.URL, ttl: time.Hour}
-		cache.getKeys() // must not panic
+		_, _ = cache.getKeys() // must not panic
 	})
 }
 

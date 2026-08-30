@@ -579,7 +579,9 @@ func TestGetCookieBadJSON(t *testing.T) {
 func TestGetCookieWrongKey(t *testing.T) {
 	c1 := testClient(t)
 	w := httptest.NewRecorder()
-	c1.SetSession(w, &Session{AccessToken: "tok"})
+	if err := c1.SetSession(w, &Session{AccessToken: "tok"}); err != nil {
+		t.Fatalf("SetSession: %v", err)
+	}
 
 	// Create a second client with a different key.
 	cfg2 := Config{
@@ -673,7 +675,9 @@ func TestAESGCMDecryptTampered(t *testing.T) {
 func TestSessionCookieAttributes(t *testing.T) {
 	c := testClient(t)
 	w := httptest.NewRecorder()
-	c.SetSession(w, &Session{AccessToken: "tok"})
+	if err := c.SetSession(w, &Session{AccessToken: "tok"}); err != nil {
+		t.Fatalf("SetSession: %v", err)
+	}
 
 	cookies := w.Result().Cookies()
 	if len(cookies) != 1 {
@@ -703,7 +707,9 @@ func TestSessionCookieAttributes(t *testing.T) {
 func TestFlowCookieAttributes(t *testing.T) {
 	c := testClient(t)
 	w := httptest.NewRecorder()
-	c.SetFlowState(w, &FlowState{CodeVerifier: "v", State: "s"})
+	if err := c.SetFlowState(w, &FlowState{CodeVerifier: "v", State: "s"}); err != nil {
+		t.Fatalf("SetFlowState: %v", err)
+	}
 
 	cookies := w.Result().Cookies()
 	if len(cookies) != 1 {
@@ -737,7 +743,9 @@ func TestExchange(t *testing.T) {
 		if r.Method != "POST" {
 			t.Errorf("method = %s, want POST", r.Method)
 		}
-		r.ParseForm()
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("ParseForm: %v", err)
+		}
 		if r.FormValue("code") != "authcode" {
 			t.Errorf("code = %q", r.FormValue("code"))
 		}
@@ -745,12 +753,14 @@ func TestExchange(t *testing.T) {
 			t.Errorf("code_verifier = %q", r.FormValue("code_verifier"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		if err := json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  "new-at",
 			"token_type":    "Bearer",
 			"refresh_token": "new-rt",
 			"expires_in":    3600,
-		})
+		}); err != nil {
+			t.Errorf("encode token response: %v", err)
+		}
 	}))
 	defer ts.Close()
 
@@ -779,7 +789,9 @@ func TestExchange(t *testing.T) {
 
 func TestRefreshToken(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.ParseForm()
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("ParseForm: %v", err)
+		}
 		if r.FormValue("grant_type") != "refresh_token" {
 			t.Errorf("grant_type = %q", r.FormValue("grant_type"))
 		}
@@ -787,12 +799,14 @@ func TestRefreshToken(t *testing.T) {
 			t.Errorf("refresh_token = %q", r.FormValue("refresh_token"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		if err := json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  "refreshed-at",
 			"token_type":    "Bearer",
 			"refresh_token": "new-rt",
 			"expires_in":    3600,
-		})
+		}); err != nil {
+			t.Errorf("encode token response: %v", err)
+		}
 	}))
 	defer ts.Close()
 

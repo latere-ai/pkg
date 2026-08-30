@@ -254,11 +254,13 @@ func TestHandleCallback_StateMismatch(t *testing.T) {
 
 	// Set up a flow state with a known state.
 	wSetup := httptest.NewRecorder()
-	c.SetFlowState(wSetup, &FlowState{
+	if err := c.SetFlowState(wSetup, &FlowState{
 		CodeVerifier: "v",
 		State:        "correct-state",
 		ReturnTo:     "/",
-	})
+	}); err != nil {
+		t.Fatalf("SetFlowState: %v", err)
+	}
 
 	r := httptest.NewRequest("GET", "/callback?code=abc&state=wrong-state", nil)
 	for _, ck := range wSetup.Result().Cookies() {
@@ -279,12 +281,14 @@ func TestHandleCallback_Success(t *testing.T) {
 	jwt := makeJWT(map[string]string{"sub": "user1", "email": "user@test.com"})
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		if err := json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  jwt,
 			"token_type":    "Bearer",
 			"refresh_token": "rt-123",
 			"expires_in":    3600,
-		})
+		}); err != nil {
+			t.Errorf("encode token response: %v", err)
+		}
 	}))
 	defer ts.Close()
 
@@ -298,11 +302,13 @@ func TestHandleCallback_Success(t *testing.T) {
 
 	// Set up flow state.
 	wSetup := httptest.NewRecorder()
-	c.SetFlowState(wSetup, &FlowState{
+	if err := c.SetFlowState(wSetup, &FlowState{
 		CodeVerifier: "verifier",
 		State:        "test-state",
 		ReturnTo:     "/dashboard",
-	})
+	}); err != nil {
+		t.Fatalf("SetFlowState: %v", err)
+	}
 
 	r := httptest.NewRequest("GET", "/callback?code=authcode&state=test-state", nil)
 	for _, ck := range wSetup.Result().Cookies() {
@@ -351,7 +357,9 @@ func TestHandleCallback_ExchangeError(t *testing.T) {
 	// Token server returns an error.
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"error":"invalid_grant"}`))
+		if _, err := w.Write([]byte(`{"error":"invalid_grant"}`)); err != nil {
+			t.Errorf("write token endpoint response: %v", err)
+		}
 	}))
 	defer ts.Close()
 
@@ -364,11 +372,13 @@ func TestHandleCallback_ExchangeError(t *testing.T) {
 	c := New(cfg)
 
 	wSetup := httptest.NewRecorder()
-	c.SetFlowState(wSetup, &FlowState{
+	if err := c.SetFlowState(wSetup, &FlowState{
 		CodeVerifier: "v",
 		State:        "s",
 		ReturnTo:     "/",
-	})
+	}); err != nil {
+		t.Fatalf("SetFlowState: %v", err)
+	}
 
 	r := httptest.NewRequest("GET", "/callback?code=bad&state=s", nil)
 	for _, ck := range wSetup.Result().Cookies() {
@@ -388,11 +398,13 @@ func TestHandleCallback_BadJWT(t *testing.T) {
 	// Token server returns a non-JWT access token.
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		if err := json.NewEncoder(w).Encode(map[string]any{
 			"access_token": "not-a-jwt",
 			"token_type":   "Bearer",
 			"expires_in":   3600,
-		})
+		}); err != nil {
+			t.Errorf("encode token response: %v", err)
+		}
 	}))
 	defer ts.Close()
 
@@ -405,11 +417,13 @@ func TestHandleCallback_BadJWT(t *testing.T) {
 	c := New(cfg)
 
 	wSetup := httptest.NewRecorder()
-	c.SetFlowState(wSetup, &FlowState{
+	if err := c.SetFlowState(wSetup, &FlowState{
 		CodeVerifier: "v",
 		State:        "s",
 		ReturnTo:     "/",
-	})
+	}); err != nil {
+		t.Fatalf("SetFlowState: %v", err)
+	}
 
 	r := httptest.NewRequest("GET", "/callback?code=x&state=s", nil)
 	for _, ck := range wSetup.Result().Cookies() {
@@ -432,7 +446,9 @@ func TestHandleLogout(t *testing.T) {
 
 	// Set a session first.
 	wSetup := httptest.NewRecorder()
-	c.SetSession(wSetup, &Session{AccessToken: "tok"})
+	if err := c.SetSession(wSetup, &Session{AccessToken: "tok"}); err != nil {
+		t.Fatalf("SetSession: %v", err)
+	}
 
 	r := httptest.NewRequest("GET", "/logout", nil)
 	r.Host = "app.example.com"
@@ -525,10 +541,12 @@ func TestUserFromRequest_ValidToken(t *testing.T) {
 
 	jwt := makeJWT(map[string]string{"sub": "u1", "email": "a@b.com"})
 	wSetup := httptest.NewRecorder()
-	c.SetSession(wSetup, &Session{
+	if err := c.SetSession(wSetup, &Session{
 		AccessToken: jwt,
 		Expiry:      time.Now().Add(1 * time.Hour),
-	})
+	}); err != nil {
+		t.Fatalf("SetSession: %v", err)
+	}
 
 	r := httptest.NewRequest("GET", "/", nil)
 	for _, ck := range wSetup.Result().Cookies() {
@@ -549,12 +567,14 @@ func TestUserFromRequest_SessionWindowElapsedClearsSession(t *testing.T) {
 	c := testClient(t)
 	jwt := makeJWT(map[string]string{"sub": "u1", "email": "a@b.com"})
 	wSetup := httptest.NewRecorder()
-	c.SetSession(wSetup, &Session{
+	if err := c.SetSession(wSetup, &Session{
 		AccessToken:   jwt,
 		RefreshToken:  "rt", // still refreshable
 		Expiry:        time.Now().Add(time.Hour),
 		SessionExpiry: time.Now().Add(-time.Minute), // but the window lapsed
-	})
+	}); err != nil {
+		t.Fatalf("SetSession: %v", err)
+	}
 	r := httptest.NewRequest("GET", "/", nil)
 	for _, ck := range wSetup.Result().Cookies() {
 		r.AddCookie(ck)
@@ -575,12 +595,14 @@ func TestUserFromRequest_ExpiredTokenRefreshSuccess(t *testing.T) {
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		if err := json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  newJWT,
 			"token_type":    "Bearer",
 			"refresh_token": "new-rt",
 			"expires_in":    3600,
-		})
+		}); err != nil {
+			t.Errorf("encode token response: %v", err)
+		}
 	}))
 	defer ts.Close()
 
@@ -594,11 +616,13 @@ func TestUserFromRequest_ExpiredTokenRefreshSuccess(t *testing.T) {
 
 	oldJWT := makeJWT(map[string]string{"sub": "u1", "email": "old@test.com"})
 	wSetup := httptest.NewRecorder()
-	c.SetSession(wSetup, &Session{
+	if err := c.SetSession(wSetup, &Session{
 		AccessToken:  oldJWT,
 		RefreshToken: "old-rt",
 		Expiry:       time.Now().Add(-1 * time.Hour), // expired
-	})
+	}); err != nil {
+		t.Fatalf("SetSession: %v", err)
+	}
 
 	r := httptest.NewRequest("GET", "/", nil)
 	for _, ck := range wSetup.Result().Cookies() {
@@ -629,7 +653,9 @@ func TestUserFromRequest_ExpiredTokenRefreshSuccess(t *testing.T) {
 func TestUserFromRequest_ExpiredTokenRefreshFail(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(`{"error":"invalid_grant"}`))
+		if _, err := w.Write([]byte(`{"error":"invalid_grant"}`)); err != nil {
+			t.Errorf("write token endpoint response: %v", err)
+		}
 	}))
 	defer ts.Close()
 
@@ -643,11 +669,13 @@ func TestUserFromRequest_ExpiredTokenRefreshFail(t *testing.T) {
 
 	jwt := makeJWT(map[string]string{"sub": "u1", "email": "a@b.com"})
 	wSetup := httptest.NewRecorder()
-	c.SetSession(wSetup, &Session{
+	if err := c.SetSession(wSetup, &Session{
 		AccessToken:  jwt,
 		RefreshToken: "bad-rt",
 		Expiry:       time.Now().Add(-1 * time.Hour),
-	})
+	}); err != nil {
+		t.Fatalf("SetSession: %v", err)
+	}
 
 	r := httptest.NewRequest("GET", "/", nil)
 	for _, ck := range wSetup.Result().Cookies() {
@@ -670,11 +698,13 @@ func TestUserFromRequest_ExpiredNoRefreshToken(t *testing.T) {
 
 	jwt := makeJWT(map[string]string{"sub": "u1", "email": "a@b.com"})
 	wSetup := httptest.NewRecorder()
-	c.SetSession(wSetup, &Session{
+	if err := c.SetSession(wSetup, &Session{
 		AccessToken: jwt,
 		Expiry:      time.Now().Add(-1 * time.Hour),
 		// No refresh token.
-	})
+	}); err != nil {
+		t.Fatalf("SetSession: %v", err)
+	}
 
 	r := httptest.NewRequest("GET", "/", nil)
 	for _, ck := range wSetup.Result().Cookies() {
@@ -696,10 +726,12 @@ func TestUserFromRequest_BadJWT(t *testing.T) {
 	c := testClient(t)
 
 	wSetup := httptest.NewRecorder()
-	c.SetSession(wSetup, &Session{
+	if err := c.SetSession(wSetup, &Session{
 		AccessToken: "not-a-jwt",
 		Expiry:      time.Now().Add(1 * time.Hour),
-	})
+	}); err != nil {
+		t.Fatalf("SetSession: %v", err)
+	}
 
 	r := httptest.NewRequest("GET", "/", nil)
 	for _, ck := range wSetup.Result().Cookies() {
@@ -739,12 +771,14 @@ func TestHandleCallback_SetSessionError(t *testing.T) {
 	jwt := makeJWT(map[string]string{"sub": "u1", "email": "a@b.com"})
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		if err := json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  jwt,
 			"token_type":    "Bearer",
 			"refresh_token": "rt",
 			"expires_in":    3600,
-		})
+		}); err != nil {
+			t.Errorf("encode token response: %v", err)
+		}
 	}))
 	defer ts.Close()
 
@@ -757,11 +791,13 @@ func TestHandleCallback_SetSessionError(t *testing.T) {
 	c := New(cfg)
 
 	wSetup := httptest.NewRecorder()
-	c.SetFlowState(wSetup, &FlowState{
+	if err := c.SetFlowState(wSetup, &FlowState{
 		CodeVerifier: "v",
 		State:        "s",
 		ReturnTo:     "/",
-	})
+	}); err != nil {
+		t.Fatalf("SetFlowState: %v", err)
+	}
 
 	// Break encryption after the flow state is set up.
 	orig := aesGCMEncrypt
@@ -791,11 +827,13 @@ func TestHandleCallback_UnsafeReturnTo(t *testing.T) {
 	jwt := makeJWT(map[string]string{"sub": "u1", "email": "a@b.com"})
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		if err := json.NewEncoder(w).Encode(map[string]any{
 			"access_token": jwt,
 			"token_type":   "Bearer",
 			"expires_in":   3600,
-		})
+		}); err != nil {
+			t.Errorf("encode token response: %v", err)
+		}
 	}))
 	defer ts.Close()
 
@@ -808,11 +846,13 @@ func TestHandleCallback_UnsafeReturnTo(t *testing.T) {
 	c := New(cfg)
 
 	wSetup := httptest.NewRecorder()
-	c.SetFlowState(wSetup, &FlowState{
+	if err := c.SetFlowState(wSetup, &FlowState{
 		CodeVerifier: "v",
 		State:        "s",
 		ReturnTo:     "https://evil.com", // unsafe
-	})
+	}); err != nil {
+		t.Fatalf("SetFlowState: %v", err)
+	}
 
 	r := httptest.NewRequest("GET", "/callback?code=x&state=s", nil)
 	for _, ck := range wSetup.Result().Cookies() {
@@ -834,11 +874,13 @@ func TestUserFromRequest_RefreshPersistError(t *testing.T) {
 	newJWT := makeJWT(map[string]string{"sub": "u1", "email": "a@b.com"})
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		if err := json.NewEncoder(w).Encode(map[string]any{
 			"access_token": newJWT,
 			"token_type":   "Bearer",
 			"expires_in":   3600,
-		})
+		}); err != nil {
+			t.Errorf("encode token response: %v", err)
+		}
 	}))
 	defer ts.Close()
 
@@ -852,11 +894,13 @@ func TestUserFromRequest_RefreshPersistError(t *testing.T) {
 
 	oldJWT := makeJWT(map[string]string{"sub": "u1", "email": "old@test.com"})
 	wSetup := httptest.NewRecorder()
-	c.SetSession(wSetup, &Session{
+	if err := c.SetSession(wSetup, &Session{
 		AccessToken:  oldJWT,
 		RefreshToken: "rt",
 		Expiry:       time.Now().Add(-1 * time.Hour),
-	})
+	}); err != nil {
+		t.Fatalf("SetSession: %v", err)
+	}
 
 	// Break encryption so SetSession fails during refresh persist.
 	orig := aesGCMEncrypt
@@ -888,7 +932,7 @@ func FuzzDecodeJWTClaims(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, token string) {
 		// Should never panic.
-		decodeJWTClaims(token)
+		_, _ = decodeJWTClaims(token)
 	})
 }
 

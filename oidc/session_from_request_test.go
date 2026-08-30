@@ -15,14 +15,18 @@ import (
 func refreshClient(t *testing.T, newAccessToken string) *Client {
 	t.Helper()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.ParseForm()
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("ParseForm: %v", err)
+		}
 		if r.FormValue("grant_type") != "refresh_token" {
 			t.Errorf("grant_type = %q, want refresh_token", r.FormValue("grant_type"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		if err := json.NewEncoder(w).Encode(map[string]any{
 			"access_token": newAccessToken, "token_type": "Bearer", "expires_in": 3600,
-		})
+		}); err != nil {
+			t.Errorf("encode token response: %v", err)
+		}
 	}))
 	t.Cleanup(ts.Close)
 	c := New(Config{
@@ -197,7 +201,9 @@ func TestSessionFromRequestRefreshFailure(t *testing.T) {
 	// Token server that rejects the refresh.
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"error":"invalid_grant"}`))
+		if _, err := w.Write([]byte(`{"error":"invalid_grant"}`)); err != nil {
+			t.Errorf("write token endpoint response: %v", err)
+		}
 	}))
 	defer ts.Close()
 	c := New(Config{

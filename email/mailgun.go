@@ -43,7 +43,7 @@ func (m *mailgunSender) Send(ctx context.Context, to, subject, htmlBody string) 
 	if err != nil {
 		return fmt.Errorf("mailgun request: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("mailgun returned %d", resp.StatusCode)

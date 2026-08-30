@@ -74,7 +74,7 @@ func (c *TokenInfoClient) Lookup(ctx context.Context, rawToken string) (*TokenIn
 	if err != nil {
 		return nil, fmt.Errorf("tokeninfo http: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		return nil, ErrRevoked
 	}

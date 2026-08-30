@@ -104,7 +104,7 @@ func FuzzSlug(f *testing.F) {
 		}
 		for i := 0; i < len(got); i++ {
 			c := got[i]
-			if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-') {
+			if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
 				t.Fatalf("Slug(%q, %d) = %q, which contains %q", s, maxLen, got, c)
 			}
 		}

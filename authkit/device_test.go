@@ -39,7 +39,9 @@ func newDeviceTestClient(t *testing.T, ds *deviceServer) (*oidc.Client, *httptes
 		if ds.deviceAuthStatus != 0 {
 			w.WriteHeader(ds.deviceAuthStatus)
 		}
-		fmt.Fprint(w, ds.deviceAuthBody)
+		if _, err := fmt.Fprint(w, ds.deviceAuthBody); err != nil {
+			t.Errorf("write device auth body: %v", err)
+		}
 	})
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
 		ds.hits.token++
@@ -47,7 +49,9 @@ func newDeviceTestClient(t *testing.T, ds *deviceServer) (*oidc.Client, *httptes
 		if ds.tokenStatus != 0 {
 			w.WriteHeader(ds.tokenStatus)
 		}
-		fmt.Fprint(w, ds.tokenBody)
+		if _, err := fmt.Fprint(w, ds.tokenBody); err != nil {
+			t.Errorf("write token body: %v", err)
+		}
 	})
 	srv := httptest.NewServer(mux)
 

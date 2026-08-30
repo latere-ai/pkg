@@ -201,7 +201,7 @@ func TestStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 	if !strings.Contains(gotBody, `"stream":true`) {
 		t.Fatalf("Stream must force stream on: %s", gotBody)
 	}
@@ -257,7 +257,7 @@ func TestStreamMidStreamError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 	if _, err := st.Next(); err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +315,7 @@ func TestGenerateBodyReadError(t *testing.T) {
 			t.Fatal("server does not support hijacking")
 		}
 		conn, _, _ := hj.Hijack()
-		conn.Close()
+		_ = conn.Close()
 	})
 	if _, err := New(srv.URL).Generate(context.Background(), &Request{Model: "m", Messages: []Message{UserText("x")}}); err == nil {
 		t.Fatal("want body read error")

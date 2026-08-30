@@ -41,7 +41,7 @@ func (c *Client) FetchOrgs(ctx context.Context, accessToken string) ([]OrgEntry,
 	if err != nil {
 		return nil, fmt.Errorf("call /me/orgs: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode/100 != 2 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))

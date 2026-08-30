@@ -252,7 +252,7 @@ func TestRunServer_ListenError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	t.Cleanup(func() { ln.Close() })
+	t.Cleanup(func() { _ = ln.Close() })
 
 	srv := &http.Server{Addr: ln.Addr().String()}
 	err = RunServer(context.Background(), srv, time.Second, nil)

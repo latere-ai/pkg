@@ -85,9 +85,9 @@ func (d *DeviceCodeClient) Login(ctx context.Context) error {
 	// so asking the user to "enter the code" too is redundant and confusing.
 	// Only the bare-URI fallback needs manual code entry.
 	if da.VerificationURIComplete != "" {
-		fmt.Fprintf(out, "\nTo sign in, open this link (code %s is already filled in):\n\n  %s\n\nWaiting for you to approve in the browser...\n", da.UserCode, da.VerificationURIComplete)
+		_, _ = fmt.Fprintf(out, "\nTo sign in, open this link (code %s is already filled in):\n\n  %s\n\nWaiting for you to approve in the browser...\n", da.UserCode, da.VerificationURIComplete)
 	} else {
-		fmt.Fprintf(out, "\nTo sign in, visit:\n\n  %s\n\nand enter this code:\n\n  %s\n\nWaiting for you to approve...\n", da.VerificationURI, da.UserCode)
+		_, _ = fmt.Fprintf(out, "\nTo sign in, visit:\n\n  %s\n\nand enter this code:\n\n  %s\n\nWaiting for you to approve...\n", da.VerificationURI, da.UserCode)
 	}
 
 	openFn := d.OpenBrowser

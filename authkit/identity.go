@@ -143,7 +143,7 @@ func Middleware(next http.Handler, a Authenticator) http.Handler {
 type Chain []Authenticator
 
 func (c Chain) Authenticate(r *http.Request) (Identity, error) {
-	var lastErr error = ErrUnauthenticated
+	lastErr := ErrUnauthenticated
 	for _, a := range c {
 		id, err := a.Authenticate(r)
 		if err == nil {

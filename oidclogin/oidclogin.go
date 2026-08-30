@@ -225,7 +225,7 @@ func fetchDiscovery(ctx context.Context, hc *http.Client, issuer string) (*disco
 	if err != nil {
 		return nil, fmt.Errorf("oidclogin: discover %q: %w", issuer, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("oidclogin: discover %q: status %d", issuer, resp.StatusCode)
 	}

@@ -146,16 +146,20 @@ func TestHandleCallbackPopulatesSupersetFields(t *testing.T) {
 	})
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		if err := json.NewEncoder(w).Encode(map[string]any{
 			"access_token": jwt, "token_type": "Bearer", "refresh_token": "rt-123", "expires_in": 3600,
-		})
+		}); err != nil {
+			t.Errorf("encode token response: %v", err)
+		}
 	}))
 	defer ts.Close()
 
 	c := New(Config{AuthURL: ts.URL, ClientID: "cid", ClientSecret: "sec", RedirectURL: "https://app.example.com/callback"})
 
 	wSetup := httptest.NewRecorder()
-	c.SetFlowState(wSetup, &FlowState{CodeVerifier: "v", State: "s", ReturnTo: "/dashboard"})
+	if err := c.SetFlowState(wSetup, &FlowState{CodeVerifier: "v", State: "s", ReturnTo: "/dashboard"}); err != nil {
+		t.Fatalf("SetFlowState: %v", err)
+	}
 	r := httptest.NewRequest("GET", "/callback?code=authcode&state=s", nil)
 	for _, ck := range wSetup.Result().Cookies() {
 		r.AddCookie(ck)

@@ -360,7 +360,7 @@ func (c *Client) FetchUserInfoContext(ctx context.Context, accessToken string) (
 	if err != nil {
 		return nil, fmt.Errorf("userinfo request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("userinfo returned %d", resp.StatusCode)

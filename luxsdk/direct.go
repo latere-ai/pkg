@@ -149,7 +149,7 @@ func (d *Direct) Generate(ctx context.Context, req *Request) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("lux: reading response: %w", err)
@@ -179,7 +179,7 @@ func (d *Direct) Stream(ctx context.Context, req *Request) (*Stream, error) {
 		return nil, err
 	}
 	if mt, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type")); mt != "text/event-stream" {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		return nil, fmt.Errorf("lux: expected an event stream, got %q", resp.Header.Get("Content-Type"))
 	}
 	dec := backend.NewEventDecoder(resp.Body)
@@ -228,7 +228,7 @@ func (d *Direct) call(ctx context.Context, req *Request, stream bool) (*ir.Reque
 		return nil, nil, nil, fmt.Errorf("lux: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		return nil, nil, nil, decodeError(resp)
 	}
 	return ireq, backend, resp, nil

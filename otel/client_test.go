@@ -22,7 +22,7 @@ func TestTransport_NilBaseUsesDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("status %d", resp.StatusCode)
 	}
@@ -47,7 +47,7 @@ func TestTransport_WrapsCustomBase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if !base.called {
 		t.Fatal("custom base transport was not invoked")
 	}
@@ -64,5 +64,5 @@ func TestHTTPClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }

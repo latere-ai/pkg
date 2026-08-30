@@ -116,7 +116,9 @@ func Setup(ctx context.Context, serviceName, serviceVersion string) func() {
 		return func() {
 			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			tp.Shutdown(shutCtx)
+			if err := tp.Shutdown(shutCtx); err != nil {
+				log.Printf("telemetry: trace provider shutdown: %v", err)
+			}
 		}
 	}
 
@@ -131,7 +133,11 @@ func Setup(ctx context.Context, serviceName, serviceVersion string) func() {
 	return func() {
 		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		tp.Shutdown(shutCtx)
-		mp.Shutdown(shutCtx)
+		if err := tp.Shutdown(shutCtx); err != nil {
+			log.Printf("telemetry: trace provider shutdown: %v", err)
+		}
+		if err := mp.Shutdown(shutCtx); err != nil {
+			log.Printf("telemetry: meter provider shutdown: %v", err)
+		}
 	}
 }
