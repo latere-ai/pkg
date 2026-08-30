@@ -315,7 +315,7 @@ func TestStreamRoundTrip(t *testing.T) {
 	var got []ir.Event
 	for {
 		ev, err := dec.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -392,7 +392,7 @@ func TestEventDecoderTruncatedStream(t *testing.T) {
 	for {
 		ev, err := dec.Next()
 		if err != nil {
-			if err != io.ErrUnexpectedEOF {
+			if !errors.Is(err, io.ErrUnexpectedEOF) {
 				t.Fatalf("truncated stream (last event %v) reported as %v; want io.ErrUnexpectedEOF", last, err)
 			}
 			break
@@ -413,7 +413,7 @@ func TestEventDecoderCompleteStreamEOF(t *testing.T) {
 	if _, err := dec.Next(); err != nil {
 		t.Fatalf("message_stop: %v", err)
 	}
-	if _, err := dec.Next(); err != io.EOF {
+	if _, err := dec.Next(); !errors.Is(err, io.EOF) {
 		t.Fatalf("after message_stop: got %v, want io.EOF", err)
 	}
 }
@@ -439,7 +439,7 @@ func TestStreamReaderSkipsUnknownFrames(t *testing.T) {
 	if stop.Type != ir.EventMessageStop {
 		t.Fatalf("bad event: %#v", stop)
 	}
-	if _, err := r.Next(); err != io.EOF {
+	if _, err := r.Next(); !errors.Is(err, io.EOF) {
 		t.Fatalf("want EOF, got %v", err)
 	}
 }

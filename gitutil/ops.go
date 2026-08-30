@@ -2,6 +2,7 @@ package gitutil
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -52,8 +53,8 @@ func RebaseOntoDefault(repoPath, worktreePath string) error {
 		cmdexec.Git(worktreePath, "rebase", "--abort"),
 	)
 	if txErr := tx.Run(); txErr != nil {
-		te, ok := txErr.(*cmdexec.TxError)
-		if !ok || te.Step == nil {
+		var te *cmdexec.TxError
+		if !errors.As(txErr, &te) || te.Step == nil {
 			return txErr
 		}
 		out := te.Step.Output
@@ -125,7 +126,7 @@ func hasRebaseOrMergeState(worktreePath string) (bool, error) {
 		if err != nil {
 			continue
 		}
-		p := strings.TrimSpace(string(out))
+		p := strings.TrimSpace(out)
 		if p == "" {
 			continue
 		}
@@ -192,8 +193,15 @@ func FFMerge(repoPath, branchName string) error {
 	tx.Add(cmdexec.Git(repoPath, "merge", "--ff-only", branchName))
 
 	if txErr := tx.Run(); txErr != nil {
-		te, ok := txErr.(*cmdexec.TxError)
-		if !ok || te.Step == nil {
+		// Only a *TxError carries the per-step detail this classification
+		// needs. Anything else is an unrecognised failure and must surface as
+		// one: reporting it as a successful merge would leave the caller
+		// believing the branch had landed.
+		var te *cmdexec.TxError
+		if !errors.As(txErr, &te) {
+			return fmt.Errorf("git ff-merge %s into %s in %s: %w", branchName, defBranch, repoPath, txErr)
+		}
+		if te.Step == nil {
 			// TxError without a Step means only deferred commands (stash pop)
 			// failed. The merge itself succeeded, so log and return nil.
 			slog.Default().With("component", "git").Debug("ff-merge defer error", "repo", repoPath, "error", txErr)
@@ -220,7 +228,7 @@ func CommitsBehind(repoPath, worktreePath string) (int, error) {
 		// No resolvable ref for the default branch (e.g. empty repo with no
 		// commits or no remote configured). The worktree cannot be behind a
 		// branch that does not exist yet, so report 0.
-		return 0, nil
+		return 0, nil //nolint:nilerr // an unresolvable default branch means zero commits behind, not a failure
 	}
 	out, err := cmdexec.Git(worktreePath, "rev-list", "--count", "HEAD.."+defHash).Output()
 	if err != nil {

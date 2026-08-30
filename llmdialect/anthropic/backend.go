@@ -7,6 +7,7 @@ package anthropic
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 
@@ -238,7 +239,7 @@ func encodeBackendBlock(blk ir.Block, role ir.Role, req *ir.Request) (map[string
 	case ir.BlockImage:
 		return withCache(map[string]any{"type": "image", "source": encodeImageSource(blk.Image)}), true, nil
 	case ir.BlockToolUse:
-		args := json.RawMessage(blk.ToolUse.Args)
+		args := blk.ToolUse.Args
 		if len(args) == 0 {
 			args = json.RawMessage("{}")
 		}
@@ -370,7 +371,7 @@ func (d *backendEventDecoder) Next() (ir.Event, error) {
 			return ir.Event{}, io.EOF
 		}
 		frame, err := d.r.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			// Upstream closed early; still emit a well-formed tail.
 			d.finish()
 			continue

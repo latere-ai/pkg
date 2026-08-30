@@ -102,7 +102,7 @@ func (tx *Tx) run(ctx context.Context) error {
 		cmd := step.cmd
 		// Inherit the caller's context only when the step doesn't have its own,
 		// so per-step timeouts are preserved.
-		if cmd.ctx == nil {
+		if !cmd.ctxSet {
 			cmd = cmd.WithContext(ctx)
 		}
 		out, err := cmd.Combined()
@@ -113,10 +113,12 @@ func (tx *Tx) run(ctx context.Context) error {
 		}
 	}
 
-	// Rollbacks and defers use context.Background() so they complete even
-	// when the caller's context is cancelled (e.g. server shutdown). Cleanup
-	// operations like "rebase --abort" or "stash pop" must run regardless.
-	cleanupCtx := context.Background()
+	// Rollbacks and defers detach from cancellation so they complete even when
+	// the caller's context is already cancelled (e.g. server shutdown):
+	// "rebase --abort" or "stash pop" must run regardless. WithoutCancel keeps
+	// the caller's values (deadlines aside), so cleanup stays attributable to
+	// the request that started the transaction.
+	cleanupCtx := context.WithoutCancel(ctx)
 
 	var rollbackErrors []error
 	if failedAt >= 0 {
@@ -125,7 +127,7 @@ func (tx *Tx) run(ctx context.Context) error {
 			if rb == nil {
 				continue
 			}
-			if rb.ctx == nil {
+			if !rb.ctxSet {
 				rb = rb.WithContext(cleanupCtx)
 			}
 			if _, err := rb.Combined(); err != nil {
@@ -136,7 +138,7 @@ func (tx *Tx) run(ctx context.Context) error {
 
 	var deferErrors []error
 	for i, d := range slices.Backward(tx.defers) {
-		if d.ctx == nil {
+		if !d.ctxSet {
 			d = d.WithContext(cleanupCtx)
 		}
 		if _, err := d.Combined(); err != nil {

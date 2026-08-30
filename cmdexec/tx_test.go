@@ -211,7 +211,7 @@ func TestStepError_ErrorAndUnwrap(t *testing.T) {
 	if got := se.Error(); got != "step 3 failed: exec failed" {
 		t.Fatalf("StepError.Error() = %q", got)
 	}
-	if se.Unwrap() != inner {
+	if !errors.Is(se.Unwrap(), inner) {
 		t.Fatal("StepError.Unwrap() should return inner error")
 	}
 }

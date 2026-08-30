@@ -10,12 +10,20 @@ import (
 type Cmd struct {
 	name string
 	args []string
-	ctx  context.Context
+	// ctx bounds the command. The constructors fill it with
+	// context.Background(), so building a command never has to invent one and
+	// there is a single spawn path for cancellable and uncancellable commands
+	// alike. ctxSet records whether a caller supplied it, which is what [Tx]
+	// uses to tell a step that brought its own deadline from one that should
+	// inherit the transaction's.
+	ctx    context.Context
+	ctxSet bool
 }
 
-// New creates a Cmd for the given binary and arguments.
+// New creates a Cmd for the given binary and arguments. Without a following
+// WithContext the command is not cancellable.
 func New(name string, args ...string) *Cmd {
-	return &Cmd{name: name, args: args}
+	return &Cmd{name: name, args: args, ctx: context.Background()}
 }
 
 // Git creates a Cmd for `git -C <dir> <args...>`.
@@ -23,23 +31,20 @@ func Git(dir string, args ...string) *Cmd {
 	full := make([]string, 0, 2+len(args))
 	full = append(full, "-C", dir)
 	full = append(full, args...)
-	return &Cmd{name: "git", args: full}
+	return &Cmd{name: "git", args: full, ctx: context.Background()}
 }
 
 // WithContext returns a copy of c that uses ctx for cancellation/timeout.
 func (c *Cmd) WithContext(ctx context.Context) *Cmd {
 	cp := *c
 	cp.ctx = ctx
+	cp.ctxSet = true
 	return &cp
 }
 
-// build constructs the underlying os/exec.Cmd, using CommandContext if a
-// context was set via WithContext, or plain Command otherwise.
+// build constructs the underlying os/exec.Cmd.
 func (c *Cmd) build() *exec.Cmd {
-	if c.ctx != nil {
-		return exec.CommandContext(c.ctx, c.name, c.args...)
-	}
-	return exec.Command(c.name, c.args...)
+	return exec.CommandContext(c.ctx, c.name, c.args...)
 }
 
 // Run executes the command and discards output. Returns nil on success.

@@ -2,6 +2,7 @@ package jwtauth
 
 import (
 	"encoding/base64"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -53,7 +54,7 @@ func TestParseUnverified_Malformed(t *testing.T) {
 	}
 	for name, tok := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := ParseUnverified(tok); err != ErrMalformedToken {
+			if _, err := ParseUnverified(tok); !errors.Is(err, ErrMalformedToken) {
 				t.Errorf("err = %v, want ErrMalformedToken", err)
 			}
 		})
@@ -61,7 +62,7 @@ func TestParseUnverified_Malformed(t *testing.T) {
 }
 
 func TestParseUnverified_EmptySub(t *testing.T) {
-	if _, err := ParseUnverified(unsignedToken(map[string]any{"email": "x@y.z"})); err != ErrMalformedToken {
+	if _, err := ParseUnverified(unsignedToken(map[string]any{"email": "x@y.z"})); !errors.Is(err, ErrMalformedToken) {
 		t.Errorf("err = %v, want ErrMalformedToken (empty sub)", err)
 	}
 }

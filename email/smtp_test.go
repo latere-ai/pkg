@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"errors"
 	"math/big"
 	"net"
 	"strings"
@@ -152,7 +153,7 @@ func runSMTPMock(t *testing.T, ln net.Listener, opts mockOpts) <-chan string {
 		}
 		defer conn.Close() //nolint:errcheck
 
-		var c = net.Conn(conn)
+		c := conn
 		readLine := func() (string, error) {
 			buf := make([]byte, 4096)
 			n, err := c.Read(buf)
@@ -311,7 +312,7 @@ func TestSMTP_STARTTLS_HappyPath(t *testing.T) {
 	s, dataCh := newTestSTARTTLSSender(t, mockOpts{}, false)
 
 	msg := []byte("Subject: hello\r\n\r\nbody text")
-	if err := s.sendSTARTTLS("user@example.com", msg); err != nil {
+	if err := s.sendSTARTTLS(t.Context(), "user@example.com", msg); err != nil {
 		t.Fatalf("sendSTARTTLS: %v", err)
 	}
 	select {
@@ -329,7 +330,7 @@ func TestSMTP_STARTTLS_WithAuth(t *testing.T) {
 	if s.auth == nil {
 		t.Fatal("expected auth to be configured")
 	}
-	if err := s.sendSTARTTLS("user@example.com", []byte("Subject: a\r\n\r\nb")); err != nil {
+	if err := s.sendSTARTTLS(t.Context(), "user@example.com", []byte("Subject: a\r\n\r\nb")); err != nil {
 		t.Fatalf("sendSTARTTLS with auth: %v", err)
 	}
 	select {
@@ -374,7 +375,7 @@ func TestSMTP_STARTTLS_ErrorBranches(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			withAuth := tt.opts.failAuth
 			s, _ := newTestSTARTTLSSender(t, tt.opts, withAuth)
-			err := s.sendSTARTTLS("user@example.com", []byte("Subject: x\r\n\r\nb"))
+			err := s.sendSTARTTLS(t.Context(), "user@example.com", []byte("Subject: x\r\n\r\nb"))
 			if err == nil {
 				t.Fatalf("expected error for %s", tt.name)
 			}
@@ -388,7 +389,7 @@ func TestSMTP_STARTTLS_ErrorBranches(t *testing.T) {
 func TestSMTP_ImplicitTLS_HappyPath(t *testing.T) {
 	s, dataCh := newTestImplicitTLSSender(t, mockOpts{}, false)
 	msg := []byte("Subject: implicit\r\n\r\nbody here")
-	if err := s.sendImplicitTLS("user@example.com", msg); err != nil {
+	if err := s.sendImplicitTLS(t.Context(), "user@example.com", msg); err != nil {
 		t.Fatalf("sendImplicitTLS: %v", err)
 	}
 	select {
@@ -403,7 +404,7 @@ func TestSMTP_ImplicitTLS_HappyPath(t *testing.T) {
 
 func TestSMTP_ImplicitTLS_WithAuth(t *testing.T) {
 	s, dataCh := newTestImplicitTLSSender(t, mockOpts{}, true)
-	if err := s.sendImplicitTLS("user@example.com", []byte("Subject: a\r\n\r\nb")); err != nil {
+	if err := s.sendImplicitTLS(t.Context(), "user@example.com", []byte("Subject: a\r\n\r\nb")); err != nil {
 		t.Fatalf("sendImplicitTLS with auth: %v", err)
 	}
 	select {
@@ -444,7 +445,7 @@ func TestSMTP_ImplicitTLS_ErrorBranches(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			withAuth := tt.opts.failAuth
 			s, _ := newTestImplicitTLSSender(t, tt.opts, withAuth)
-			err := s.sendImplicitTLS("user@example.com", []byte("Subject: x\r\n\r\nb"))
+			err := s.sendImplicitTLS(t.Context(), "user@example.com", []byte("Subject: x\r\n\r\nb"))
 			if err == nil {
 				t.Fatalf("expected error for %s", tt.name)
 			}
@@ -481,7 +482,38 @@ func TestSMTP_ImplicitTLS_NewClientFailure(t *testing.T) {
 	s, _ := newSMTPSender(&SMTPConfig{Host: host, Port: port, From: "noreply@example.com"})
 	s.implicit = true
 	s.rootCAs = pool
-	if err := s.sendImplicitTLS("user@example.com", []byte("Subject: x\r\n\r\nb")); err == nil {
+	if err := s.sendImplicitTLS(t.Context(), "user@example.com", []byte("Subject: x\r\n\r\nb")); err == nil {
 		t.Fatal("expected new client failure")
+	}
+}
+
+// TestSMTP_Send_CancelledContextAbortsDial proves the caller's context reaches
+// the dial on both transports. The listeners here would accept, so a send that
+// still fails can only have failed because the context said so; before the
+// dials took a context, an unreachable or silently hanging host blocked the
+// caller until the OS TCP timeout with no way to abandon it.
+func TestSMTP_Send_CancelledContextAbortsDial(t *testing.T) {
+	starttlsSender, _ := newTestSTARTTLSSender(t, mockOpts{}, false)
+	implicitSender, _ := newTestImplicitTLSSender(t, mockOpts{}, false)
+
+	tests := []struct {
+		name   string
+		sender *smtpSender
+	}{
+		{"starttls", starttlsSender},
+		{"implicit tls", implicitSender},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			err := tt.sender.Send(ctx, "user@example.com", "Subject", "<p>b</p>")
+			if err == nil {
+				t.Fatal("send with a cancelled context must fail")
+			}
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("err = %v, want it to wrap context.Canceled", err)
+			}
+		})
 	}
 }

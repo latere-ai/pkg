@@ -52,15 +52,16 @@ func rejectCRLF(field, value string) error {
 	return nil
 }
 
-// Send composes the message and delivers it. net/smtp has no context-aware
-// dial API, so ctx satisfies the Sender interface and nothing more — an
-// SMTP send is not cancellable here, and pretending otherwise would be worse
-// than saying so.
-func (s *smtpSender) Send(_ context.Context, to, subject, htmlBody string) error {
-	return s.send(to, subject, htmlBody)
+// Send composes the message and delivers it. ctx bounds the connect phase on
+// both transports: without it an unreachable or silently hanging SMTP host
+// blocks the caller until the OS TCP timeout, with no way to abandon it.
+// net/smtp itself takes no context, so the greeting read and the envelope
+// exchange after the connection is up remain uncancellable.
+func (s *smtpSender) Send(ctx context.Context, to, subject, htmlBody string) error {
+	return s.send(ctx, to, subject, htmlBody)
 }
 
-func (s *smtpSender) send(to, subject, htmlBody string) error {
+func (s *smtpSender) send(ctx context.Context, to, subject, htmlBody string) error {
 	addr, err := mail.ParseAddress(to)
 	if err != nil {
 		return fmt.Errorf("invalid recipient address: %w", err)
@@ -84,16 +85,24 @@ func (s *smtpSender) send(to, subject, htmlBody string) error {
 		htmlBody
 
 	if s.implicit {
-		return s.sendImplicitTLS(to, []byte(msg))
+		return s.sendImplicitTLS(ctx, to, []byte(msg))
 	}
-	return s.sendSTARTTLS(to, []byte(msg))
+	return s.sendSTARTTLS(ctx, to, []byte(msg))
 }
 
 // sendSTARTTLS connects on port 587 and upgrades to TLS via STARTTLS.
-func (s *smtpSender) sendSTARTTLS(to string, msg []byte) error {
-	c, err := smtp.Dial(s.addr)
+// smtp.Dial is not used because it dials without a context. Dialing separately
+// and handing the connection to smtp.NewClient is the same exchange with the
+// connect phase bounded by ctx.
+func (s *smtpSender) sendSTARTTLS(ctx context.Context, to string, msg []byte) error {
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", s.addr)
 	if err != nil {
 		return fmt.Errorf("smtp dial: %w", err)
+	}
+	c, err := smtp.NewClient(conn, s.host)
+	if err != nil {
+		conn.Close() //nolint:errcheck
+		return fmt.Errorf("smtp new client: %w", err)
 	}
 	defer c.Close() //nolint:errcheck
 
@@ -104,8 +113,9 @@ func (s *smtpSender) sendSTARTTLS(to string, msg []byte) error {
 }
 
 // sendImplicitTLS connects on port 465 with TLS from the start.
-func (s *smtpSender) sendImplicitTLS(to string, msg []byte) error {
-	conn, err := tls.Dial("tcp", s.addr, &tls.Config{ServerName: s.host, RootCAs: s.rootCAs})
+func (s *smtpSender) sendImplicitTLS(ctx context.Context, to string, msg []byte) error {
+	d := &tls.Dialer{Config: &tls.Config{ServerName: s.host, RootCAs: s.rootCAs}}
+	conn, err := d.DialContext(ctx, "tcp", s.addr)
 	if err != nil {
 		return fmt.Errorf("smtp tls dial: %w", err)
 	}

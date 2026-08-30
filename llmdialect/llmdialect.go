@@ -21,6 +21,7 @@
 package llmdialect
 
 import (
+	"errors"
 	"io"
 	"net/http"
 
@@ -122,7 +123,7 @@ func (t *Translator) Stream(dst io.Writer, src io.Reader) error {
 	flusher, _ := dst.(http.Flusher)
 	for {
 		ev, err := dec.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return nil
 		}
 		if err != nil {

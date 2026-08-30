@@ -151,7 +151,10 @@ func RunServer(ctx context.Context, srv *http.Server, timeout time.Duration, pre
 	case <-ctx.Done():
 	}
 
-	shutCtx, cancel := context.WithTimeout(context.Background(), timeout)
+	// ctx is already done here -- it is what released the select. WithoutCancel
+	// drops that cancellation while keeping the caller's values, so the
+	// shutdown gets its own budget and still carries request-scoped state.
+	shutCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
 	defer cancel()
 
 	var preErr error

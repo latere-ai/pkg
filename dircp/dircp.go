@@ -7,6 +7,7 @@
 package dircp
 
 import (
+	"context"
 	"io"
 	"io/fs"
 	"os"
@@ -20,7 +21,11 @@ import (
 // and falls back to a pure-Go walk on failure or on Windows.
 func Copy(src, dst string) error {
 	if runtime.GOOS != "windows" {
-		cmd := exec.Command("cp", "-a", src+"/.", dst)
+		// Copy carries no context, and neither does the CopyGo fallback it
+		// drops to, so there is nothing to cancel on either path. Background
+		// states that rather than implying a cancellation this API cannot
+		// honour.
+		cmd := exec.CommandContext(context.Background(), "cp", "-a", src+"/.", dst)
 		if err := cmd.Run(); err == nil {
 			return nil
 		}

@@ -41,7 +41,10 @@ func (c *Client) BuildMe(w http.ResponseWriter, r *http.Request) (*Me, error) {
 	}
 	sess, err := c.GetSession(r)
 	if err != nil || sess == nil {
-		return nil, nil // not authenticated
+		// An absent, unreadable or tampered session cookie is the documented
+		// "not signed in" result of this method, not a failure to report: the
+		// caller renders a logged-out page either way.
+		return nil, nil //nolint:nilerr // (nil, nil) is BuildMe's contract for an unauthenticated request
 	}
 
 	now := time.Now()
@@ -86,7 +89,11 @@ func (c *Client) BuildMeFromToken(ctx context.Context, accessToken string) (*Me,
 	}
 	claims, cerr := decodeJWTClaims(accessToken)
 	if cerr != nil {
-		return nil, nil
+		// A token this package cannot decode identifies nobody, which is the
+		// documented (nil, nil) case. Returning cerr would make an
+		// unauthenticated caller indistinguishable from a degraded one, and
+		// only the second warrants an error page.
+		return nil, nil //nolint:nilerr // (nil, nil) is BuildMeFromToken's contract for an undecodable token
 	}
 	me := &Me{Sub: claims.Sub, Email: claims.Email, OrgID: claims.OrgID}
 

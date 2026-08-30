@@ -2,6 +2,7 @@ package openairesp
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"reflect"
 	"strings"
@@ -229,7 +230,7 @@ func TestBackendEventDecoder(t *testing.T) {
 	var usage *ir.Usage
 	for {
 		ev, err := dec.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

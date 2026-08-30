@@ -2,6 +2,7 @@ package openaichat
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"reflect"
 	"slices"
@@ -398,7 +399,7 @@ func drain(t *testing.T, stream string) []ir.Event {
 	var out []ir.Event
 	for {
 		ev, err := dec.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return out
 		}
 		if err != nil {

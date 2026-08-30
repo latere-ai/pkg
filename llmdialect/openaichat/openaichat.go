@@ -12,6 +12,7 @@ package openaichat
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -534,7 +535,7 @@ func (d *EventDecoder) Next() (ir.Event, error) {
 			return ir.Event{}, io.EOF
 		}
 		frame, err := d.r.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			// Upstream closed without [DONE] (some runtimes do); still
 			// emit a well-formed tail.
 			d.finish()

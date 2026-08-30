@@ -96,7 +96,7 @@ type migrator interface {
 // the migrate-owned connection pool is never leaked on a failed startup.
 func runUp(m migrator) error {
 	var upErr error
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		upErr = fmt.Errorf("pgxmigrate: up: %w", err)
 	}
 	sourceErr, dbErr := m.Close()

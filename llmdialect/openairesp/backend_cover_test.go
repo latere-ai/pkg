@@ -249,7 +249,7 @@ func TestBackendEventDecoderIncomplete(t *testing.T) {
 	var stop ir.StopReason
 	for {
 		ev, err := dec.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -468,7 +468,7 @@ func TestBackendEventDecoderReadError(t *testing.T) {
 	// first event is MessageStart; a later Next hits the read error
 	for range 10 {
 		_, err := dec.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			t.Fatal("expected a read error, got clean EOF")
 		}
 		if err != nil {

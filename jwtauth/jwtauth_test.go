@@ -1,13 +1,16 @@
 package jwtauth
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -200,7 +203,7 @@ func TestValidateExpiredToken(t *testing.T) {
 	token := signToken(t, key, defaultHeader(key), payload)
 
 	_, err := v.Validate(token)
-	if err != ErrTokenExpired {
+	if !errors.Is(err, ErrTokenExpired) {
 		t.Errorf("err = %v, want ErrTokenExpired", err)
 	}
 }
@@ -213,7 +216,7 @@ func TestValidateNotYetValidToken(t *testing.T) {
 	token := signToken(t, key, defaultHeader(key), payload)
 
 	_, err := v.Validate(token)
-	if err != ErrTokenNotValidYet {
+	if !errors.Is(err, ErrTokenNotValidYet) {
 		t.Errorf("err = %v, want ErrTokenNotValidYet", err)
 	}
 }
@@ -237,7 +240,7 @@ func TestValidateInvalidSignature(t *testing.T) {
 	token := signToken(t, wrongKey, defaultHeader(wrongKey), defaultPayload())
 
 	_, err := v.Validate(token)
-	if err != ErrInvalidSignature {
+	if !errors.Is(err, ErrInvalidSignature) {
 		t.Errorf("err = %v, want ErrInvalidSignature", err)
 	}
 }
@@ -254,7 +257,7 @@ func TestValidateMalformedToken(t *testing.T) {
 	}
 	for _, tc := range cases {
 		_, err := v.Validate(tc)
-		if err != ErrMalformedToken {
+		if !errors.Is(err, ErrMalformedToken) {
 			t.Errorf("Validate(%q) = %v, want ErrMalformedToken", tc, err)
 		}
 	}
@@ -271,7 +274,7 @@ func TestValidateBadBase64Payload(t *testing.T) {
 	_, err := v.Validate(token)
 	// The signature check runs before payload decode, so this is either
 	// ErrMalformedToken (bad base64 in sig input) or ErrInvalidSignature.
-	if err != ErrMalformedToken && err != ErrInvalidSignature {
+	if !errors.Is(err, ErrMalformedToken) && !errors.Is(err, ErrInvalidSignature) {
 		t.Errorf("err = %v, want ErrMalformedToken or ErrInvalidSignature", err)
 	}
 }
@@ -283,7 +286,7 @@ func TestValidateUnsupportedAlgorithm(t *testing.T) {
 	token := signToken(t, key, header, defaultPayload())
 
 	_, err := v.Validate(token)
-	if err != ErrUnsupportedAlg {
+	if !errors.Is(err, ErrUnsupportedAlg) {
 		t.Errorf("err = %v, want ErrUnsupportedAlg", err)
 	}
 }
@@ -298,7 +301,7 @@ func TestValidateIssuerMismatch(t *testing.T) {
 	token := signToken(t, key, defaultHeader(key), payload)
 
 	_, err := v.Validate(token)
-	if err != ErrInvalidIssuer {
+	if !errors.Is(err, ErrInvalidIssuer) {
 		t.Errorf("err = %v, want ErrInvalidIssuer", err)
 	}
 }
@@ -326,7 +329,7 @@ func TestValidateAudienceMismatch(t *testing.T) {
 	token := signToken(t, key, defaultHeader(key), payload)
 
 	_, err := v.Validate(token)
-	if err != ErrInvalidAudience {
+	if !errors.Is(err, ErrInvalidAudience) {
 		t.Errorf("err = %v, want ErrInvalidAudience", err)
 	}
 }
@@ -368,7 +371,7 @@ func TestValidateMissingSub(t *testing.T) {
 	token := signToken(t, key, defaultHeader(key), payload)
 
 	_, err := v.Validate(token)
-	if err != ErrMalformedToken {
+	if !errors.Is(err, ErrMalformedToken) {
 		t.Errorf("err = %v, want ErrMalformedToken", err)
 	}
 }
@@ -930,7 +933,7 @@ func TestValidateBadSignatureEncoding(t *testing.T) {
 	token := header + "." + payload + ".!!invalid-base64!!"
 
 	_, err := v.Validate(token)
-	if err != ErrMalformedToken {
+	if !errors.Is(err, ErrMalformedToken) {
 		t.Errorf("err = %v, want ErrMalformedToken", err)
 	}
 }
@@ -943,7 +946,7 @@ func TestValidateBadHeaderEncoding(t *testing.T) {
 	token := "!!invalid!!." + b64(defaultPayload()) + ".fakesig"
 
 	_, err := v.Validate(token)
-	if err != ErrMalformedToken {
+	if !errors.Is(err, ErrMalformedToken) {
 		t.Errorf("err = %v, want ErrMalformedToken", err)
 	}
 }
@@ -955,7 +958,7 @@ func TestValidateBadHeaderJSON(t *testing.T) {
 	token := badHeader + "." + b64(defaultPayload()) + ".fakesig"
 
 	_, err := v.Validate(token)
-	if err != ErrMalformedToken {
+	if !errors.Is(err, ErrMalformedToken) {
 		t.Errorf("err = %v, want ErrMalformedToken", err)
 	}
 }
@@ -1093,5 +1096,40 @@ func TestValidateActorClaims(t *testing.T) {
 	}
 	if claims2.ActorID != "" || claims2.Kind != "" {
 		t.Errorf("non-actor token carried ActorID=%q Kind=%q, want empty", claims2.ActorID, claims2.Kind)
+	}
+}
+
+// failingResponseWriter fails every body write, which is what a client that
+// hangs up between the status line and the body looks like to a handler.
+type failingResponseWriter struct {
+	hdr    http.Header
+	status int
+}
+
+func (f *failingResponseWriter) Header() http.Header { return f.hdr }
+
+func (f *failingResponseWriter) Write([]byte) (int, error) {
+	return 0, errors.New("connection reset by peer")
+}
+
+func (f *failingResponseWriter) WriteHeader(status int) { f.status = status }
+
+// TestWriteUnauthorized_BodyWriteFails asserts that a 401 whose body never
+// reached the client is recorded rather than discarded: without it a dropped
+// response is indistinguishable from a delivered one in the logs.
+func TestWriteUnauthorized_BodyWriteFails(t *testing.T) {
+	var logged bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	w := &failingResponseWriter{hdr: make(http.Header)}
+	WriteUnauthorized(w, "test message")
+
+	if w.status != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", w.status)
+	}
+	if !strings.Contains(logged.String(), "write unauthorized body") {
+		t.Errorf("write failure was not logged: %q", logged.String())
 	}
 }

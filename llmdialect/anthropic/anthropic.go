@@ -382,7 +382,7 @@ func encodeResponseBlock(b ir.Block) (map[string]any, error) {
 	case ir.BlockText:
 		return map[string]any{"type": "text", "text": b.Text}, nil
 	case ir.BlockToolUse:
-		args := json.RawMessage(b.ToolUse.Args)
+		args := b.ToolUse.Args
 		if len(args) == 0 {
 			args = json.RawMessage("{}")
 		}

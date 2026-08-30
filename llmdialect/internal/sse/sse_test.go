@@ -26,7 +26,7 @@ func TestReaderNamedEvents(t *testing.T) {
 	if ev.Name != "ping" || string(ev.Data) != `{}` {
 		t.Fatalf("got %q %q", ev.Name, ev.Data)
 	}
-	if _, err := r.Next(); err != io.EOF {
+	if _, err := r.Next(); !errors.Is(err, io.EOF) {
 		t.Fatalf("want EOF, got %v", err)
 	}
 }
@@ -70,14 +70,14 @@ func TestReaderUnterminatedFinalEvent(t *testing.T) {
 	if err != nil || string(ev.Data) != "tail" {
 		t.Fatalf("got %q err=%v", ev.Data, err)
 	}
-	if _, err := r.Next(); err != io.EOF {
+	if _, err := r.Next(); !errors.Is(err, io.EOF) {
 		t.Fatalf("want EOF, got %v", err)
 	}
 }
 
 func TestReaderEmptyStream(t *testing.T) {
 	r := NewReader(strings.NewReader(""))
-	if _, err := r.Next(); err != io.EOF {
+	if _, err := r.Next(); !errors.Is(err, io.EOF) {
 		t.Fatalf("want EOF, got %v", err)
 	}
 }

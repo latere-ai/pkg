@@ -77,6 +77,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"slices"
@@ -608,5 +609,13 @@ func audMatch(tokenAud jsonAud, expected []string) bool {
 func WriteUnauthorized(w http.ResponseWriter, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized", "message": msg})
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized", "message": msg}); err != nil {
+		// The envelope is a map[string]string, which cannot fail to marshal,
+		// so this is a write failure: the client hung up between the status
+		// line and the body. The response is already committed and there is no
+		// second channel to report on, so record it and move on rather than
+		// discard it -- a 401 that never reached the client is otherwise
+		// indistinguishable from one that did.
+		slog.Default().With("component", "jwtauth").Debug("write unauthorized body", "error", err)
+	}
 }

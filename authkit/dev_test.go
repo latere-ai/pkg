@@ -1,6 +1,7 @@
 package authkit
 
 import (
+	"errors"
 	"net/http/httptest"
 	"testing"
 )
@@ -154,7 +155,7 @@ func TestDevAuthenticatorFromEnv_InsecureOnNonLoopback(t *testing.T) {
 
 func TestDevAuthenticator_NilReceiverUnauthenticated(t *testing.T) {
 	var d *DevAuthenticator
-	if _, err := d.Authenticate(httptest.NewRequest("GET", "/", nil)); err != ErrUnauthenticated {
+	if _, err := d.Authenticate(httptest.NewRequest("GET", "/", nil)); !errors.Is(err, ErrUnauthenticated) {
 		t.Errorf("nil receiver err = %v, want ErrUnauthenticated", err)
 	}
 }

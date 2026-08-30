@@ -142,10 +142,10 @@ func Setup(ctx context.Context, serviceName, serviceVersion string) func() {
 	if err != nil {
 		log.Printf("telemetry: metric exporter error: %v", err)
 		// The trace provider is already live with a background batcher; flush
-		// it on a fresh timeout context, not the caller ctx (which may be
-		// cancelled), mirroring the happy-path shutdown's flush budget.
+		// it on a timeout context detached from the caller ctx (which may be
+		// cancelled by then), mirroring the happy-path shutdown's flush budget.
 		return func() {
-			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			shutCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
 			if err := tp.Shutdown(shutCtx); err != nil {
 				log.Printf("telemetry: trace provider shutdown: %v", err)
@@ -161,8 +161,10 @@ func Setup(ctx context.Context, serviceName, serviceVersion string) func() {
 
 	log.Printf("telemetry: exporting to %s", endpoint)
 
+	// The shutdown runs after the caller's ctx is typically cancelled, so it
+	// detaches from that cancellation and keeps only the values.
 	return func() {
-		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		if err := tp.Shutdown(shutCtx); err != nil {
 			log.Printf("telemetry: trace provider shutdown: %v", err)

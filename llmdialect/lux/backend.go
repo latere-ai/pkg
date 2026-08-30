@@ -7,6 +7,7 @@ package lux
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 
@@ -149,7 +150,7 @@ func NewStreamReader(r io.Reader) *StreamReader {
 func (s *StreamReader) Next() (Event, error) {
 	for {
 		frame, err := s.r.Next()
-		if err == io.EOF && !s.done {
+		if errors.Is(err, io.EOF) && !s.done {
 			return Event{}, io.ErrUnexpectedEOF
 		}
 		if err != nil {

@@ -3,6 +3,7 @@ package openairesp
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"math"
 	"reflect"
@@ -227,7 +228,7 @@ func TestStreamLogProbsSurviveTranslation(t *testing.T) {
 	var events []ir.Event
 	for {
 		ev, err := dec.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

@@ -212,7 +212,7 @@ func TestStream(t *testing.T) {
 	var types []string
 	for {
 		ev, err := st.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

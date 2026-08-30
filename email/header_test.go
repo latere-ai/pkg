@@ -58,7 +58,7 @@ func TestSMTPSendRejectsInvalidRecipient(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// send fails at validation, before trying to connect.
-			err := s.send(tt.to, "Subject", "<p>body</p>")
+			err := s.send(t.Context(), tt.to, "Subject", "<p>body</p>")
 			if err == nil {
 				t.Error("expected error for invalid recipient, got nil")
 			}
@@ -69,7 +69,7 @@ func TestSMTPSendRejectsInvalidRecipient(t *testing.T) {
 func TestSMTPSendRejectsCRLFInSubject(t *testing.T) {
 	s := &smtpSender{host: "localhost", addr: "localhost:587", from: "noreply@example.com"}
 
-	err := s.send("valid@example.com", "Subject\r\nBcc: attacker@evil.com", "<p>body</p>")
+	err := s.send(t.Context(), "valid@example.com", "Subject\r\nBcc: attacker@evil.com", "<p>body</p>")
 	if err == nil {
 		t.Error("expected error for CRLF in subject, got nil")
 	}
@@ -84,7 +84,7 @@ func TestSMTPSendRejectsCRLFInFrom(t *testing.T) {
 		from: "noreply@example.com\r\nBcc: attacker@evil.com",
 	}
 
-	err := s.send("valid@example.com", "Subject", "<p>body</p>")
+	err := s.send(t.Context(), "valid@example.com", "Subject", "<p>body</p>")
 	if err == nil || !strings.Contains(err.Error(), "line break") {
 		t.Errorf("expected CRLF-in-from rejection, got %v", err)
 	}
