@@ -58,6 +58,10 @@ func SetupLogs(ctx context.Context, cfg LogsConfig) (*slog.Logger, func(context.
 	if cfg.Scope == "" {
 		cfg.Scope = cfg.ServiceName
 	}
+	// The OTLP bridge reads span context off each record on its own. The local
+	// stream has no such convention, so without this wrapper `kubectl logs`
+	// output cannot be joined back to a trace.
+	cfg.Stdout = traceContextHandler{Handler: cfg.Stdout}
 
 	base := []slog.Attr{
 		slog.String("service", cfg.ServiceName),
@@ -103,6 +107,37 @@ func loggerWith(h slog.Handler, attrs []slog.Attr) *slog.Logger {
 }
 
 func noopShutdown(context.Context) error { return nil }
+
+// traceContextHandler stamps trace_id and span_id onto every record that is
+// emitted inside a sampled span, so a line read from the container's stdout
+// leads back to the trace it belongs to.
+//
+// It wraps only the local handler. The otelslog bridge carries span context
+// structurally on the log record, and adding the same values as attributes
+// there would duplicate them in the backend.
+type traceContextHandler struct {
+	slog.Handler
+}
+
+func (t traceContextHandler) Handle(ctx context.Context, r slog.Record) error {
+	traceID, spanID := TraceIDs(ctx)
+	if traceID == "" {
+		return t.Handler.Handle(ctx, r)
+	}
+	// Clone before mutating: slog may hand the same record to more than one
+	// handler, and the tee does exactly that.
+	r = r.Clone()
+	r.AddAttrs(slog.String("trace_id", traceID), slog.String("span_id", spanID))
+	return t.Handler.Handle(ctx, r)
+}
+
+func (t traceContextHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return traceContextHandler{Handler: t.Handler.WithAttrs(attrs)}
+}
+
+func (t traceContextHandler) WithGroup(name string) slog.Handler {
+	return traceContextHandler{Handler: t.Handler.WithGroup(name)}
+}
 
 // teeHandler fans every log record to two handlers. The secondary's errors do
 // not propagate; the primary is the source of truth for ops.
