@@ -72,7 +72,7 @@ func SetupLogs(ctx context.Context, cfg LogsConfig) (*slog.Logger, func(context.
 	}
 
 	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-	if endpoint == "" {
+	if endpoint == "" || exportDisabled() {
 		return loggerWith(cfg.Stdout, base), noopShutdown, nil
 	}
 

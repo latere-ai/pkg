@@ -14,6 +14,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -91,12 +92,26 @@ var (
 	}
 )
 
+// exportDisabled reports whether OTEL_SDK_DISABLED turns the SDK off. The
+// OTel specification defines this as the one switch that disables every signal
+// regardless of how the rest of the environment is configured, which is what
+// makes it useful: a deployment can silence a service without editing the
+// endpoint out of its manifest and losing the configuration.
+//
+// The spec defines "true" (case-insensitive) as the only enabling value, so
+// anything else, including garbage, leaves the SDK on.
+func exportDisabled() bool {
+	return strings.EqualFold(os.Getenv("OTEL_SDK_DISABLED"), "true")
+}
+
 // Setup initializes OpenTelemetry. If OTEL_EXPORTER_OTLP_ENDPOINT is set,
 // traces and metrics are exported via OTLP/HTTP. Otherwise, telemetry is
 // a noop (no overhead). Returns a shutdown function.
+//
+// OTEL_SDK_DISABLED=true forces the noop path even when an endpoint is set.
 func Setup(ctx context.Context, serviceName, serviceVersion string) func() {
 	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-	if endpoint == "" {
+	if endpoint == "" || exportDisabled() {
 		return func() {}
 	}
 
