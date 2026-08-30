@@ -1,17 +1,11 @@
 // Package keyedmu provides a per-key mutex map for fine-grained locking.
 //
-// When multiple goroutines operate on different tasks concurrently, a single
-// global mutex creates unnecessary contention. This package provides [Map] which
-// maintains a separate sync.Mutex per key, allowing operations on different keys
-// to proceed in parallel while serializing operations on the same key. The
-// zero value is ready to use.
-//
-// # Connected packages
-//
-// No internal dependencies (stdlib only). Consumed by [runner] for per-task
-// locking during execution, commit, and worktree operations. This ensures that
-// concurrent operations on different tasks do not interfere while preventing
-// races on the same task.
+// When goroutines operate on different entities concurrently, a single global
+// mutex creates unnecessary contention. [Map] maintains a separate sync.Mutex
+// per key, so operations on different keys proceed in parallel while operations
+// on the same key serialize. It replaces the sync.Map +
+// LoadOrStore(&sync.Mutex{}) pattern with a type-safe generic wrapper. The zero
+// value is ready to use.
 //
 // # Usage
 //

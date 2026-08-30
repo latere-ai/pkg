@@ -1,4 +1,3 @@
-// Package set provides a generic set type backed by a map.
 package set
 
 // Set is an unordered collection of unique elements.

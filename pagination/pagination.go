@@ -1,5 +1,3 @@
-// Package pagination provides a generic cursor-based pagination helper for
-// pre-sorted slices.
 package pagination
 
 // Page holds a paginated result set.

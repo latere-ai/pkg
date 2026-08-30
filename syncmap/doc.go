@@ -1,15 +1,9 @@
 // Package syncmap provides a type-safe generic wrapper around sync.Map.
 //
-// The stdlib sync.Map uses interface{} for keys and values, requiring type
-// assertions at every call site. [Map] wraps it with generics to provide
-// compile-time type safety for Store, Load, and Delete operations.
-// The zero value is ready to use, matching sync.Map semantics.
-//
-// # Connected packages
-//
-// No internal dependencies (stdlib only). Available as a general-purpose
-// concurrent map for any package that needs lock-free concurrent access
-// with type safety.
+// The stdlib sync.Map uses any for keys and values, requiring a type assertion
+// at every call site. [Map] wraps it with generics for compile-time type safety
+// on Store, Load, and Delete. The zero value is ready to use, matching sync.Map
+// semantics.
 //
 // # Usage
 //

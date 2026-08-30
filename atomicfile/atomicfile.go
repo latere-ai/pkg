@@ -1,5 +1,3 @@
-// Package atomicfile provides atomic file write operations using the
-// temp-file-then-rename pattern.
 package atomicfile
 
 import (

@@ -1,4 +1,3 @@
-// Package syncmap provides a type-safe wrapper around sync.Map.
 package syncmap
 
 import (

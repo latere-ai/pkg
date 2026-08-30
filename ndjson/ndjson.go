@@ -1,6 +1,3 @@
-// Package ndjson provides helpers for reading and appending newline-delimited
-// JSON (NDJSON/JSONL) files. It consolidates the repeated scanner-based
-// read/append patterns found throughout the codebase.
 package ndjson
 
 import (

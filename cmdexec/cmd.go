@@ -1,5 +1,3 @@
-// Package cmdexec provides a fluent command builder and transactional
-// command sequencer for subprocess execution.
 package cmdexec
 
 import (

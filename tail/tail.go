@@ -1,5 +1,3 @@
-// Package tail provides a generic function for retaining the tail
-// (most recent) elements of a slice.
 package tail
 
 // Of returns the last n elements of s. If n <= 0 or len(s) <= n, s is

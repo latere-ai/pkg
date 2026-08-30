@@ -1,17 +1,10 @@
 // Package ndjson provides reading and appending for newline-delimited JSON
-// (NDJSON/JSONL) files.
+// (NDJSON/JSONL) files, the format for event-sourcing traces and usage records
+// where each line is a self-contained JSON object.
 //
-// Wallfacer uses NDJSON for event sourcing trace files and turn-usage records
-// where each line is a self-contained JSON object. This package consolidates the
-// repeated pattern of opening a file, scanning lines, and unmarshaling JSON into
-// a generic [ReadFile] function, plus an atomic [AppendFile] for concurrent-safe
-// record appending. Missing files are treated as empty (not errors).
-//
-// # Connected packages
-//
-// No internal dependencies (stdlib only). Consumed by [store] for reading and
-// writing task event traces and turn usage records. Changes
-// to the file format or error handling affect all event sourcing persistence.
+// [ReadFile] consolidates the open-scan-unmarshal loop into one generic call,
+// and [AppendFile] appends a record atomically so concurrent writers do not
+// interleave. Missing files are treated as empty rather than as errors.
 //
 // # Usage
 //

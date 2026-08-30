@@ -1,5 +1,3 @@
-// Package pubsub provides a generic fan-out pub/sub hub with bounded replay
-// for reconnecting subscribers.
 package pubsub
 
 import (

@@ -1,7 +1,3 @@
-// Package keyedmu provides a per-key mutex map.
-//
-// It replaces the common pattern of sync.Map + LoadOrStore(&sync.Mutex{})
-// with a type-safe generic wrapper.
 package keyedmu
 
 import "sync"

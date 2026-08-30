@@ -1,19 +1,11 @@
-// Package watcher provides a reusable event loop for background goroutines
-// that react to wake signals and/or periodic tickers.
+// Package watcher provides a reusable event loop for background goroutines that
+// react to wake signals and/or periodic tickers.
 //
-// Wallfacer has several automation watchers (auto-promote, auto-test, auto-submit,
-// auto-sync, auto-push) that share the same pattern: wait for a wake signal or
-// timer tick, optionally settle before acting, run an action, and clean up on
-// cancellation. [Start] encapsulates this pattern with a [Config] struct,
-// eliminating duplicated select/timer/context boilerplate across watchers.
-//
-// # Connected packages
-//
-// No internal dependencies (stdlib only). Consumed by [handler] for all
-// automation watchers (tasks_autoimplement.go). The [WakeSource]
-// interface is satisfied by [pubsub.Hub] wake subscriptions. Changes to the
-// event loop timing (settle delay, ticker behavior) affect all automation
-// responsiveness.
+// Automation goroutines share one shape: wait for a wake signal or a timer tick,
+// optionally settle before acting, run an action, and clean up on cancellation.
+// [Start] encapsulates it behind a [Config], so a caller supplies the action
+// rather than another select/timer/context block. The [WakeSource] interface is
+// satisfied by a [pubsub.Hub] wake subscription.
 //
 // # Usage
 //

@@ -1,7 +1,3 @@
-// Package circuitbreaker provides circuit breaker implementations for fault
-// isolation. Two variants are offered: a lock-free three-state [Breaker] for
-// high-throughput scenarios and a mutex-based [BackoffBreaker] with exponential
-// backoff for simpler per-feature use cases.
 package circuitbreaker
 
 import (

@@ -1,17 +1,13 @@
-// Package routine schedules periodic fire-and-forget callbacks keyed by
-// UUID. It generalizes the singleton cronjob-style loop that used to drive
-// periodic background work: each routine owns one [time.AfterFunc] timer, arms it
-// according to a [Schedule], and invokes a caller-supplied [FireFunc] when
-// the timer elapses.
+// Package routine schedules periodic fire-and-forget callbacks keyed by UUID.
 //
-// The package is intentionally stateless from the persistence perspective —
-// it does not know about tasks or stores. Callers reconcile the engine with
-// external state by issuing [Engine.Register] and [Engine.Unregister] calls.
+// Each routine owns one [time.AfterFunc] timer, arms it according to a
+// [Schedule], and invokes a caller-supplied [FireFunc] when the timer elapses.
+// One timer per routine replaces the singleton cronjob loop this generalizes,
+// so routines with unrelated periods do not share a tick.
 //
-// # Connected packages
-//
-// No internal dependencies (stdlib + google/uuid only). Consumed by
-// [handler] to drive user-defined routine tasks on the board. Adding new
-// [Schedule] implementations (cron expressions, time-of-day) does not
-// require changes here.
+// The package is stateless with respect to persistence: it knows nothing about
+// what a routine does or where it is stored. A caller reconciles the engine
+// with external state through [Engine.Register] and [Engine.Unregister], and
+// adds new [Schedule] implementations (cron expressions, time-of-day) without
+// changing this package.
 package routine

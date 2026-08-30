@@ -1,5 +1,3 @@
-// Package trackedwg provides a sync.WaitGroup wrapper that tracks the labels
-// of outstanding goroutines, useful for observability during graceful shutdown.
 package trackedwg
 
 import (

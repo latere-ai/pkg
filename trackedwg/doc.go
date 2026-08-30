@@ -1,18 +1,11 @@
 // Package trackedwg provides a sync.WaitGroup wrapper that tracks in-flight
 // goroutine labels for observability.
 //
-// During graceful shutdown, the server needs to know which background operations
-// are still running. [WaitGroup] extends sync.WaitGroup with string labels so
-// that [WaitGroup.Pending] can report what is blocking shutdown. Labels are
-// formatted as "label×N" when multiple goroutines share the same label. The
-// [WaitGroup.Go] method provides a convenient shorthand for launching a tracked
-// goroutine.
-//
-// # Connected packages
-//
-// No internal dependencies (stdlib only). Consumed by [runner] for tracking
-// background goroutines (title generation, oversight, sync operations) so the
-// server can report pending work during shutdown and the debug/runtime endpoint.
+// A plain WaitGroup reports how many goroutines are outstanding but not which,
+// so a server blocked in graceful shutdown cannot say what it is waiting on.
+// [WaitGroup] attaches a string label to each goroutine and [WaitGroup.Pending]
+// reports them, formatted as "label×N" when several share a label.
+// [WaitGroup.Go] launches a tracked goroutine in one call.
 //
 // # Usage
 //

@@ -2,16 +2,12 @@
 // without external dependencies.
 //
 // It supports labeled counters, histograms with configurable buckets, and
-// scrape-time gauge callbacks. The registry is thread-safe and can write its
-// contents in Prometheus text exposition format. This avoids pulling in the
-// full Prometheus client library while still enabling standard metrics scraping.
+// scrape-time gauge callbacks. The registry is thread-safe and writes its
+// contents in the Prometheus text exposition format, which keeps a service
+// scrapable without linking the full Prometheus client library.
 //
-// # Connected packages
-//
-// Consumed by [cli] (creates the registry), [handler]
-// (instruments HTTP requests and registers gauges), and [runner] (records task
-// execution metrics). When adding new metrics, define them where they are recorded
-// and pass the registry through.
+// Define a metric where it is recorded and pass the registry through, rather
+// than reaching for a package-level default.
 //
 // # Usage
 //

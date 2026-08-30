@@ -1,13 +1,3 @@
-// Package metrics implements a lightweight Prometheus-compatible metrics
-// registry without external dependencies.
-//
-// It supports:
-//   - Labeled counters (push-based, incremented during request handling)
-//   - Labeled histograms (push-based, observed during request handling)
-//   - Scrape-time gauges (pull-based, computed on each /metrics call)
-//
-// The text exposition format follows the Prometheus specification:
-// https://prometheus.io/docs/instrumenting/exposition_formats/
 package metrics
 
 import (

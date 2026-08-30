@@ -1,5 +1,3 @@
-// Package cache provides a generic thread-safe in-memory cache with TTL
-// expiration and optional permanent entries with bounded LRU eviction.
 package cache
 
 import (

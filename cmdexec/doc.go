@@ -7,13 +7,6 @@
 // multiple commands with optional per-step rollback and LIFO deferred cleanup,
 // ensuring that partial operations are unwound on failure.
 //
-// # Connected packages
-//
-// No internal dependencies (stdlib only). Consumed by [gitutil] (all git CLI
-// operations) and [cli] (doctor checks, exec subcommand, container management).
-// This is the lowest-level command execution layer — changes to error handling
-// or output capture affect all git and container operations.
-//
 // # Usage
 //
 //	out, err := cmdexec.Git(repoDir, "status", "--porcelain").Output()

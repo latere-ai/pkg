@@ -1,6 +1,3 @@
-// Package watcher provides a reusable event loop for background goroutines
-// that react to wake-channel signals and/or periodic tickers. It consolidates
-// the repeated subscribe+ticker+select pattern used by autoimplement watchers.
 package watcher
 
 import (
