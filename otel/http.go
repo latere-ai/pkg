@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -80,6 +82,24 @@ func Handler(h http.Handler, operation string, opts ...HandlerOption) http.Handl
 		}
 
 		span := trace.SpanFromContext(r.Context())
+
+		// net/http recovers handler panics at the connection level, far
+		// outside this span, so an unrecorded panic is the most severe thing
+		// a service can do and the least visible in a trace. Record it, then
+		// let it keep unwinding: swallowing it here would turn a crash into a
+		// half-written response the client waits on.
+		defer func() {
+			rec := recover()
+			if rec == nil {
+				return
+			}
+			if span.SpanContext().IsValid() {
+				span.SetStatus(codes.Error, "panic")
+				span.RecordError(fmt.Errorf("panic: %v", rec), trace.WithStackTrace(true))
+			}
+			panic(rec)
+		}()
+
 		if span.SpanContext().IsValid() && cfg.surfaceAttr != nil {
 			if s := cfg.surfaceAttr(r); s != "" {
 				span.SetAttributes(attribute.String("cella.surface", s))
