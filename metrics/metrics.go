@@ -19,8 +19,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-
-	"latere.ai/x/pkg/sortedkeys"
 )
 
 // DefaultDurationBuckets are histogram upper bounds (in seconds) suited for
@@ -203,7 +201,7 @@ func (c *Counter) writeTo(w io.Writer) {
 	}
 	c.mu.Unlock()
 
-	for k := range sortedkeys.Of(snapshot) {
+	for _, k := range slices.Sorted(maps.Keys(snapshot)) {
 		cell := snapshot[k]
 		writeMetricLine(w, c.name, cell.labels, float64(cell.value))
 	}
@@ -293,7 +291,7 @@ func (h *Histogram) writeTo(w io.Writer) {
 	}
 	h.mu.Unlock()
 
-	for k := range sortedkeys.Of(snapshot) {
+	for _, k := range slices.Sorted(maps.Keys(snapshot)) {
 		cell := snapshot[k]
 		// Finite buckets.
 		for i, bound := range h.buckets {
@@ -323,7 +321,7 @@ func canonicalLabelKey(labels map[string]string) string {
 	}
 	var sb strings.Builder
 	first := true
-	for k := range sortedkeys.Of(labels) {
+	for _, k := range slices.Sorted(maps.Keys(labels)) {
 		if !first {
 			sb.WriteByte('\x00')
 		}
@@ -343,7 +341,7 @@ func writeMetricLine(w io.Writer, name string, labels map[string]string, value f
 	if len(labels) > 0 {
 		_, _ = fmt.Fprint(w, "{")
 		first := true
-		for k := range sortedkeys.Of(labels) {
+		for _, k := range slices.Sorted(maps.Keys(labels)) {
 			if !first {
 				_, _ = fmt.Fprint(w, ",")
 			}

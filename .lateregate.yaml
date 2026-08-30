@@ -11,7 +11,7 @@ cover:
   # hides: one package below the line and 47 above it carrying the number.
   threshold: 90.0
   trim_prefix: latere.ai/x/pkg/
-  # No exemptions. All 48 packages clear the floor on their own.
+  # No exemptions. Every package clears the floor on its own.
   exempt: {}
 
 hermetic:
