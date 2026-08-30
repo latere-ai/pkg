@@ -266,11 +266,18 @@ func TestDecodeRequestToolVariants(t *testing.T) {
 	if len(req.Tools) != 2 || req.Tools[0].Name != "a" || req.Tools[1].Name != "b" {
 		t.Fatalf("tools wrong: %+v", req.Tools)
 	}
+	// A typed tool is one Anthropic runs itself. It leaves the Tools slice,
+	// which callers walk to build a dispatch table, and lands in ServerTools
+	// instead of being dropped.
+	if len(req.ServerTools) != 1 || req.ServerTools[0].Type != "bash_20250124" || req.ServerTools[0].Name != "bash" {
+		t.Fatalf("server tools wrong: %+v", req.ServerTools)
+	}
 	loss := req.Loss.Fields()
-	for _, want := range []ir.LossField{"tools.cache_control", "tools.bash_20250124"} {
-		if !slices.Contains(loss, want) {
-			t.Fatalf("loss %v missing %q", loss, want)
-		}
+	if !slices.Contains(loss, ir.LossField("tools.cache_control")) {
+		t.Fatalf("loss %v missing %q", loss, "tools.cache_control")
+	}
+	if slices.Contains(loss, ir.LossField("tools.bash_20250124")) {
+		t.Fatalf("loss %v still reports a dropped server tool", loss)
 	}
 }
 

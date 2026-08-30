@@ -14,6 +14,7 @@ import (
 	"io"
 	"strings"
 
+	"latere.ai/x/pkg/llmdialect/internal/servertool"
 	"latere.ai/x/pkg/llmdialect/internal/sse"
 	"latere.ai/x/pkg/llmdialect/ir"
 )
@@ -69,17 +70,17 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	}
 
 	var wire struct {
-		Model         string          `json:"model"`
-		MaxTokens     *int64          `json:"max_tokens"`
-		System        json.RawMessage `json:"system"`
-		Messages      []wireMessage   `json:"messages"`
-		Tools         []wireTool      `json:"tools"`
-		ToolChoice    *wireToolChoice `json:"tool_choice"`
-		Temperature   *float64        `json:"temperature"`
-		TopP          *float64        `json:"top_p"`
-		TopK          *int64          `json:"top_k"`
-		StopSequences []string        `json:"stop_sequences"`
-		Stream        bool            `json:"stream"`
+		Model         string            `json:"model"`
+		MaxTokens     *int64            `json:"max_tokens"`
+		System        json.RawMessage   `json:"system"`
+		Messages      []wireMessage     `json:"messages"`
+		Tools         []json.RawMessage `json:"tools"`
+		ToolChoice    *wireToolChoice   `json:"tool_choice"`
+		Temperature   *float64          `json:"temperature"`
+		TopP          *float64          `json:"top_p"`
+		TopK          *int64            `json:"top_k"`
+		StopSequences []string          `json:"stop_sequences"`
+		Stream        bool              `json:"stream"`
 		Metadata      struct {
 			UserID string `json:"user_id"`
 		} `json:"metadata"`
@@ -140,9 +141,21 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 		}
 		req.Messages = append(req.Messages, msg)
 	}
-	for _, t := range wire.Tools {
+	for _, raw := range wire.Tools {
+		var t wireTool
+		if err := json.Unmarshal(raw, &t); err != nil {
+			return nil, fmt.Errorf("anthropic: malformed tool: %w", err)
+		}
+		// A type other than "custom" names a tool Anthropic runs itself.
+		// It keeps its options and passes through rather than being
+		// dropped, so a request that asked for web search still asks for
+		// it on the far side.
 		if t.Type != "" && t.Type != "custom" {
-			req.Loss.Add(ir.LossToolTypeOf(t.Type))
+			st, err := servertool.Decode(raw)
+			if err != nil {
+				return nil, fmt.Errorf("anthropic: %w", err)
+			}
+			req.ServerTools = append(req.ServerTools, st)
 			continue
 		}
 		if len(t.CacheControl) > 0 {

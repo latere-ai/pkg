@@ -73,6 +73,16 @@ func (*Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 	}
 	body["input"] = input
 
+	// The Responses API has server tools of its own, but they are a
+	// different, non-overlapping vocabulary from the types this IR carries.
+	// Forwarding one blind would ask the provider for a tool it does not
+	// have, so the capability is reported lost rather than guessed at.
+	for _, t := range req.ServerTools {
+		req.Loss.Add(ir.LossServerToolOf(t.Type))
+	}
+	if req.WebSearch != nil {
+		req.Loss.Add(ir.LossWebSearch)
+	}
 	if len(req.Tools) > 0 {
 		tools := make([]map[string]any, 0, len(req.Tools))
 		for _, t := range req.Tools {

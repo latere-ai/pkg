@@ -64,6 +64,19 @@ func (*Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 			InputSchema: t.InputSchema,
 		})
 	}
+	for _, t := range req.ServerTools {
+		wire.ServerTools = append(wire.ServerTools, ServerTool{
+			Type:   t.Type,
+			Name:   t.Name,
+			Config: t.Config,
+		})
+	}
+	if req.WebSearch != nil {
+		wire.WebSearch = &WebSearch{
+			ContextSize:  req.WebSearch.ContextSize,
+			UserLocation: req.WebSearch.UserLocation,
+		}
+	}
 	if req.ToolChoice != nil {
 		wire.ToolChoice = &ToolChoice{
 			Mode:            req.ToolChoice.Mode,

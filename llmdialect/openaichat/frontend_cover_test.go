@@ -39,10 +39,19 @@ func TestFrontendDecodeToolVariantsAndParallel(t *testing.T) {
 	if req.ToolChoice.Mode != ir.ToolChoiceAny || !req.ToolChoice.DisableParallel {
 		t.Fatalf("tool choice wrong: %+v", req.ToolChoice)
 	}
-	for _, want := range []ir.LossField{"tools.web_search", "tools.strict"} {
-		if !slices.Contains(req.Loss.Fields(), want) {
-			t.Fatalf("loss %v missing %q", req.Loss.Fields(), want)
-		}
+	// A non-function type is a tool the provider runs. It keeps its options
+	// and passes through instead of being reported as lost.
+	if len(req.ServerTools) != 1 || req.ServerTools[0].Type != "web_search" {
+		t.Fatalf("server tools wrong: %+v", req.ServerTools)
+	}
+	if got := string(req.ServerTools[0].Config); got != `{"web_search":{}}` {
+		t.Fatalf("server tool config = %s, want the sibling fields kept", got)
+	}
+	if !slices.Contains(req.Loss.Fields(), ir.LossField("tools.strict")) {
+		t.Fatalf("loss %v missing %q", req.Loss.Fields(), "tools.strict")
+	}
+	if slices.Contains(req.Loss.Fields(), ir.LossField("tools.web_search")) {
+		t.Fatalf("loss %v still reports a dropped server tool", req.Loss.Fields())
 	}
 }
 

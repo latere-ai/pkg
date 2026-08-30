@@ -100,6 +100,19 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 			InputSchema: t.InputSchema,
 		})
 	}
+	for _, t := range wire.ServerTools {
+		req.ServerTools = append(req.ServerTools, ir.ServerTool{
+			Type:   t.Type,
+			Name:   t.Name,
+			Config: t.Config,
+		})
+	}
+	if wire.WebSearch != nil {
+		req.WebSearch = &ir.WebSearch{
+			ContextSize:  wire.WebSearch.ContextSize,
+			UserLocation: wire.WebSearch.UserLocation,
+		}
+	}
 	if wire.ToolChoice != nil {
 		tc, err := toolChoiceToIR(*wire.ToolChoice)
 		if err != nil {

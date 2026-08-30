@@ -20,6 +20,7 @@ type Request struct {
 	System        []Block         `json:"system,omitempty"`
 	Messages      []Message       `json:"messages"`
 	Tools         []Tool          `json:"tools,omitempty"`
+	ServerTools   []ServerTool    `json:"server_tools,omitempty"`
 	ToolChoice    *ToolChoice     `json:"tool_choice,omitempty"`
 	MaxTokens     *int64          `json:"max_tokens,omitempty"`
 	Temperature   *float64        `json:"temperature,omitempty"`
@@ -29,6 +30,7 @@ type Request struct {
 	Stream        bool            `json:"stream,omitempty"`
 	Reasoning     *Reasoning      `json:"reasoning,omitempty"`
 	Schema        *ResponseSchema `json:"schema,omitempty"`
+	WebSearch     *WebSearch      `json:"web_search,omitempty"`
 	UserID        string          `json:"user_id,omitempty"`
 	LogProbs      bool            `json:"logprobs,omitempty"`
 	TopLogProbs   int             `json:"top_logprobs,omitempty"`
@@ -94,6 +96,20 @@ type Tool struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
 	InputSchema json.RawMessage `json:"input_schema"`
+}
+
+// ServerTool is a tool the provider runs itself. Type and Name select it;
+// Config carries the provider's own options, unread.
+type ServerTool struct {
+	Type   string          `json:"type"`
+	Name   string          `json:"name,omitempty"`
+	Config json.RawMessage `json:"config,omitempty"`
+}
+
+// WebSearch asks the provider to ground its answer in a search it runs.
+type WebSearch struct {
+	ContextSize  string          `json:"context_size,omitempty"`
+	UserLocation json.RawMessage `json:"user_location,omitempty"`
 }
 
 // ToolChoice constrains tool use for a request.

@@ -17,6 +17,7 @@ import (
 	"io"
 	"strings"
 
+	"latere.ai/x/pkg/llmdialect/internal/servertool"
 	"latere.ai/x/pkg/llmdialect/internal/sse"
 	"latere.ai/x/pkg/llmdialect/ir"
 )
@@ -65,8 +66,8 @@ func (b *Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 	}
 	body["messages"] = messages
 
-	if len(req.Tools) > 0 {
-		tools := make([]map[string]any, 0, len(req.Tools))
+	if len(req.Tools) > 0 || len(req.ServerTools) > 0 {
+		tools := make([]map[string]any, 0, len(req.Tools)+len(req.ServerTools))
 		for _, t := range req.Tools {
 			schema := t.InputSchema
 			if len(schema) == 0 {
@@ -78,7 +79,27 @@ func (b *Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 			}
 			tools = append(tools, map[string]any{"type": "function", "function": fn})
 		}
+		// Provider-executed tools sit in the same array, untranslated:
+		// this dialect is what gateways speak, and the provider behind one
+		// is what gives the type meaning.
+		for _, t := range req.ServerTools {
+			enc, err := servertool.Encode(t)
+			if err != nil {
+				return nil, fmt.Errorf("openaichat: %w", err)
+			}
+			tools = append(tools, enc)
+		}
 		body["tools"] = tools
+	}
+	if req.WebSearch != nil {
+		opts := map[string]any{}
+		if req.WebSearch.ContextSize != "" {
+			opts["search_context_size"] = req.WebSearch.ContextSize
+		}
+		if len(req.WebSearch.UserLocation) > 0 {
+			opts["user_location"] = req.WebSearch.UserLocation
+		}
+		body["web_search_options"] = opts
 	}
 	if req.ToolChoice != nil {
 		switch req.ToolChoice.Mode {

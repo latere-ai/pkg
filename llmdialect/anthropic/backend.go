@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 
+	"latere.ai/x/pkg/llmdialect/internal/servertool"
 	"latere.ai/x/pkg/llmdialect/internal/sse"
 	"latere.ai/x/pkg/llmdialect/ir"
 )
@@ -75,8 +76,8 @@ func (b *Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 	}
 	body["messages"] = messages
 
-	if len(req.Tools) > 0 {
-		tools := make([]map[string]any, 0, len(req.Tools))
+	if len(req.Tools) > 0 || len(req.ServerTools) > 0 {
+		tools := make([]map[string]any, 0, len(req.Tools)+len(req.ServerTools))
 		for _, t := range req.Tools {
 			schema := t.InputSchema
 			if len(schema) == 0 {
@@ -88,7 +89,22 @@ func (b *Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 			}
 			tools = append(tools, tool)
 		}
+		// Anthropic's own server tools live in the same array, keeping the
+		// options they arrived with.
+		for _, t := range req.ServerTools {
+			enc, err := servertool.Encode(t)
+			if err != nil {
+				return nil, fmt.Errorf("anthropic: %w", err)
+			}
+			tools = append(tools, enc)
+		}
 		body["tools"] = tools
+	}
+	// The Messages API has no request-level web search switch; the
+	// capability is a server tool there. Report it rather than silently
+	// answering without grounding.
+	if req.WebSearch != nil {
+		req.Loss.Add(ir.LossWebSearch)
 	}
 	if req.ToolChoice != nil {
 		tc := map[string]any{}

@@ -10,6 +10,7 @@ import (
 	"io"
 	"strings"
 
+	"latere.ai/x/pkg/llmdialect/internal/servertool"
 	"latere.ai/x/pkg/llmdialect/internal/sse"
 	"latere.ai/x/pkg/llmdialect/ir"
 )
@@ -31,6 +32,7 @@ var requestKeys = map[string]bool{
 	"temperature": true, "top_p": true, "stop": true, "stream": true,
 	"stream_options": true, "user": true, "response_format": true,
 	"reasoning_effort": true, "n": true, "logprobs": true, "top_logprobs": true,
+	"web_search_options": true,
 }
 
 // DecodeRequest parses a Chat Completions request body into the IR.
@@ -47,18 +49,18 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	}
 
 	var wire struct {
-		Model               string          `json:"model"`
-		Messages            []frontMessage  `json:"messages"`
-		Tools               []frontTool     `json:"tools"`
-		ToolChoice          json.RawMessage `json:"tool_choice"`
-		ParallelToolCalls   *bool           `json:"parallel_tool_calls"`
-		MaxTokens           *int64          `json:"max_tokens"`
-		MaxCompletionTokens *int64          `json:"max_completion_tokens"`
-		Temperature         *float64        `json:"temperature"`
-		TopP                *float64        `json:"top_p"`
-		Stop                json.RawMessage `json:"stop"`
-		Stream              bool            `json:"stream"`
-		User                string          `json:"user"`
+		Model               string            `json:"model"`
+		Messages            []frontMessage    `json:"messages"`
+		Tools               []json.RawMessage `json:"tools"`
+		ToolChoice          json.RawMessage   `json:"tool_choice"`
+		ParallelToolCalls   *bool             `json:"parallel_tool_calls"`
+		MaxTokens           *int64            `json:"max_tokens"`
+		MaxCompletionTokens *int64            `json:"max_completion_tokens"`
+		Temperature         *float64          `json:"temperature"`
+		TopP                *float64          `json:"top_p"`
+		Stop                json.RawMessage   `json:"stop"`
+		Stream              bool              `json:"stream"`
+		User                string            `json:"user"`
 		ResponseFormat      *struct {
 			Type       string `json:"type"`
 			JSONSchema *struct {
@@ -68,6 +70,10 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 				Strict      bool            `json:"strict"`
 			} `json:"json_schema"`
 		} `json:"response_format"`
+		WebSearchOptions *struct {
+			SearchContextSize string          `json:"search_context_size"`
+			UserLocation      json.RawMessage `json:"user_location"`
+		} `json:"web_search_options"`
 		ReasoningEffort string `json:"reasoning_effort"`
 		N               *int   `json:"n"`
 		LogProbs        bool   `json:"logprobs"`
@@ -105,9 +111,21 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	if err := decodeFrontMessages(req, wire.Messages); err != nil {
 		return nil, err
 	}
-	for _, t := range wire.Tools {
+	for _, raw := range wire.Tools {
+		var t frontTool
+		if err := json.Unmarshal(raw, &t); err != nil {
+			return nil, fmt.Errorf("openaichat: malformed tool: %w", err)
+		}
+		// A type other than "function" names a tool the provider runs
+		// itself. Gateways in front of this dialect forward such entries
+		// to providers that understand them, so they pass through with
+		// their options rather than being dropped.
 		if t.Type != "" && t.Type != "function" {
-			req.Loss.Add(ir.LossToolTypeOf(t.Type))
+			st, err := servertool.Decode(raw)
+			if err != nil {
+				return nil, fmt.Errorf("openaichat: %w", err)
+			}
+			req.ServerTools = append(req.ServerTools, st)
 			continue
 		}
 		if t.Function.Strict {
@@ -118,6 +136,12 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 			Description: t.Function.Description,
 			InputSchema: t.Function.Parameters,
 		})
+	}
+	if wire.WebSearchOptions != nil {
+		req.WebSearch = &ir.WebSearch{
+			ContextSize:  wire.WebSearchOptions.SearchContextSize,
+			UserLocation: wire.WebSearchOptions.UserLocation,
+		}
 	}
 	if len(wire.ToolChoice) > 0 {
 		tc, err := decodeFrontToolChoice(wire.ToolChoice)

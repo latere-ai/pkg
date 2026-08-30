@@ -113,6 +113,49 @@ type Tool struct {
 	InputSchema json.RawMessage // JSON Schema object
 }
 
+// ServerTool is a tool the provider runs itself.
+//
+// It is deliberately not a [Tool]. A Tool is a capability the caller
+// implements: the model asks for it, the caller executes it, and the answer
+// comes back as a tool_result block. A ServerTool never leaves the provider —
+// it runs mid-turn and its outcome is folded into the response — so a caller
+// that walks Tools to build its dispatch table must not find web search in
+// there.
+//
+// The fields are opaque on purpose. Server tools are versioned per provider
+// and gain options faster than an IR can model them, so the type string and
+// its sibling fields pass through unread. A dialect that has no server tools
+// records [LossServerToolOf] rather than inventing one.
+type ServerTool struct {
+	// Type is the provider's versioned identifier for the tool, e.g.
+	// "web_search_20250305". It is what selects the behaviour.
+	Type string
+
+	// Name is what the model calls the tool by, e.g. "web_search".
+	Name string
+
+	// Config carries the fields that sit beside Type and Name in the same
+	// object — max_uses, allowed_domains, and whatever a provider adds
+	// next — as a JSON object. Nil when the tool takes no options.
+	Config json.RawMessage
+}
+
+// WebSearch asks the provider to ground the answer in a web search it runs
+// itself. It is a request-level switch rather than a [ServerTool] because
+// that is how the OpenAI Chat Completions dialect expresses it: a sibling of
+// tools, not an entry in it.
+type WebSearch struct {
+	// ContextSize is how much retrieved material the provider should feed
+	// the model: "low", "medium" or "high". Empty leaves it to the
+	// provider's default.
+	ContextSize string
+
+	// UserLocation biases results geographically. Provider-shaped and
+	// passed through unread, since the dialects that accept it do not
+	// agree on its fields.
+	UserLocation json.RawMessage
+}
+
 // ToolChoiceMode says how the model may use tools.
 type ToolChoiceMode string
 
@@ -221,6 +264,7 @@ type Request struct {
 	System        []Block // text blocks only
 	Messages      []Message
 	Tools         []Tool
+	ServerTools   []ServerTool
 	ToolChoice    *ToolChoice
 	MaxTokens     *int64
 	Temperature   *float64
@@ -230,6 +274,7 @@ type Request struct {
 	Stream        bool
 	Reasoning     *Reasoning
 	Schema        *ResponseSchema
+	WebSearch     *WebSearch
 	UserID        string // caller-supplied end-user identifier
 
 	// LogProbs asks for the log probability of every token the model
@@ -272,6 +317,8 @@ const (
 	LossTopK              LossField = "top_k"
 	LossTopLogProbs       LossField = "top_logprobs"
 	LossUserTruncated     LossField = "user.truncated"
+	LossWebSearch         LossField = "web_search_options"
+	LossWebSearchLocation LossField = "web_search_options.user_location"
 )
 
 // Dynamic loss-field constructors.
@@ -281,6 +328,11 @@ func LossRequestFieldOf(name string) LossField { return LossField(name) }
 
 // LossToolTypeOf marks an unsupported tool type.
 func LossToolTypeOf(t string) LossField { return LossField("tools." + t) }
+
+// LossServerToolOf marks a provider-executed tool the target dialect has no
+// way to express. The type is carried so a reader can tell which capability
+// went missing, not merely that one did.
+func LossServerToolOf(t string) LossField { return LossField("server_tools." + t) }
 
 // LossContentTypeOf marks an unsupported content block/part type.
 func LossContentTypeOf(t string) LossField { return LossField("content." + t) }
