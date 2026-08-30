@@ -79,7 +79,8 @@ res, err := c.Generate(ctx, &luxsdk.Request{
 | [`batch`](batch/) | A generic non-blocking batching pump: producers add without blocking, one goroutine flushes by size or interval and drains on shutdown |
 | [`email`](email/) | Transactional mail transport (Mailgun, SMTP, or a log-only fallback) that refuses header injection; subjects and bodies stay with the calling service |
 | [`jwtauth`](jwtauth/) | JWKS-based RS256 JWT validation with key caching, so a service verifies tokens locally instead of round-tripping to the issuer |
-| [`llmdialect`](llmdialect/) | Translation between LLM inference wire dialects (Anthropic Messages, OpenAI Chat Completions, OpenAI Responses, lux-native) through a neutral intermediate representation, with an explicit loss report instead of silent drops |
+| [`llmdialect`](llmdialect/) | Translation between LLM inference wire dialects (Anthropic Messages, OpenAI Chat Completions, OpenAI Responses, lux-native) through a neutral intermediate representation, with an explicit loss report instead of silent drops. Carries provider-executed tools (web search, web fetch) alongside the caller-implemented kind |
+| [`llmjson`](llmjson/) | Repairs the JSON a model meant to send: strips a markdown fence and escapes the raw newlines and tabs left inside string values, so a correct answer in the wrong encoding still decodes |
 | [`luxsdk`](luxsdk/) | First-party Go client for the Lux gateway's native dialect: typed generate, streaming, and token counting |
 | [`md`](md/) | YAML frontmatter parsing and GFM-to-HTML rendering |
 | [`oidc`](oidc/) | Relying Party client for the Latere auth service: PKCE, encrypted cookie sessions, token refresh, org switching, and a shared `/me` assembly |
