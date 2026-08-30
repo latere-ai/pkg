@@ -2,6 +2,7 @@ package pgxmigrate
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -155,5 +156,44 @@ func TestRunUpJoinsMigrationAndCloseErrors(t *testing.T) {
 	err := runUp(&fakeMigrator{upErr: upErr, dbErr: dbErr})
 	if !errors.Is(err, upErr) || !errors.Is(err, dbErr) {
 		t.Fatalf("joined error = %v, want migration and close causes", err)
+	}
+}
+
+// noSleep stubs only the retry delay, leaving the real migrator constructor in
+// place so the tests below exercise it rather than a fake.
+func noSleep(t *testing.T) {
+	t.Helper()
+	prev := sleep
+	sleep = func(time.Duration) {}
+	t.Cleanup(func() { sleep = prev })
+}
+
+// TestUpRejectsASourceItCannotOpen covers the first thing Up does. A caller
+// that passes the wrong subdirectory gets an error naming the step, rather
+// than a database connection attempt that cannot succeed anyway.
+func TestUpRejectsASourceItCannotOpen(t *testing.T) {
+	noSleep(t)
+	err := Up("pgx5://user@localhost:5432/db", oneMigration, "no-such-dir")
+	if err == nil {
+		t.Fatal("a source directory that does not exist must fail")
+	}
+	if !strings.Contains(err.Error(), "pgxmigrate: open source") {
+		t.Errorf("error should name the step, got %v", err)
+	}
+}
+
+// TestUpReportsAnUnregisteredDriver exercises the real newMigrator, which
+// every other test replaces. This module deliberately imports no database
+// driver so each consumer picks its own, which means a dsn whose scheme
+// nobody registered is a mistake a consumer can actually make, and the
+// message it gets is this one.
+func TestUpReportsAnUnregisteredDriver(t *testing.T) {
+	noSleep(t)
+	err := Up("nosuchscheme://user@localhost:5432/db", oneMigration, ".")
+	if err == nil {
+		t.Fatal("a dsn whose scheme no driver registered must fail")
+	}
+	if !strings.Contains(err.Error(), "pgxmigrate: init") {
+		t.Errorf("error should name the step, got %v", err)
 	}
 }
