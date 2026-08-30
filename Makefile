@@ -4,7 +4,7 @@
 GO ?= go
 FUZZTIME ?= 30s
 
-test:
+test: lint-config
 	$(GO) vet ./...
 	$(GO) test -count=1 ./...
 
@@ -124,9 +124,10 @@ fmt-check:
 lint-modernize:
 	@$(GO) tool lateregate modernize
 
-# .golangci.yml is generated: golangci-lint cannot inherit a shared config, so
-# it is rendered from latere.ai/x/ci-gate and checked here. Regenerate with
-# `go tool lateregate golangci -write`.
+# .golangci.yml is generated and gitignored: golangci-lint cannot inherit a
+# shared config, so it is rendered from latere.ai/x/ci-gate on every run.
+# Regenerating rather than committing is what makes divergence impossible
+# instead of merely detectable.
 lint-config:
 	@$(GO) tool lateregate golangci
 
