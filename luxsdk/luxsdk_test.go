@@ -2,6 +2,7 @@ package luxsdk
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -447,5 +448,48 @@ func TestGenerateCostUSDMicro(t *testing.T) {
 	}
 	if res.Usage.CostUSDMicro != nil {
 		t.Fatalf("CostUSDMicro = %d, want nil (a gateway that reports no cost is unknown, not free)", *res.Usage.CostUSDMicro)
+	}
+}
+
+// TestServerToolsReachTheGateway pins the re-exports: a caller asking for a
+// grounded answer names these types through luxsdk, and the request must carry
+// them to the wire rather than dropping them on the way.
+func TestServerToolsReachTheGateway(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"model":   "m",
+			"content": []map[string]any{{"type": "text", "text": "ok"}},
+		})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, WithAPIKey("k"))
+	_, err := c.Generate(context.Background(), &Request{
+		Model:    "m",
+		Messages: []Message{UserText("what changed in Go 1.27")},
+		ServerTools: []ServerTool{{
+			Type:   "web_fetch_20250910",
+			Name:   "web_fetch",
+			Config: json.RawMessage(`{"max_uses":5}`),
+		}},
+		WebSearch: &WebSearch{ContextSize: "medium"},
+	})
+	if err != nil {
+		t.Fatalf("Generate() error: %v", err)
+	}
+
+	tools, _ := got["server_tools"].([]any)
+	if len(tools) != 1 {
+		t.Fatalf("server_tools = %#v, want one entry", got["server_tools"])
+	}
+	tool, _ := tools[0].(map[string]any)
+	if tool["type"] != "web_fetch_20250910" || tool["name"] != "web_fetch" {
+		t.Fatalf("server_tools[0] = %#v", tool)
+	}
+	search, _ := got["web_search"].(map[string]any)
+	if search["context_size"] != "medium" {
+		t.Fatalf("web_search = %#v, want context_size medium", got["web_search"])
 	}
 }

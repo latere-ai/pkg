@@ -46,6 +46,8 @@ type (
 	ToolUse        = lux.ToolUse
 	ToolResult     = lux.ToolResult
 	Tool           = lux.Tool
+	ServerTool     = lux.ServerTool
+	WebSearch      = lux.WebSearch
 	ToolChoice     = lux.ToolChoice
 	Reasoning      = lux.Reasoning
 	ResponseSchema = lux.ResponseSchema
