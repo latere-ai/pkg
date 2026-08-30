@@ -17,14 +17,13 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 )
 
 // defaultSampleRatio is the head-sampling ratio applied to root spans when
@@ -51,16 +50,33 @@ func samplerFromEnv() trace.Sampler {
 // metrics, and logs) so all three carry identical service and environment
 // attributes and correlate per-environment in the backend. The environment
 // comes from LATERE_ENV, defaulting to "production".
+//
+// The detectors carry as much weight as the attributes. WithFromEnv reads
+// OTEL_RESOURCE_ATTRIBUTES and OTEL_SERVICE_NAME, the two variables every OTel
+// SDK is expected to honour; without it a deployment that sets them gets
+// silence. WithTelemetrySDK records which SDK emitted the signal, which is how
+// a backend separates these services from the collector's own pipeline.
+//
+// Options apply in order and later attributes win, so the explicit service
+// name and version override anything the environment sets for those two keys
+// while every other environment attribute survives.
+//
+// The semconv version must track the one WithTelemetrySDK emits. Merging two
+// resources that disagree on schema URL is an error, not a warning, and it
+// fails the whole detection rather than dropping one attribute.
 func serviceResource(ctx context.Context, name, version string) (*resource.Resource, error) {
 	env := os.Getenv("LATERE_ENV")
 	if env == "" {
 		env = "production"
 	}
 	return resource.New(ctx,
+		resource.WithFromEnv(),
+		resource.WithTelemetrySDK(),
+		resource.WithSchemaURL(semconv.SchemaURL),
 		resource.WithAttributes(
 			semconv.ServiceName(name),
 			semconv.ServiceVersion(version),
-			attribute.String("deployment.environment", env),
+			semconv.DeploymentEnvironmentNameKey.String(env),
 		),
 	)
 }

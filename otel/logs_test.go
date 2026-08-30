@@ -213,17 +213,17 @@ func TestNewLogResource_CarriesEnvironment(t *testing.T) {
 	var gotEnv, gotName bool
 	for _, kv := range res.Attributes() {
 		switch string(kv.Key) {
-		case "deployment.environment":
+		case "deployment.environment.name":
 			gotEnv = true
 			if kv.Value.AsString() != "staging" {
-				t.Errorf("deployment.environment = %q, want staging", kv.Value.AsString())
+				t.Errorf("deployment.environment.name = %q, want staging", kv.Value.AsString())
 			}
 		case "service.name":
 			gotName = true
 		}
 	}
 	if !gotEnv {
-		t.Error("log resource missing deployment.environment (traces/metrics carry it)")
+		t.Error("log resource missing deployment.environment.name (traces/metrics carry it)")
 	}
 	if !gotName {
 		t.Error("log resource missing service.name")
