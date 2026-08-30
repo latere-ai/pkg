@@ -1,4 +1,4 @@
-.PHONY: test test-race race fuzz cover cover-html fmt fmt-check hooks vuln lint-modernize lint-config \
+.PHONY: test test-race race fuzz cover cover-html fmt fmt-check hooks vuln lint-modernize lint-config lint \
 	test-hermetic cgo-free deps validate no-tracked-specs
 
 GO ?= go
@@ -130,6 +130,14 @@ lint-modernize:
 # instead of merely detectable.
 lint-config:
 	@$(GO) tool lateregate golangci
+
+# Runs the linter the CI lint job runs, against the config lint-config renders.
+# Without this the only machine that ever lints this repo is a runner, which is
+# the shape these gates exist to avoid.
+GOLANGCI_VERSION ?= v2.13.1
+
+lint: lint-config
+	@$(GO) run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION) run ./...
 
 # hooks installs the repository git hooks (pre-commit gofmt guard).
 hooks:
