@@ -1,4 +1,20 @@
-name: CI
+name: ci
+
+# The gates this module runs on every push live in latere-ai/ci (which orders
+# them) and latere.ai/x/ci-gate (which decides what each asserts), and are
+# reached through this repository's Makefile.
+#
+# Sixteen repositories depend on this module, so a gate that slips here slips
+# fleet-wide. Every one of them also runs locally -- `make cover`, `make deps`,
+# `make test-hermetic` and the rest need nothing but this checkout -- which is
+# the point: a gate you can only run in CI tells you too late.
+#
+# `make validate` carries the five checks specific to what this module
+# promises: no internal specs tracked in a public repository, llmdialect
+# staying stdlib-only, no cgo anywhere, govulncheck over what this module
+# imports or calls, and the fuzz targets. It runs the same work the single
+# pre-migration job did, in parallel with the rest instead of in front of it.
+
 on:
   push:
     branches: [main]
@@ -9,52 +25,5 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      # This module is public and carries client primitives only. Internal
-      # planning docs live in a private repository, never here.
-      - name: No internal specs tracked
-        run: |
-          tracked=$(git ls-files specs/)
-          if [ -n "$tracked" ]; then
-            echo "::error::internal specs/ files are tracked in this public module:"
-            echo "$tracked"
-            exit 1
-          fi
-
-      - name: Test with race detector
-        run: go test -v -race -count=1 ./...
-
-      - name: Coverage
-        run: |
-          go test -coverprofile=coverage.out -covermode=atomic ./...
-          go tool cover -func=coverage.out
-          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
-          echo "Total coverage: ${COVERAGE}%"
-          if [ "$(echo "$COVERAGE < 95" | bc -l)" -eq 1 ]; then
-            echo "::error::Coverage ${COVERAGE}% is below 95% threshold"
-            exit 1
-          fi
-
-      # go fix runs the toolchain modernizers, which rewrite hand-written code
-      # into the standard library call that already covers it. They overlap
-      # golangci-lint's modernize linter but add three it does not carry:
-      # buildtag, hostport, and the go:fix inline directives.
-      - name: Modernize
-        run: make lint-modernize
-
-      - name: Fuzz
-        run: make fuzz
-
-      # Fails on vulnerabilities in code this module calls or imports, and not
-      # on advisories against modules it merely requires. Every consumer
-      # inherits what this module reaches, so a finding at those depths is a
-      # fleet-wide exposure rather than a local one.
-      - name: Vulnerability scan
-        run: make vuln
+  verify:
+    uses: latere-ai/ci/.github/workflows/go-verify.yml@v1

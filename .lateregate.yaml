@@ -1,0 +1,47 @@
+# The per-push gate configuration for pkg. Every check runs from
+# latere.ai/x/ci-gate, pinned in go.mod, so each one runs the same on a laptop
+# as it does on a runner.
+#
+# This module is the one 16 repositories depend on, so a gate that slips here
+# is a gate that slips fleet-wide.
+
+cover:
+  # Per package, not the repository average this replaced. The average passed
+  # at 95% while pgxmigrate sat at 82.1%, which is exactly the shape an average
+  # hides: one package below the line and 47 above it carrying the number.
+  threshold: 90.0
+  trim_prefix: latere.ai/x/pkg/
+  # No exemptions. All 48 packages clear the floor on their own.
+  exempt: {}
+
+hermetic:
+  # The system directories, and nothing else. Naming them is the point: two
+  # packages here genuinely drive external binaries, and the empty setting
+  # found them rather than letting them inherit whatever a developer's PATH
+  # happened to hold.
+  #
+  #   cmdexec  runs true, echo, printf, sh and bash -- exercising real command
+  #            execution is the package's entire purpose
+  #   gitutil  runs git, for the same reason
+  #
+  # Anything a test needs beyond these two directories has to be added here,
+  # which is a decision someone makes rather than an accident.
+  allow: [/usr/bin, /bin]
+
+modernize:
+  # newexpr and errorsastype are off for the reasons recorded in .golangci.yml.
+  # lateregate checks each still exists, because `go fix` rejects an unknown
+  # -name=false and the gate would then pass silently.
+  disable: [newexpr, errorsastype]
+
+depcheck:
+  # llmdialect is stdlib-only, and that is a promise other repositories build
+  # on: tgo's own footprint gate watches this subtree from the outside because
+  # its server carries the three wire dialects. Watching it from the outside
+  # catches the breakage; watching it here is where it can be prevented.
+  #
+  # The allowlist is empty on purpose. Any module at all is a violation.
+  packages:
+    latere.ai/x/pkg/llmdialect:
+      decision: llmdialect-stdlib-only
+      allow: {}

@@ -1,13 +1,22 @@
-.PHONY: test race fuzz cover cover-html fmt fmt-check hooks vuln lint-modernize
+.PHONY: test test-race race fuzz cover cover-html fmt fmt-check hooks vuln lint-modernize \
+	test-hermetic cgo-free deps validate no-tracked-specs
 
 GO ?= go
 FUZZTIME ?= 30s
 
 test:
-	go test -v -count=1 ./...
+	$(GO) vet ./...
+	$(GO) test -count=1 ./...
 
-race:
-	go test -v -race -count=1 ./...
+# test-race is the contract's name; race stays as an alias.
+test-race race:
+	$(GO) test -race -count=1 ./...
+
+# The suite with only the Go toolchain on PATH. A test that depends on what
+# happens to be installed passes locally and fails on a runner, which is the
+# worst order to find out.
+test-hermetic:
+	@$(GO) tool lateregate hermetic
 
 fuzz:
 	@set -eu; \
@@ -19,15 +28,12 @@ fuzz:
 		done; \
 	done
 
+# Per package rather than as a repository average. The average passed at 95%
+# while pgxmigrate sat at 82.1%: one package below the line and 47 above it
+# carrying the number. The floor and any exemptions live in .lateregate.yaml.
 cover:
-	go test -coverprofile=coverage.out -covermode=atomic ./...
-	go tool cover -func=coverage.out
-	@COVERAGE=$$(go tool cover -func=coverage.out | grep total | awk '{print substr($$3, 1, length($$3)-1)}'); \
-	echo "Total coverage: $${COVERAGE}%"; \
-	if [ $$(echo "$${COVERAGE} < 95" | bc -l) -eq 1 ]; then \
-		echo "FAIL: coverage $${COVERAGE}% is below 95% threshold"; \
-		exit 1; \
-	fi
+	$(GO) test -coverprofile=coverage.out -covermode=atomic -coverpkg=./... ./...
+	@$(GO) tool lateregate cover -profile=coverage.out
 
 cover-html: cover
 	go tool cover -html=coverage.out
@@ -74,10 +80,40 @@ fmt:
 	gofmt -w .
 
 # fmt-check fails if any Go source is not gofmt-formatted.
+# The three gates that defend a promise this module makes. Run as one job;
+# each keeps its own target name, so a failure says which promise broke.
+validate: no-tracked-specs deps cgo-free vuln fuzz
+
+# This module is public and carries client primitives only. Internal planning
+# docs live in a private repository, never here.
+no-tracked-specs:
+	@tracked=$$(git ls-files specs/); \
+	if [ -n "$$tracked" ]; then \
+		echo "internal specs/ files are tracked in this public module:"; \
+		echo "$$tracked"; \
+		exit 1; \
+	fi; \
+	echo "no internal specs tracked"
+
+# llmdialect is stdlib-only, and tgo's own footprint gate watches this subtree
+# from the outside. Watching it from there catches the breakage; watching it
+# here is where it can be prevented.
+deps:
+	@$(GO) tool lateregate depcheck
+
+# This module is pure Go, and 16 repositories inherit whatever it reaches.
+# Reads source rather than the build: a file can import "C" behind a build tag
+# this platform does not select and still be a violation.
+cgo-free:
+	@$(GO) tool lateregate cgo-free
+
 fmt-check:
-	@out=$$(gofmt -l .); if [ -n "$$out" ]; then echo "gofmt: unformatted files:"; echo "$$out"; exit 1; fi
+	@$(GO) tool lateregate fmt-check
 
 # lint-modernize fails on code that a standard library call already covers.
+# The disabled fixers are named in .lateregate.yaml, and lateregate checks each
+# still exists, because `go fix` rejects an unknown -name=false and the gate
+# would then pass silently.
 # It runs the toolchain modernizers, which overlap golangci-lint's modernize
 # linter but add three it does not carry: buildtag, hostport, and the
 # go:fix inline directives. newexpr and errorsastype are off for the reasons
@@ -86,18 +122,7 @@ fmt-check:
 # package does not type-check, which is a build error rather than a finding,
 # so stderr is dropped and the decision rests on the patch alone.
 lint-modernize:
-	@for fixer in newexpr errorsastype; do \
-		$(GO) tool fix help 2>&1 | grep -q "^    $$fixer " || { \
-			echo "go fix no longer carries the $$fixer fixer, so -$$fixer=false is rejected and this check passes silently"; \
-			exit 1; \
-		}; \
-	done
-	@patch=$$($(GO) fix -diff -newexpr=false -errorsastype=false ./... 2>/dev/null); \
-	if [ -n "$$patch" ]; then \
-		echo "$$patch"; \
-		echo "go fix: the diff above is already in the standard library; apply it with go fix"; \
-		exit 1; \
-	fi
+	@$(GO) tool lateregate modernize
 
 # hooks installs the repository git hooks (pre-commit gofmt guard).
 hooks:
