@@ -1,4 +1,4 @@
-package lazyval
+package cache
 
 import (
 	"sync"
@@ -6,11 +6,11 @@ import (
 	"testing"
 )
 
-// TestValue_Get verifies that Get calls the load function exactly once and
+// TestLazy_Get verifies that Get calls the load function exactly once and
 // returns the cached result on subsequent calls.
-func TestValue_Get(t *testing.T) {
+func TestLazy_Get(t *testing.T) {
 	calls := 0
-	v := New(func() int {
+	v := NewLazy(func() int {
 		calls++
 		return 42
 	})
@@ -26,11 +26,11 @@ func TestValue_Get(t *testing.T) {
 	}
 }
 
-// TestValue_Invalidate verifies that Invalidate clears the cache so the next
+// TestLazy_Invalidate verifies that Invalidate clears the cache so the next
 // Get re-invokes the load function with a fresh result.
-func TestValue_Invalidate(t *testing.T) {
+func TestLazy_Invalidate(t *testing.T) {
 	calls := 0
-	v := New(func() int {
+	v := NewLazy(func() int {
 		calls++
 		return calls * 10
 	})
@@ -49,11 +49,11 @@ func TestValue_Invalidate(t *testing.T) {
 	}
 }
 
-// TestValue_ConcurrentGet verifies that under contention from 100 goroutines,
+// TestLazy_ConcurrentGet verifies that under contention from 100 goroutines,
 // the load function is called exactly once (mutex serialization).
-func TestValue_ConcurrentGet(t *testing.T) {
+func TestLazy_ConcurrentGet(t *testing.T) {
 	var loadCount atomic.Int32
-	v := New(func() string {
+	v := NewLazy(func() string {
 		loadCount.Add(1)
 		return "hello"
 	})
@@ -73,11 +73,11 @@ func TestValue_ConcurrentGet(t *testing.T) {
 	}
 }
 
-// TestValue_ConcurrentInvalidate exercises interleaved Get and Invalidate calls
+// TestLazy_ConcurrentInvalidate exercises interleaved Get and Invalidate calls
 // to verify the mutex prevents data races and the final value is always valid.
-func TestValue_ConcurrentInvalidate(t *testing.T) {
+func TestLazy_ConcurrentInvalidate(t *testing.T) {
 	var counter atomic.Int32
-	v := New(func() int {
+	v := NewLazy(func() int {
 		return int(counter.Add(1))
 	})
 
