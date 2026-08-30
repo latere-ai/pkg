@@ -76,8 +76,12 @@ Without it the instrumentation is a noop: spans are created and discarded, and n
 
 ## Logging
 
-The otelslog bridge wired by `Bootstrap` attaches `TraceId`/`SpanId` to a log
-record only when the call carries the request context. What that means in
+Records emitted inside a span carry `trace_id` and `span_id` on both streams:
+the OTLP bridge attaches span context structurally, and the local handler gets
+the same two fields as attributes. Copy a `trace_id` out of `kubectl logs` and
+it resolves in the backend.
+
+Both depend on the call carrying the request context. What that means in
 practice:
 
 - Request-path logs (handlers, middleware, anything whose context derives from
@@ -88,7 +92,8 @@ practice:
 - Work that outlives the request (queues, async pipelines) keeps correlation
   with `context.WithoutCancel(reqCtx)`.
 - Where threading a context is disproportionate, append `LogAttrs(ctx)...` to
-  a plain call instead.
+  a plain call instead. Prefer the `*Context` variants: they reach the OTLP
+  bridge too, which `LogAttrs` cannot do.
 
 Outbound HTTP follows the same rule: wrap `Transport` and build requests with
 `http.NewRequestWithContext`, otherwise the trace ends at the hop.
@@ -100,5 +105,7 @@ Outbound HTTP follows the same rule: wrap `Transport` and build requests with
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP endpoint URL (required to enable export) |
 | `OTEL_EXPORTER_OTLP_HEADERS` | Optional headers (e.g. `Authorization=Basic <base64>`) |
 | `OTEL_TRACES_SAMPLER_ARG` | Head-sampling ratio for root spans, `0`–`1` (default `0.2`). `ParentBased`, so a sampled trace stays whole across services. Set `1.0` to sample everything. |
-| `LATERE_ENV` | Deployment environment (`deployment.environment` resource attribute; defaults to `production`) |
+| `LATERE_ENV` | Deployment environment (`deployment.environment.name` resource attribute; defaults to `production`) |
 | `POD_NAME` | Replica label (set from `metadata.name` in k8s) |
+| `OTEL_SDK_DISABLED` | `true` turns every signal off even when an endpoint is set. Local logging keeps working. |
+| `OTEL_RESOURCE_ATTRIBUTES` | Extra resource attributes, `k=v,k=v`. Cannot override `service.name` or `service.version`, which come from `Config`. |
