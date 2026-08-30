@@ -1,4 +1,4 @@
-.PHONY: test test-race race fuzz cover cover-html fmt fmt-check hooks vuln lint-modernize \
+.PHONY: test test-race race fuzz cover cover-html fmt fmt-check hooks vuln lint-modernize lint-config \
 	test-hermetic cgo-free deps validate no-tracked-specs
 
 GO ?= go
@@ -123,6 +123,12 @@ fmt-check:
 # so stderr is dropped and the decision rests on the patch alone.
 lint-modernize:
 	@$(GO) tool lateregate modernize
+
+# .golangci.yml is generated: golangci-lint cannot inherit a shared config, so
+# it is rendered from latere.ai/x/ci-gate and checked here. Regenerate with
+# `go tool lateregate golangci -write`.
+lint-config:
+	@$(GO) tool lateregate golangci
 
 # hooks installs the repository git hooks (pre-commit gofmt guard).
 hooks:
