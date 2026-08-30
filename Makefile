@@ -142,4 +142,5 @@ lint: lint-config
 # hooks installs the repository git hooks (pre-commit gofmt guard).
 hooks:
 	git config core.hooksPath .githooks
+	@[ -e CLAUDE.md ] || [ -L CLAUDE.md ] || ln -s AGENTS.md CLAUDE.md
 	@echo "installed git hooks (core.hooksPath=.githooks)"
