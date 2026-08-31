@@ -8,6 +8,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	otelapi "go.opentelemetry.io/otel"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"golang.org/x/time/rate"
 )
 
@@ -152,4 +155,58 @@ func TestTelemetryProxy_BudgetDoesNotMaskDisabledEndpoint(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)
 	}
+}
+
+// TestTelemetryProxy_RejectionIsCounted covers the difference between a budget
+// and a silent hole. Without the counter, a budget set too low and an SPA that
+// stopped exporting look identical from the backend.
+func TestTelemetryProxy_RejectionIsCounted(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	prev := otelapi.GetMeterProvider()
+	otelapi.SetMeterProvider(sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)))
+	t.Cleanup(func() { otelapi.SetMeterProvider(prev) })
+
+	upstream, _ := countingUpstream(t)
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", upstream.URL)
+	t.Setenv(telemetryRateEnv, "1")
+
+	h := TelemetryProxy("/v1/telemetry")
+	if rec := post(h, bytes.Repeat([]byte("x"), maxTelemetryBody)); rec.Code != http.StatusOK {
+		t.Fatalf("first payload status = %d, want 200", rec.Code)
+	}
+	if rec := post(h, []byte("xx")); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("second payload status = %d, want 429", rec.Code)
+	}
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(t.Context(), &rm); err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	got := counterValue(t, &rm, "latere.telemetry_proxy.rejected")
+	if got != 1 {
+		t.Errorf("rejected counter = %d, want 1", got)
+	}
+}
+
+// counterValue reads a single Int64 sum out of the collected metrics.
+func counterValue(t *testing.T, rm *metricdata.ResourceMetrics, name string) int64 {
+	t.Helper()
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name != name {
+				continue
+			}
+			sum, ok := m.Data.(metricdata.Sum[int64])
+			if !ok {
+				t.Fatalf("%s is %T, want Sum[int64]", name, m.Data)
+			}
+			var total int64
+			for _, dp := range sum.DataPoints {
+				total += dp.Value
+			}
+			return total
+		}
+	}
+	t.Fatalf("metric %q was not recorded", name)
+	return 0
 }

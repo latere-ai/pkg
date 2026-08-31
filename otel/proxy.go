@@ -2,7 +2,9 @@ package otel
 
 import (
 	"bytes"
+	"context"
 	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
@@ -11,8 +13,14 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
 	"golang.org/x/time/rate"
 )
+
+// scopeName is the instrumentation scope for telemetry this package emits
+// about itself.
+const scopeName = "latere.ai/x/pkg/otel"
 
 // maxTelemetryBody caps a single forwarded browser payload. OTLP/HTTP batches
 // from @opentelemetry/web are small; the cap bounds abuse of the public route.
@@ -59,6 +67,30 @@ func newTelemetryLimiter() *rate.Limiter {
 		}
 	}
 	return rate.NewLimiter(rate.Limit(bps), max(bps, maxTelemetryBody))
+}
+
+// telemetryRejectCounter resolves the counter of payloads the budget refused.
+//
+// A budget that drops silently is worse than none: browser traces stop
+// arriving and the cause is invisible, which is the failure this package
+// exists to prevent. The counter is what says the budget is biting and needs
+// raising, as opposed to the SPA having stopped exporting.
+//
+// Resolved per handler rather than once per process so a test can install a
+// reader first. The global provider delegates instruments created before
+// Bootstrap installs it, so mounting order does not change the outcome.
+func telemetryRejectCounter() metric.Int64Counter {
+	c, err := otel.Meter(scopeName).Int64Counter(
+		"latere.telemetry_proxy.rejected",
+		metric.WithDescription("Browser telemetry payloads dropped by the relay byte budget."),
+		metric.WithUnit("{payload}"),
+	)
+	if err != nil {
+		// The API returns a usable noop alongside the error. A counter that
+		// cannot be built must not take the relay down with it.
+		slog.Warn("telemetry proxy reject counter unavailable", "err", err)
+	}
+	return c
 }
 
 // exporterHeaders parses OTEL_EXPORTER_OTLP_HEADERS the way the specification
@@ -143,6 +175,7 @@ func validHeaderName(s string) bool {
 func TelemetryProxy(prefix string) http.Handler {
 	endpoint := strings.TrimRight(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"), "/")
 	limiter := newTelemetryLimiter()
+	rejects := telemetryRejectCounter()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if endpoint == "" {
 			http.Error(w, "telemetry disabled", http.StatusServiceUnavailable)
@@ -170,7 +203,7 @@ func TelemetryProxy(prefix string) http.Handler {
 		// The budget is charged in bytes, not requests, because the backend
 		// bills by volume: a request-per-second cap leaves 1 MiB payloads free
 		// to multiply the bill by six orders of magnitude within it.
-		if !allowTelemetryBytes(w, limiter, len(body)) {
+		if !allowTelemetryBytes(r.Context(), w, limiter, rejects, len(body)) {
 			return
 		}
 
@@ -213,7 +246,7 @@ func TelemetryProxy(prefix string) http.Handler {
 // Retry-After carries the limiter's own answer for when the budget next covers
 // this payload. The OTLP specification has exporters honor that header, so
 // omitting it converts a rate limit into a retry storm against the same route.
-func allowTelemetryBytes(w http.ResponseWriter, limiter *rate.Limiter, n int) bool {
+func allowTelemetryBytes(ctx context.Context, w http.ResponseWriter, limiter *rate.Limiter, rejects metric.Int64Counter, n int) bool {
 	if limiter == nil {
 		return true
 	}
@@ -224,6 +257,7 @@ func allowTelemetryBytes(w http.ResponseWriter, limiter *rate.Limiter, n int) bo
 	// unreachable through the handler; it is here so a future cap change
 	// fails closed instead of panicking on an infinite delay.
 	if !rsv.OK() {
+		rejects.Add(ctx, 1)
 		w.Header().Set("Retry-After", "1")
 		http.Error(w, "telemetry rate limit exceeded", http.StatusTooManyRequests)
 		return false
@@ -232,6 +266,7 @@ func allowTelemetryBytes(w http.ResponseWriter, limiter *rate.Limiter, n int) bo
 		// Cancel returns the tokens: the payload is being dropped, not
 		// queued, so holding them would penalise the next caller twice.
 		rsv.CancelAt(now)
+		rejects.Add(ctx, 1)
 		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(d.Seconds()))))
 		http.Error(w, "telemetry rate limit exceeded", http.StatusTooManyRequests)
 		return false
