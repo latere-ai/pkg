@@ -73,6 +73,7 @@ Without it the instrumentation is a noop: spans are created and discarded, and n
 - `SetupLogs(ctx, LogsConfig)` — lower-level logging only (used by `Bootstrap`).
 - `Handler(h, operation, opts...)` — wraps an `http.Handler` with tracing/metrics and sets the `X-Trace-Id` response header.
 - `TraceIDs(ctx)` / `LogAttrs(ctx)` — extract trace/span IDs for log correlation.
+- `TelemetryProxy(prefix)` — same-origin relay for browser OTLP. Mount it and the SPA exports through your service instead of reaching the collector directly.
 
 ## Logging
 
@@ -109,3 +110,32 @@ Outbound HTTP follows the same rule: wrap `Transport` and build requests with
 | `POD_NAME` | Replica label (set from `metadata.name` in k8s) |
 | `OTEL_SDK_DISABLED` | `true` turns every signal off even when an endpoint is set. Local logging keeps working. |
 | `OTEL_RESOURCE_ATTRIBUTES` | Extra resource attributes, `k=v,k=v`. Cannot override `service.name` or `service.version`, which come from `Config`. |
+| `LATERE_TELEMETRY_PROXY_BYTES_PER_SEC` | Byte budget for the browser relay (default `65536`). `0` disables it. See below. |
+
+## Browser telemetry
+
+Browsers cannot reach an internal collector, and a public collector needs a
+credential the browser must not hold. `TelemetryProxy` closes both: mount it on
+a route of your own and the SPA posts there instead.
+
+```go
+mux.Handle("POST /v1/telemetry/", otel.TelemetryProxy("/v1/telemetry"))
+```
+
+The subpath is appended to the collector base, so `POST /v1/telemetry/v1/traces`
+is forwarded to `{collector}/v1/traces`. Being same-origin it needs no CORS and
+inherits your service's TLS and ingress controls. The relay adds
+`OTEL_EXPORTER_OTLP_HEADERS` on the way out, so the credential stays server
+side.
+
+The route is anonymous by construction: a SPA exports spans before the user has
+logged in, so there is no credential to demand and one shipped to the browser
+would be public the moment it loaded. A byte budget bounds it instead. Requests
+are capped at 1 MiB each and charged against a token bucket refilling at
+`LATERE_TELEMETRY_PROXY_BYTES_PER_SEC`; over budget the relay answers `429` with
+`Retry-After` and increments `latere.telemetry_proxy.rejected`.
+
+Bytes rather than requests, because a backend bills by volume ingested: a
+requests-per-second cap still admits maximum-size payloads at that rate. Watch
+the counter before lowering the budget, and set `0` against a collector you are
+not billed for.
