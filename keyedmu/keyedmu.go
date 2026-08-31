@@ -36,5 +36,5 @@ func (km *Map[K]) Delete(key K) {
 // and uses the one already stored.
 func (km *Map[K]) load(key K) *sync.Mutex {
 	v, _ := km.m.LoadOrStore(key, &sync.Mutex{})
-	return v.(*sync.Mutex)
+	return v.(*sync.Mutex) //nolint:errcheck // the LoadOrStore above is the only writer, and it stores a *sync.Mutex
 }

@@ -23,7 +23,9 @@ func (m *Map[K, V]) Load(key K) (V, bool) {
 		var zero V
 		return zero, false
 	}
-	return v.(V), true
+	// Store is the only writer and takes a V, so this holds by construction.
+	// A panic here would mean the invariant broke, which is worth hearing about.
+	return v.(V), true //nolint:errcheck // Store is the only writer, and it takes a V
 }
 
 // Delete removes the entry for key.
@@ -35,7 +37,8 @@ func (m *Map[K, V]) Delete(key K) {
 func (m *Map[K, V]) All() iter.Seq2[K, V] {
 	return func(yield func(K, V) bool) {
 		m.m.Range(func(k, v any) bool {
-			return yield(k.(K), v.(V))
+			// Same invariant as Load: only Store writes here, with typed arguments.
+			return yield(k.(K), v.(V)) //nolint:errcheck // only Store writes, with a K and a V
 		})
 	}
 }

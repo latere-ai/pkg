@@ -154,7 +154,8 @@ func (c *TTLCache[K, V]) SetPermanent(key K, value V) {
 		if c.maxSize > 0 && c.lru.Len() > c.maxSize {
 			// Evict the least recently used permanent entry (front of list).
 			front := c.lru.Front()
-			evictKey := front.Value.(K)
+			// The list holds keys and nothing else; PushBack above is the only writer.
+			evictKey := front.Value.(K) //nolint:errcheck // the LRU list holds keys only
 			c.lru.Remove(front)
 			delete(c.entries, evictKey)
 		}
