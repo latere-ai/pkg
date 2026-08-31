@@ -139,3 +139,7 @@ Bytes rather than requests, because a backend bills by volume ingested: a
 requests-per-second cap still admits maximum-size payloads at that rate. Watch
 the counter before lowering the budget, and set `0` against a collector you are
 not billed for.
+
+The budget is per process, so the fleet-wide ceiling is the value times the
+number of replicas mounting a relay. Size it against one replica's share, not
+the total.
