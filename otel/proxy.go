@@ -3,11 +3,15 @@ package otel
 import (
 	"bytes"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 // maxTelemetryBody caps a single forwarded browser payload. OTLP/HTTP batches
@@ -17,6 +21,45 @@ const maxTelemetryBody = 1 << 20 // 1 MiB
 // telemetryClient forwards browser payloads to the collector. A package var so
 // tests can adjust the timeout/transport without a live backend.
 var telemetryClient = &http.Client{Timeout: 10 * time.Second}
+
+// telemetryRateEnv names the sustained byte budget, in bytes per second, that
+// the relay will forward. Zero or negative disables the limit.
+const telemetryRateEnv = "LATERE_TELEMETRY_PROXY_BYTES_PER_SEC"
+
+// defaultTelemetryRate is the budget when telemetryRateEnv is unset: 64 KiB/s,
+// roughly two orders of magnitude above what a browser fleet of this size
+// produces, and a ceiling rather than a target.
+//
+// The route is anonymous by construction. A SPA exports spans before the user
+// has logged in, so there is no credential to demand, and a bearer token
+// shipped to the browser to satisfy one would be public the moment it loaded.
+// What is left is a budget: the backend bills by volume ingested, so the relay
+// bounds the volume it will pass on.
+const defaultTelemetryRate = 64 << 10
+
+// newTelemetryLimiter builds the relay's byte budget from the environment, or
+// nil when the limit is disabled.
+//
+// The burst never falls below maxTelemetryBody. rate.Limiter rejects any
+// reservation larger than its burst outright, so a smaller burst would make a
+// legal maximum-size payload permanently unforwardable rather than merely
+// delayed.
+func newTelemetryLimiter() *rate.Limiter {
+	bps := defaultTelemetryRate
+	if raw := os.Getenv(telemetryRateEnv); raw != "" {
+		n, err := strconv.Atoi(strings.TrimSpace(raw))
+		switch {
+		case err != nil:
+			// An unparseable budget keeps the default. Falling back to
+			// unlimited would turn a typo into an uncapped bill.
+		case n <= 0:
+			return nil
+		default:
+			bps = n
+		}
+	}
+	return rate.NewLimiter(rate.Limit(bps), max(bps, maxTelemetryBody))
+}
 
 // exporterHeaders parses OTEL_EXPORTER_OTLP_HEADERS the way the specification
 // defines it: comma-separated key=value pairs, each side percent-encoded, with
@@ -94,10 +137,12 @@ func validHeaderName(s string) bool {
 //
 // The subpath after prefix is appended to the collector base, so a POST to
 // "{prefix}/v1/traces" is forwarded to "{collector}/v1/traces". Only POST is
-// accepted and bodies are capped at 1 MiB. When the endpoint is unset the
-// handler returns 503 so the SPA degrades quietly.
+// accepted, bodies are capped at 1 MiB, and the forwarded volume is bounded by
+// the byte budget described on defaultTelemetryRate. When the endpoint is unset
+// the handler returns 503 so the SPA degrades quietly.
 func TelemetryProxy(prefix string) http.Handler {
 	endpoint := strings.TrimRight(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"), "/")
+	limiter := newTelemetryLimiter()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if endpoint == "" {
 			http.Error(w, "telemetry disabled", http.StatusServiceUnavailable)
@@ -120,6 +165,12 @@ func TelemetryProxy(prefix string) http.Handler {
 		}
 		if len(body) > maxTelemetryBody {
 			http.Error(w, "telemetry payload too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		// The budget is charged in bytes, not requests, because the backend
+		// bills by volume: a request-per-second cap leaves 1 MiB payloads free
+		// to multiply the bill by six orders of magnitude within it.
+		if !allowTelemetryBytes(w, limiter, len(body)) {
 			return
 		}
 
@@ -154,4 +205,36 @@ func TelemetryProxy(prefix string) http.Handler {
 		w.WriteHeader(resp.StatusCode)
 		_, _ = io.Copy(w, io.LimitReader(resp.Body, maxTelemetryBody))
 	})
+}
+
+// allowTelemetryBytes charges n bytes against the relay's budget, writing a 429
+// and reporting false when the budget is spent.
+//
+// Retry-After carries the limiter's own answer for when the budget next covers
+// this payload. The OTLP specification has exporters honor that header, so
+// omitting it converts a rate limit into a retry storm against the same route.
+func allowTelemetryBytes(w http.ResponseWriter, limiter *rate.Limiter, n int) bool {
+	if limiter == nil {
+		return true
+	}
+	now := time.Now()
+	rsv := limiter.ReserveN(now, n)
+	// !OK means n exceeds the burst ceiling and no wait would ever admit it.
+	// maxTelemetryBody bounds n and the burst is at least that, so this is
+	// unreachable through the handler; it is here so a future cap change
+	// fails closed instead of panicking on an infinite delay.
+	if !rsv.OK() {
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, "telemetry rate limit exceeded", http.StatusTooManyRequests)
+		return false
+	}
+	if d := rsv.DelayFrom(now); d > 0 {
+		// Cancel returns the tokens: the payload is being dropped, not
+		// queued, so holding them would penalise the next caller twice.
+		rsv.CancelAt(now)
+		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(d.Seconds()))))
+		http.Error(w, "telemetry rate limit exceeded", http.StatusTooManyRequests)
+		return false
+	}
+	return true
 }
