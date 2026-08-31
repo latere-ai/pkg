@@ -11,7 +11,7 @@ package otel
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -117,13 +117,13 @@ func Setup(ctx context.Context, serviceName, serviceVersion string) func() {
 
 	res, err := newResource(ctx, serviceName, serviceVersion)
 	if err != nil {
-		log.Printf("telemetry: resource error: %v", err)
+		slog.ErrorContext(ctx, "telemetry: resource error; export disabled", "error", err)
 		return func() {}
 	}
 
 	traceExp, err := newTraceExporter(ctx)
 	if err != nil {
-		log.Printf("telemetry: trace exporter error: %v", err)
+		slog.ErrorContext(ctx, "telemetry: trace exporter error; export disabled", "error", err)
 		return func() {}
 	}
 
@@ -140,7 +140,7 @@ func Setup(ctx context.Context, serviceName, serviceVersion string) func() {
 
 	metricExp, err := newMetricExporter(ctx)
 	if err != nil {
-		log.Printf("telemetry: metric exporter error: %v", err)
+		slog.ErrorContext(ctx, "telemetry: metric exporter error; traces still export", "error", err)
 		// The trace provider is already live with a background batcher; flush
 		// it on a timeout context detached from the caller ctx (which may be
 		// cancelled by then), mirroring the happy-path shutdown's flush budget.
@@ -148,7 +148,7 @@ func Setup(ctx context.Context, serviceName, serviceVersion string) func() {
 			shutCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
 			if err := tp.Shutdown(shutCtx); err != nil {
-				log.Printf("telemetry: trace provider shutdown: %v", err)
+				slog.ErrorContext(shutCtx, "telemetry: trace provider shutdown", "error", err)
 			}
 		}
 	}
@@ -159,7 +159,7 @@ func Setup(ctx context.Context, serviceName, serviceVersion string) func() {
 	)
 	otel.SetMeterProvider(mp)
 
-	log.Printf("telemetry: exporting to %s", endpoint)
+	slog.InfoContext(ctx, "telemetry: exporting", "endpoint", endpoint)
 
 	// The shutdown runs after the caller's ctx is typically cancelled, so it
 	// detaches from that cancellation and keeps only the values.
@@ -167,10 +167,10 @@ func Setup(ctx context.Context, serviceName, serviceVersion string) func() {
 		shutCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		if err := tp.Shutdown(shutCtx); err != nil {
-			log.Printf("telemetry: trace provider shutdown: %v", err)
+			slog.ErrorContext(shutCtx, "telemetry: trace provider shutdown", "error", err)
 		}
 		if err := mp.Shutdown(shutCtx); err != nil {
-			log.Printf("telemetry: meter provider shutdown: %v", err)
+			slog.ErrorContext(shutCtx, "telemetry: meter provider shutdown", "error", err)
 		}
 	}
 }
