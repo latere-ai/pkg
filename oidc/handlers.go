@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"golang.org/x/oauth2"
+
 	"latere.ai/x/pkg/jwtauth"
 )
 

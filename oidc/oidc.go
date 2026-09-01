@@ -141,15 +141,35 @@ type Client struct {
 // name work) for local development of a service pointed at a remote IDP over
 // plain HTTP. It must never be set in production.
 func LoadConfig() Config {
+	return LoadConfigWithPrefix("")
+}
+
+// LoadConfigWithPrefix reads the same variables as [LoadConfig], consulting
+// "<PREFIX>_AUTH_*" before the plain "AUTH_*" name, one variable at a time:
+// a prefixed URL beside an unprefixed client id yields the prefixed URL and
+// the plain client id. An empty prefix is [LoadConfig].
+//
+// It exists for a cutover: a relying party whose deploy still carries a
+// legacy per-product prefix migrates to the unified names one variable at a
+// time, then drops the prefix.
+func LoadConfigWithPrefix(prefix string) Config {
+	env := func(name string) string {
+		if prefix != "" {
+			if v := os.Getenv(prefix + "_" + name); v != "" {
+				return v
+			}
+		}
+		return os.Getenv(name)
+	}
 	return Config{
-		AuthURL:         cmp.Or(os.Getenv("AUTH_URL"), "https://auth.latere.ai"),
-		ClientID:        os.Getenv("AUTH_CLIENT_ID"),
-		ClientSecret:    os.Getenv("AUTH_CLIENT_SECRET"),
-		RedirectURL:     os.Getenv("AUTH_REDIRECT_URL"),
-		CookieKey:       os.Getenv("AUTH_COOKIE_KEY"),
-		Audience:        os.Getenv("AUTH_AUDIENCE"),
-		Scopes:          SplitScopes(os.Getenv("AUTH_SCOPES")),
-		InsecureCookies: envutil.IsTruthy(os.Getenv("AUTH_INSECURE_COOKIES")),
+		AuthURL:         cmp.Or(env("AUTH_URL"), "https://auth.latere.ai"),
+		ClientID:        env("AUTH_CLIENT_ID"),
+		ClientSecret:    env("AUTH_CLIENT_SECRET"),
+		RedirectURL:     env("AUTH_REDIRECT_URL"),
+		CookieKey:       env("AUTH_COOKIE_KEY"),
+		Audience:        env("AUTH_AUDIENCE"),
+		Scopes:          SplitScopes(env("AUTH_SCOPES")),
+		InsecureCookies: envutil.IsTruthy(env("AUTH_INSECURE_COOKIES")),
 	}
 }
 
