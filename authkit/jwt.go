@@ -1,10 +1,9 @@
 package authkit
 
 import (
-	"crypto/subtle"
 	"net/http"
-	"strings"
 
+	"latere.ai/x/pkg/bearer"
 	"latere.ai/x/pkg/jwtauth"
 )
 
@@ -42,12 +41,10 @@ func NewJWT(v *jwtauth.Validator, ti TokenInfoLookup) *JWT {
 }
 
 func (j *JWT) Authenticate(r *http.Request) (Identity, error) {
-	h := r.Header.Get("Authorization")
-	const p = "Bearer "
-	if !strings.HasPrefix(h, p) {
+	raw, ok := bearer.FromRequest(r)
+	if !ok {
 		return Identity{}, ErrUnauthenticated
 	}
-	raw := h[len(p):]
 	claims, err := j.V.Validate(raw)
 	if err != nil {
 		return Identity{}, err
@@ -69,10 +66,4 @@ func (j *JWT) Authenticate(r *http.Request) (Identity, error) {
 		ActorID:       claims.ActorID,
 		AuthMethod:    MethodBearer,
 	}, nil
-}
-
-func constantEq(a, b string) bool {
-	// subtle.ConstantTimeCompare returns 0 on length mismatch, so the
-	// length-leak property matches the previous hand-rolled check.
-	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }

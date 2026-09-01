@@ -36,6 +36,16 @@ func TestStaticTokenAuthenticator_MissingHeader(t *testing.T) {
 	}
 }
 
+func TestStaticTokenAuthenticator_LowercaseScheme(t *testing.T) {
+	a := NewStaticToken(map[string]Identity{"tok": {Sub: "u-1"}})
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Authorization", "bearer tok")
+	id, err := a.Authenticate(r)
+	if err != nil || id.Sub != "u-1" {
+		t.Fatalf("lowercase scheme: id=%+v err=%v", id, err)
+	}
+}
+
 func TestStaticTokenAuthenticator_WrongScheme(t *testing.T) {
 	a := NewStaticToken(map[string]Identity{"tok": {Sub: "u-1"}})
 	r := httptest.NewRequest(http.MethodGet, "/", nil)

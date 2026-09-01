@@ -17,6 +17,7 @@ func TestBearerTokenAuth(t *testing.T) {
 		{"wrong scheme", "Basic secret", false},
 		{"wrong token", "Bearer nope", false},
 		{"correct", "Bearer secret", true},
+		{"lowercase scheme", "bearer secret", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -38,7 +39,7 @@ func TestBearerTokenAuth(t *testing.T) {
 func TestBearerTokenEmptyTokenFailsClosed(t *testing.T) {
 	// A BearerToken configured with an empty secret must reject every request
 	// — including the degenerate "Bearer " header with an empty credential,
-	// which constantEq("","") would otherwise accept and grant superadmin.
+	// which bearer.Equal("", "") would otherwise accept and grant superadmin.
 	a := NewBearerToken("", "dev-user")
 	for _, h := range []string{"Bearer ", "Bearer anything", ""} {
 		r := httptest.NewRequest(http.MethodGet, "/", nil)

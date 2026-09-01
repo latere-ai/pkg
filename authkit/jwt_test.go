@@ -10,24 +10,6 @@ import (
 	"latere.ai/x/pkg/jwtauth"
 )
 
-// ── constantEq ───────────────────────────────────────────────────────────────
-
-func TestConstantEq(t *testing.T) {
-	if !constantEq("hello", "hello") {
-		t.Fatal("equal strings should match")
-	}
-	if constantEq("hello", "world") {
-		t.Fatal("different strings should not match")
-	}
-	if constantEq("short", "longer") {
-		t.Fatal("different lengths should not match")
-	}
-	// empty == empty is true (length 0 == 0, no bytes, v == 0)
-	if !constantEq("", "") {
-		t.Fatal("empty == empty should be true")
-	}
-}
-
 // ── JWT.Authenticate (via fake validator) ────────────────────────────────────
 
 // fakeValidator implements the validator interface.

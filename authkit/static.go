@@ -2,7 +2,8 @@ package authkit
 
 import (
 	"net/http"
-	"strings"
+
+	"latere.ai/x/pkg/bearer"
 )
 
 // StaticTokenAuthenticator maps a small set of pre-shared bearer tokens to
@@ -33,18 +34,16 @@ func (s *StaticTokenAuthenticator) Authenticate(r *http.Request) (Identity, erro
 	if s == nil || len(s.tokens) == 0 {
 		return Identity{}, ErrUnauthenticated
 	}
-	h := r.Header.Get("Authorization")
-	const p = "Bearer "
-	if !strings.HasPrefix(h, p) {
+	candidate, ok := bearer.FromRequest(r)
+	if !ok {
 		return Identity{}, ErrUnauthenticated
 	}
-	candidate := h[len(p):]
 	// Compare against every configured token in constant time so timing
 	// does not reveal which prefix matched (or that none did).
 	var match Identity
 	matched := false
 	for tok, id := range s.tokens {
-		if constantEq(candidate, tok) {
+		if bearer.Equal(candidate, tok) {
 			match = id
 			matched = true
 			// keep going so the loop's work is independent of the

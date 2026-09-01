@@ -84,6 +84,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"latere.ai/x/pkg/bearer"
 )
 
 // ── Principal & Validation Types ────────────────────────────────────────────
@@ -334,12 +336,11 @@ const ctxKeyClaims ctxKey = iota
 // Authorization: Bearer header and injects Claims into the request context.
 func (v *Validator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		auth := r.Header.Get("Authorization")
-		if !strings.HasPrefix(auth, "Bearer ") {
+		token, ok := bearer.FromRequest(r)
+		if !ok {
 			WriteUnauthorized(w, ErrNoToken.Error())
 			return
 		}
-		token := auth[7:]
 
 		claims, err := v.Validate(token)
 		if err != nil {

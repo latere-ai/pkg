@@ -787,6 +787,25 @@ func TestMiddlewareSuccess(t *testing.T) {
 	}
 }
 
+func TestMiddlewareLowercaseScheme(t *testing.T) {
+	key := genKey(t)
+	v := testValidator(t, key)
+	token := signToken(t, key, defaultHeader(key), defaultPayload())
+
+	handler := v.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "bearer "+token)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200: the scheme is case-insensitive (RFC 7235)", rr.Code)
+	}
+}
+
 func TestMiddlewareMissingToken(t *testing.T) {
 	key := genKey(t)
 	v := testValidator(t, key)

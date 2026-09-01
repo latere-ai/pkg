@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"net/http"
+
+	"latere.ai/x/pkg/bearer"
 )
 
 // randRead is the source of randomness for CSRF tokens. Tests can replace it
@@ -54,12 +56,12 @@ func CSRFValidate(r *http.Request, cookieName string) bool {
 		return false
 	}
 	if h := r.Header.Get(csrfHeader); h != "" {
-		return constantEq(h, c.Value)
+		return bearer.Equal(h, c.Value)
 	}
 	if err := r.ParseForm(); err != nil {
 		return false
 	}
-	return constantEq(r.PostFormValue(csrfField), c.Value)
+	return bearer.Equal(r.PostFormValue(csrfField), c.Value)
 }
 
 // CSRFHeaderName returns the expected request header name ("X-CSRF-Token").
