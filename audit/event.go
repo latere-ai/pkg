@@ -2,7 +2,7 @@
 // Latere services and the abstractions emitters share.
 //
 // The Event struct is the wire shape: products serialize it to stdout, OTLP
-// logs, ClickHouse, Postgres, etc. Storage adapters live in each product
+// logs, object storage, Postgres, etc. Storage adapters live in each product
 // because retention, schema, and query patterns are product-specific. The
 // Emitter interface is the boundary: anything that consumes an Event can be
 // composed via MultiEmitter.
