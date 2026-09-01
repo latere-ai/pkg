@@ -1,6 +1,10 @@
 package sanitize
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"unicode/utf8"
+)
 
 func TestTruncate(t *testing.T) {
 	tests := []struct {
@@ -114,4 +118,46 @@ func TestTruncateNegativeBudget(t *testing.T) {
 			t.Errorf("TruncateTrimRight(%q, %d) = %q, want %q", c.in, c.n, got, c.want)
 		}
 	}
+}
+
+func TestTruncateBytes(t *testing.T) {
+	cases := []struct {
+		in   string
+		n    int
+		want string
+	}{
+		{"hello", 10, "hello"},
+		{"hello", 5, "hello"},
+		{"hello", 3, "hel"},
+		{"hello", 0, ""},
+		{"hello", -1, ""},
+		{"héllo", 2, "h"},  // é is 2 bytes; cutting at 2 would split it
+		{"héllo", 3, "hé"}, // whole rune fits
+		{"日本語", 4, "日"},    // each rune is 3 bytes
+		{"日本語", 6, "日本"},
+		{"日本語", 9, "日本語"},
+		{"", 5, ""},
+	}
+	for _, c := range cases {
+		if got := TruncateBytes(c.in, c.n); got != c.want {
+			t.Errorf("TruncateBytes(%q, %d) = %q, want %q", c.in, c.n, got, c.want)
+		}
+	}
+}
+
+func FuzzTruncateBytes(f *testing.F) {
+	f.Add("héllo wörld 日本語", 5)
+	f.Add("plain", 3)
+	f.Fuzz(func(t *testing.T, s string, n int) {
+		got := TruncateBytes(s, n)
+		if !strings.HasPrefix(s, got) {
+			t.Fatalf("%q is not a prefix of %q", got, s)
+		}
+		if n >= 0 && len(got) > n {
+			t.Fatalf("len(%q) = %d > %d", got, len(got), n)
+		}
+		if utf8.ValidString(s) && !utf8.ValidString(got) {
+			t.Fatalf("valid input %q produced invalid %q", s, got)
+		}
+	})
 }

@@ -2,7 +2,10 @@
 // truncation and generated slugs.
 package sanitize
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // Truncate returns s truncated to at most n runes, appending "…" when trimmed.
 // It handles multi-byte characters correctly by operating on runes rather than
@@ -64,4 +67,20 @@ func Slug(s string, maxLen int) string {
 		return Fallback
 	}
 	return slug
+}
+
+// TruncateBytes returns the longest prefix of s that is at most n bytes long
+// and does not end inside a multi-byte rune. It appends nothing, so the
+// result fits a byte-width budget exactly: a database column, an attribute
+// limit, a log line. Use [Truncate] when the budget is characters shown to a
+// person. A negative n is treated as zero.
+func TruncateBytes(s string, n int) string {
+	n = max(n, 0)
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }
