@@ -3,6 +3,8 @@ package circuitbreaker
 import (
 	"sync"
 	"time"
+
+	"latere.ai/x/pkg/retry"
 )
 
 // BackoffConfig configures a [BackoffBreaker].
@@ -19,8 +21,7 @@ type BackoffBreaker struct {
 	mu        sync.Mutex
 	failures  int
 	openUntil time.Time // zero means closed (healthy)
-	baseDelay time.Duration
-	maxDelay  time.Duration
+	policy    retry.Policy
 	now       func() time.Time
 }
 
@@ -37,9 +38,10 @@ func NewBackoff(cfg BackoffConfig) *BackoffBreaker {
 		cfg.Now = time.Now
 	}
 	return &BackoffBreaker{
-		baseDelay: cfg.BaseDelay,
-		maxDelay:  cfg.MaxDelay,
-		now:       cfg.Now,
+		// Jitter is off: a breaker's RetryAt is a promise callers schedule
+		// against, and the schedule is what its tests pin.
+		policy: retry.Policy{Base: cfg.BaseDelay, Max: cfg.MaxDelay, Jitter: -1},
+		now:    cfg.Now,
 	}
 }
 
@@ -50,21 +52,14 @@ func (b *BackoffBreaker) IsOpen() bool {
 	return !b.openUntil.IsZero() && b.now().Before(b.openUntil)
 }
 
-// RecordFailure increments the failure counter and opens the breaker with
-// exponential backoff (baseDelay * 2^(n-1), capped at maxDelay). Returns the
-// updated failure count.
+// RecordFailure increments the failure counter and opens the breaker for the
+// delay [retry.Policy.Delay] gives that failure count: doubling from
+// BaseDelay up to MaxDelay. Returns the updated failure count.
 func (b *BackoffBreaker) RecordFailure() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.failures++
-	// Double up to the cap rather than computing baseDelay * 2^(n-1): the
-	// product wraps for n >= 34 with a 30s base, and a wrapped value can be
-	// positive and below maxDelay, which a range check on the result misses.
-	backoff := b.baseDelay
-	for i := 1; i < b.failures && backoff < b.maxDelay; i++ {
-		backoff *= 2
-	}
-	b.openUntil = b.now().Add(min(backoff, b.maxDelay))
+	b.openUntil = b.now().Add(b.policy.Delay(b.failures))
 	return b.failures
 }
 
