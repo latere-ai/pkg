@@ -47,13 +47,3 @@ func TestMergeUnique_AppliesMarkToBuiltinsOnly(t *testing.T) {
 		t.Error("user item should not be marked")
 	}
 }
-
-func TestContainsSlug(t *testing.T) {
-	items := []item{{Slug: "a"}, {Slug: "b"}}
-	if !ContainsSlug(items, "b", slugOf) {
-		t.Error("expected b to be found")
-	}
-	if ContainsSlug(items, "z", slugOf) {
-		t.Error("did not expect z to be found")
-	}
-}

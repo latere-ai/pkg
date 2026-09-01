@@ -29,6 +29,15 @@ func (m *Map[K, V]) Load(key K) (V, bool) {
 }
 
 // Delete removes the entry for key.
+// LoadOrStore returns the value stored under key, storing and returning val
+// when the key is absent. loaded reports whether the value was already
+// present. It is the primitive behind a per-key mutex: LoadOrStore(key,
+// &sync.Mutex{}) hands every caller of the same key the same lock.
+func (m *Map[K, V]) LoadOrStore(key K, val V) (actual V, loaded bool) {
+	v, loaded := m.m.LoadOrStore(key, val)
+	return v.(V), loaded //nolint:errcheck // Store and LoadOrStore are the only writers, and both take a V
+}
+
 func (m *Map[K, V]) Delete(key K) {
 	m.m.Delete(key)
 }

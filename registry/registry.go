@@ -29,13 +29,3 @@ func MergeUnique[T any](kind string, builtins, user []T, slugOf func(T) string, 
 	}
 	return all, nil
 }
-
-// ContainsSlug reports whether any item in items has the given slug.
-func ContainsSlug[T any](items []T, slug string, slugOf func(T) string) bool {
-	for i := range items {
-		if slugOf(items[i]) == slug {
-			return true
-		}
-	}
-	return false
-}

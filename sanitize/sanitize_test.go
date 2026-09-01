@@ -161,3 +161,43 @@ func FuzzTruncateBytes(f *testing.F) {
 		}
 	})
 }
+
+func TestIsSlug(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+		why  string
+	}{
+		{"ab", true, "minimum length 2"},
+		{"a", false, "below minimum length"},
+		{"", false, "empty"},
+		{"abc-def", true, "interior hyphen ok"},
+		{"abc--def", true, "consecutive interior hyphens ok"},
+		{"-abc", false, "leading hyphen"},
+		{"abc-", false, "trailing hyphen"},
+		{"Abc", false, "uppercase rejected"},
+		{"abc_def", false, "underscore rejected"},
+		{"abc def", false, "space rejected"},
+		{"abc1", true, "digit ok"},
+		{"1abc", true, "leading digit ok"},
+		{"abc.def", false, "dot rejected"},
+		{"abcdefghijklmnopqrstuvwxyz0123456789-abc", true, "exactly 40 chars"},
+		{"abcdefghijklmnopqrstuvwxyz0123456789-abcd", false, "41 chars over limit"},
+	}
+	for _, c := range cases {
+		if got := IsSlug(c.in); got != c.want {
+			t.Errorf("IsSlug(%q) = %v, want %v (%s)", c.in, got, c.want, c.why)
+		}
+	}
+}
+
+func FuzzIsSlug(f *testing.F) {
+	f.Add("abc-def")
+	f.Add("-abc")
+	f.Add("Hello World")
+	f.Fuzz(func(t *testing.T, s string) {
+		if g := Slug(s, SlugMaxLen); g != Fallback && len(g) >= SlugMinLen && !IsSlug(g) {
+			t.Fatalf("Slug(%q) = %q, which IsSlug rejects", s, g)
+		}
+	})
+}

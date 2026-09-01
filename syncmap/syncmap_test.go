@@ -110,3 +110,15 @@ func TestMap_Concurrent(t *testing.T) {
 		}
 	}
 }
+
+func TestMap_LoadOrStore(t *testing.T) {
+	var m Map[string, *sync.Mutex]
+	first, loaded := m.LoadOrStore("k", &sync.Mutex{})
+	if loaded {
+		t.Fatal("first LoadOrStore reported loaded")
+	}
+	second, loaded := m.LoadOrStore("k", &sync.Mutex{})
+	if !loaded || second != first {
+		t.Fatal("second LoadOrStore did not return the stored value")
+	}
+}

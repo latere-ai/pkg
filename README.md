@@ -98,7 +98,7 @@ second service needed the same thing.
 |---|---|
 | [`atomicfile`](atomicfile/) | Write-then-rename file replacement, so a reader never observes a half-written file |
 | [`bearer`](bearer/) | Token extraction from `Authorization: Bearer` with the RFC 7235 case-insensitive scheme, and constant-time comparison |
-| [`cache`](cache/) | Generic TTL cache with optional LRU bounding and an injectable clock, plus `Lazy`, a once-computed value with error memoization |
+| [`cache`](cache/) | Generic TTL cache with a bounded LRU cap over every entry and an injectable clock |
 | [`circuitbreaker`](circuitbreaker/) | Trip-on-failure gate that stops hammering a dependency that is already down |
 | [`cmdexec`](cmdexec/) | Fluent subprocess builder and a transactional sequencer that rolls back completed steps when a later one fails |
 | [`dag`](dag/) | Topological ordering with cycle detection |
@@ -106,7 +106,6 @@ second service needed the same thing.
 | [`envutil`](envutil/) | Typed environment reads with defaults: integers, bounded integers, durations, and the conventional boolean spellings |
 | [`gitutil`](gitutil/) | The git CLI behind structured results and typed errors: worktrees, rebase with conflict recovery, stashes, branch discovery |
 | [`httpjson`](httpjson/) | Strict JSON request decoding (unknown fields and trailing content rejected) and response writing |
-| [`keyedmu`](keyedmu/) | Per-key mutex, so unrelated keys do not serialize against each other |
 | [`metrics`](metrics/) | Prometheus text-exposition registry with labeled counters, histograms, and scrape-time gauges, with no client-library dependency |
 | [`ndjson`](ndjson/) | NDJSON file reading and appending, plus the terminal-result scan agent output parsers need |
 | [`pagination`](pagination/) | Cursor pagination helpers |
@@ -115,16 +114,12 @@ second service needed the same thing.
 | [`relpath`](relpath/) | Traversal-safe relative paths: validate, join under a base, and symlink-aware containment |
 | [`retry`](retry/) | Bounded exponential backoff with jitter and a driver that runs a function under it |
 | [`routine`](routine/) | Periodic fire-and-forget callbacks keyed by UUID, one timer each, with an injectable clock |
-| [`sanitize`](sanitize/) | Rune-safe display truncation, byte-budget truncation that never splits a rune, and container-safe slug generation |
-| [`set`](set/) | Generic set |
-| [`slugutil`](slugutil/) | Kebab-case identifier validation |
+| [`sanitize`](sanitize/) | Rune-safe display truncation, byte-budget truncation that never splits a rune, slug generation, and slug validation |
 | [`statemachine`](statemachine/) | Declarative transition table with guarded moves |
-| [`syncmap`](syncmap/) | Type-safe `sync.Map` |
-| [`tail`](tail/) | Last-n elements of a slice, without copying |
+| [`syncmap`](syncmap/) | Type-safe `sync.Map`, with `LoadOrStore` for the per-key mutex idiom |
 | [`trackedwg`](trackedwg/) | Wait group that reports what is still outstanding |
 | [`tree`](tree/) | Generic tree construction and rendering |
 | [`uniq`](uniq/) | Order-preserving deduplication, with a trim-and-drop-empties form for string lists |
-| [`uuidutil`](uuidutil/) | UUID parsing helpers |
 | [`wait`](wait/) | Cancellable sleep, ticker loop, and poll; `wait/waittest` polls a condition in a test until it holds |
 | [`watcher`](watcher/) | Filesystem change notification with debouncing |
 

@@ -1,5 +1,10 @@
-// Package sanitize provides string sanitization utilities for display
-// truncation and generated slugs.
+// Package sanitize provides string sanitization utilities: display and
+// byte-budget truncation, slug generation, and slug validation.
+//
+// Two slug rules live here on purpose. [Slug] generates a container-safe
+// name from arbitrary text and bounds it only by the caller's maxLen.
+// [IsSlug] validates an identifier a person typed, and holds it to 2 to 40
+// characters. A generated slug within that length always validates.
 package sanitize
 
 import (
@@ -83,4 +88,32 @@ func TruncateBytes(s string, n int) string {
 		n--
 	}
 	return s[:n]
+}
+
+// SlugMinLen and SlugMaxLen bound a user-authored slug, inclusive.
+const (
+	SlugMinLen = 2
+	SlugMaxLen = 40
+)
+
+// IsSlug reports whether s is a valid user-authored identifier: 2 to 40
+// characters of lowercase ASCII letters, digits, and interior hyphens, with
+// no leading or trailing hyphen. It is the shape enforced wherever a person
+// names a resource in a YAML registry.
+func IsSlug(s string) bool {
+	if len(s) < SlugMinLen || len(s) > SlugMaxLen {
+		return false
+	}
+	for i, c := range s {
+		switch {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+		case c == '-':
+			if i == 0 || i == len(s)-1 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
