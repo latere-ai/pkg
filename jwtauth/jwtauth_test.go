@@ -1148,7 +1148,7 @@ func TestWriteUnauthorized_BodyWriteFails(t *testing.T) {
 	if w.status != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", w.status)
 	}
-	if !strings.Contains(logged.String(), "write unauthorized body") {
+	if !strings.Contains(logged.String(), "write json") {
 		t.Errorf("write failure was not logged: %q", logged.String())
 	}
 }
