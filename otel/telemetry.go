@@ -1,12 +1,21 @@
 // Package otel sets up OpenTelemetry tracing and metrics.
 //
-// By default, telemetry is disabled (noop). Set OTEL_EXPORTER_OTLP_ENDPOINT
-// to enable export to an OTLP-compatible backend (Grafana Cloud, Jaeger, etc).
+// By default, telemetry is disabled (noop). Set OTEL_EXPORTER_OTLP_ENDPOINT to
+// enable export to any OTLP/HTTP backend. Nothing here is vendor-specific: the
+// endpoint, its credentials, and the sampling ratio all come from the
+// environment, which is what lets the backend change without touching a
+// service.
 //
-// Example:
+// Example, exporting directly to a hosted backend:
 //
-//	OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-eu-west-2.grafana.net/otlp
-//	OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <base64>
+//	OTEL_EXPORTER_OTLP_ENDPOINT=https://ingress.example.com
+//	OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer%20<token>
+//
+// Under a Kubernetes operator that injects the endpoint (the Dash0 operator,
+// the OpenTelemetry operator), leave both variables unset in the manifest and
+// let the operator supply them. Such operators generally skip a container that
+// already sets them, so a hardcoded endpoint reads as configured while the
+// telemetry goes somewhere else.
 package otel
 
 import (
