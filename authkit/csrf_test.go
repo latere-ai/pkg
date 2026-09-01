@@ -1,7 +1,6 @@
 package authkit
 
 import (
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,10 +11,7 @@ const testCookieName = "__test_csrf"
 
 func TestCSRFIssueSetsCookie(t *testing.T) {
 	w := httptest.NewRecorder()
-	tok, err := CSRFIssue(w, testCookieName, false)
-	if err != nil {
-		t.Fatalf("CSRFIssue: %v", err)
-	}
+	tok := CSRFIssue(w, testCookieName, false)
 	if tok == "" {
 		t.Fatal("token is empty")
 	}
@@ -42,9 +38,7 @@ func TestCSRFIssueSetsCookie(t *testing.T) {
 // error while the login session is still valid.
 func TestCSRFIssueIsSessionCookie(t *testing.T) {
 	w := httptest.NewRecorder()
-	if _, err := CSRFIssue(w, testCookieName, false); err != nil {
-		t.Fatalf("CSRFIssue: %v", err)
-	}
+	CSRFIssue(w, testCookieName, false)
 	for _, c := range w.Result().Cookies() {
 		if c.Name != testCookieName {
 			continue
@@ -62,10 +56,7 @@ func TestCSRFIssueIsSessionCookie(t *testing.T) {
 
 func TestCSRFIssueSecureFlag(t *testing.T) {
 	w := httptest.NewRecorder()
-	_, err := CSRFIssue(w, testCookieName, true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	CSRFIssue(w, testCookieName, true)
 	resp := w.Result()
 	for _, c := range resp.Cookies() {
 		if c.Name == testCookieName {
@@ -165,20 +156,6 @@ func TestCSRFHelperFunctions(t *testing.T) {
 	}
 	if CSRFFieldName() != "csrf_token" {
 		t.Fatalf("CSRFFieldName = %q", CSRFFieldName())
-	}
-}
-
-func TestCSRFIssueRandError(t *testing.T) {
-	orig := randRead
-	randRead = func(b []byte) (int, error) {
-		return 0, errors.New("rand failed")
-	}
-	t.Cleanup(func() { randRead = orig })
-
-	w := httptest.NewRecorder()
-	_, err := CSRFIssue(w, testCookieName, false)
-	if err == nil {
-		t.Fatal("expected error when rand fails")
 	}
 }
 

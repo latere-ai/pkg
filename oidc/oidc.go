@@ -24,7 +24,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -252,9 +251,6 @@ func (c *Client) AuthURL() string {
 
 // --- PKCE and state ---
 
-// randReader is the entropy source. Package-level variable for testability.
-var randReader io.Reader = rand.Reader
-
 // GenerateVerifier creates a PKCE code verifier.
 // Uses the oauth2 package's built-in generator for correct formatting.
 func GenerateVerifier() string {
@@ -262,12 +258,8 @@ func GenerateVerifier() string {
 }
 
 // GenerateState creates a random state parameter for CSRF protection.
-func GenerateState() (string, error) {
-	buf := make([]byte, 16)
-	if _, err := io.ReadFull(randReader, buf); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(buf), nil
+func GenerateState() string {
+	return rand.Text()
 }
 
 // --- OAuth2 operations ---
@@ -622,9 +614,7 @@ func defaultAESGCMEncrypt(key, plaintext []byte) ([]byte, error) {
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(randReader, nonce); err != nil {
-		return nil, err
-	}
+	rand.Read(nonce)
 
 	return gcm.Seal(nonce, nonce, plaintext, nil), nil
 }

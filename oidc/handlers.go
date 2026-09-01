@@ -188,12 +188,7 @@ func isSafeRedirect(target string) bool {
 func (c *Client) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	verifier := GenerateVerifier()
 
-	state, err := GenerateState()
-	if err != nil {
-		slog.Error("oidc: generate state", "error", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
+	state := GenerateState()
 
 	returnTo := r.URL.Query().Get("return_to")
 	if !isSafeRedirect(returnTo) {

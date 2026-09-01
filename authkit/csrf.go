@@ -2,17 +2,10 @@ package authkit
 
 import (
 	"crypto/rand"
-	"encoding/base64"
 	"net/http"
 
 	"latere.ai/x/pkg/bearer"
 )
-
-// randRead is the source of randomness for CSRF tokens. Tests can replace it
-// to exercise error paths without adding external dependencies.
-var randRead = func(b []byte) (int, error) {
-	return rand.Read(b)
-}
 
 const csrfHeader = "X-CSRF-Token"
 const csrfField = "csrf_token"
@@ -30,11 +23,8 @@ const csrfField = "csrf_token"
 // would expire while a long-lived SPA tab stays open, silently breaking every
 // state-changing request until the next full page load re-issued it. Callers
 // re-issue on page load, so browser-session scope is the effective lifetime.
-func CSRFIssue(w http.ResponseWriter, cookieName string, secure bool) (string, error) {
-	tok, err := randomURLToken(16)
-	if err != nil {
-		return "", err
-	}
+func CSRFIssue(w http.ResponseWriter, cookieName string, secure bool) string {
+	tok := rand.Text()
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookieName,
 		Value:    tok,
@@ -43,7 +33,7 @@ func CSRFIssue(w http.ResponseWriter, cookieName string, secure bool) (string, e
 		Secure:   secure,
 		SameSite: http.SameSiteStrictMode,
 	})
-	return tok, nil
+	return tok
 }
 
 // CSRFValidate compares the cookie against either the X-CSRF-Token
@@ -69,14 +59,3 @@ func CSRFHeaderName() string { return csrfHeader }
 
 // CSRFFieldName returns the form field name ("csrf_token").
 func CSRFFieldName() string { return csrfField }
-
-// randomURLToken returns a URL-safe random token built from n random bytes
-// encoded with base64.RawURLEncoding. Inlined rather than imported so this
-// package keeps its dependency surface to the standard library.
-func randomURLToken(n int) (string, error) {
-	b := make([]byte, n)
-	if _, err := randRead(b); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
-}

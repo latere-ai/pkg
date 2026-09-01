@@ -200,22 +200,6 @@ func TestHandleLogin_UnsafeReturnTo(t *testing.T) {
 	}
 }
 
-func TestHandleLogin_StateError(t *testing.T) {
-	orig := randReader
-	t.Cleanup(func() { randReader = orig })
-	randReader = failReader{}
-
-	c := testClient(t)
-	r := httptest.NewRequest("GET", "/login", nil)
-	w := httptest.NewRecorder()
-
-	c.HandleLogin(w, r)
-
-	if w.Result().StatusCode != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500", w.Result().StatusCode)
-	}
-}
-
 // --- HandleCallback ---
 
 func TestHandleCallback_ErrorParam(t *testing.T) {

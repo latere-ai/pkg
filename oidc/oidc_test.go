@@ -273,22 +273,19 @@ func TestGenerateVerifierUniqueness(t *testing.T) {
 }
 
 func TestGenerateState(t *testing.T) {
-	s, err := GenerateState()
-	if err != nil {
-		t.Fatalf("GenerateState error: %v", err)
-	}
+	s := GenerateState()
 	if s == "" {
 		t.Error("state is empty")
 	}
-	// 16 bytes base64url = 22 chars.
-	if len(s) != 22 {
-		t.Errorf("state length = %d, want 22", len(s))
+	// rand.Text yields 26 base32 characters, 128 bits of entropy.
+	if len(s) != 26 {
+		t.Errorf("state length = %d, want 26", len(s))
 	}
 }
 
 func TestGenerateStateUniqueness(t *testing.T) {
-	s1, _ := GenerateState()
-	s2, _ := GenerateState()
+	s1 := GenerateState()
+	s2 := GenerateState()
 	if s1 == s2 {
 		t.Error("two calls should produce different states")
 	}
@@ -830,37 +827,10 @@ func TestRefreshToken(t *testing.T) {
 
 // --- rand error paths ---
 
-type failReader struct{}
-
-func (failReader) Read([]byte) (int, error) { return 0, fmt.Errorf("entropy failure") }
-
 func TestGenerateVerifierNonEmpty(t *testing.T) {
 	v := GenerateVerifier()
 	if v == "" {
 		t.Fatal("expected non-empty verifier")
-	}
-}
-
-func TestGenerateStateRandError(t *testing.T) {
-	orig := randReader
-	t.Cleanup(func() { randReader = orig })
-	randReader = failReader{}
-
-	_, err := GenerateState()
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestAESGCMEncryptRandError(t *testing.T) {
-	orig := randReader
-	t.Cleanup(func() { randReader = orig })
-	randReader = failReader{}
-
-	key := make([]byte, 32)
-	_, err := defaultAESGCMEncrypt(key, []byte("data"))
-	if err == nil {
-		t.Fatal("expected error for nonce generation failure")
 	}
 }
 
