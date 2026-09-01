@@ -83,8 +83,7 @@ res, err := c.Generate(ctx, &luxsdk.Request{
 | [`llmjson`](llmjson/) | Repairs the JSON a model meant to send: strips a markdown fence and escapes the raw newlines and tabs left inside string values, so a correct answer in the wrong encoding still decodes |
 | [`luxsdk`](luxsdk/) | First-party Go client for the Lux gateway's native dialect: typed generate, streaming, and token counting |
 | [`md`](md/) | YAML frontmatter parsing and GFM-to-HTML rendering |
-| [`oidc`](oidc/) | Relying Party client for the Latere auth service: PKCE, encrypted cookie sessions, token refresh, org switching, and a shared `/me` assembly |
-| [`oidclogin`](oidclogin/) | Standard OIDC only, no vendor extensions: discovers an issuer, drives a browser PKCE login, and maps ID-token claims through a per-provider mapper. Point it at Keycloak, Google, Cognito, or Latere auth by configuration |
+| [`oidc`](oidc/) | The OIDC relying party: a `Provider` for any standard issuer (Latere auth, Keycloak, Google, Cognito) with discovery, PKCE, and ID-token verification, and the Latere `Client` on top of it with encrypted cookie sessions, token refresh, org switching, and a shared `/me` assembly |
 | [`otel`](otel/) | One-call OpenTelemetry bootstrap for traces, metrics, and structured logs, plus HTTP server and client instrumentation |
 | [`pgxmigrate`](pgxmigrate/) | Applies embedded golang-migrate migrations and reliably closes migrate's own connection pool afterward |
 | [`scopes`](scopes/) | Typed registry of the OAuth/RBAC scopes the Latere auth service issues, for call-site gating and OIDC discovery |

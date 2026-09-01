@@ -10,6 +10,22 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Changed
+
+- `oidc` is the one OIDC relying party. `oidclogin` moved in as
+  `Provider`, `ProviderConfig`, `NewProvider`, `Identity`, `ClaimsMapper`,
+  and the `LatereMapper`, `KeycloakMapper`, `GoogleMapper`, and
+  `CognitoMapper` mappers. `ProviderConfig.Provider` is now `Kind`.
+  `Provider.AuthCodeURL` takes extra `oauth2.AuthCodeOption`s after the
+  verifier. The Latere `Client` is built on a `Provider`, and
+  `HandleCallback` now verifies the ID token the exchange returns against
+  the auth service's JWKS and rejects a nonce that does not match the
+  login. Replace `oidclogin.New` with `oidc.NewProvider`.
+
+### Removed
+
+- `oidclogin`. Import `oidc`.
+
 ## v0.49.0 - 2026-09-01
 
 The first release note since v0.7.4. That tag held three packages: `md`,
