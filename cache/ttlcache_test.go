@@ -126,29 +126,68 @@ func TestTTLCache_MaxSize_UpdateDoesNotEvict(t *testing.T) {
 	}
 }
 
-// TestTTLCache_SetOverPermanentReleasesLRUSlot verifies that overwriting a
-// permanent key with Set (perm -> volatile) releases its LRU slot. Before the
-// fix, Set left the old permanent entry's *list.Element linked in the LRU list,
-// so it kept counting against MaxSize and a later SetPermanent evicted a live
-// entry (the orphaned element sat at the front and was wrongly chosen).
-func TestTTLCache_SetOverPermanentReleasesLRUSlot(t *testing.T) {
+// TestTTLCache_SetOverPermanentKeepsOneSlot verifies that overwriting a
+// permanent key with Set keeps a single LRU slot for the key rather than
+// orphaning the old element, so the cap counts each key once. The Set also
+// promotes the key, so the next eviction takes the older permanent entry.
+func TestTTLCache_SetOverPermanentKeepsOneSlot(t *testing.T) {
 	c := New[string, int](time.Minute, WithMaxSize[string, int](2))
 
 	c.SetPermanent("a", 1)
 	c.SetPermanent("b", 2)
-	c.Set("a", 11) // a transitions permanent -> volatile; its LRU slot must free
-	c.SetPermanent("c", 3)
+	c.Set("a", 11) // a becomes volatile and most recently used
+	if c.Len() != 2 {
+		t.Fatalf("Len = %d, want 2", c.Len())
+	}
+	c.SetPermanent("c", 3) // over the cap: b is now the least recently used
 
-	// With only b and c permanent (within the cap of 2), nothing should be
-	// evicted: a survives as a volatile entry, b and c as permanent.
 	if v, ok := c.Get("a"); !ok || v != 11 {
 		t.Fatalf("expected volatile 'a'=11 to survive, got (%d, %v)", v, ok)
 	}
-	if v, ok := c.Get("b"); !ok || v != 2 {
-		t.Fatalf("expected permanent 'b' to survive, got (%d, %v)", v, ok)
+	if _, ok := c.Get("b"); ok {
+		t.Fatal("expected 'b' to be evicted as least recently used")
 	}
 	if v, ok := c.Get("c"); !ok || v != 3 {
 		t.Fatalf("expected permanent 'c' to exist, got (%d, %v)", v, ok)
+	}
+}
+
+// TestTTLCache_MaxSize_BoundsTTLEntries verifies that the cap applies to TTL
+// entries, not only permanent ones. Before this, a cache keyed by
+// caller-supplied values grew without bound until each key expired and was
+// read again or swept, which is the shape of a memory leak per distinct
+// caller.
+func TestTTLCache_MaxSize_BoundsTTLEntries(t *testing.T) {
+	c := New[int, int](time.Minute, WithMaxSize[int, int](100))
+	for i := range 1000 {
+		c.Set(i, i)
+	}
+	if c.Len() != 100 {
+		t.Fatalf("Len = %d, want 100", c.Len())
+	}
+	if _, ok := c.Get(0); ok {
+		t.Fatal("the oldest entry should have been evicted")
+	}
+	if v, ok := c.Get(999); !ok || v != 999 {
+		t.Fatalf("newest entry = (%d, %v), want (999, true)", v, ok)
+	}
+}
+
+// TestTTLCache_GetExpiredReleasesLRUSlot verifies that a Get that evicts an
+// expired entry also drops its LRU element, so the cap is not consumed by
+// keys that are no longer in the map.
+func TestTTLCache_GetExpiredReleasesLRUSlot(t *testing.T) {
+	now := time.Unix(0, 0)
+	c := New[string, int](time.Minute, WithMaxSize[string, int](2), WithClock[string, int](func() time.Time { return now }))
+	c.Set("a", 1)
+	now = now.Add(2 * time.Minute)
+	if _, ok := c.Get("a"); ok {
+		t.Fatal("expired entry served")
+	}
+	c.SetPermanent("b", 2)
+	c.SetPermanent("c", 3)
+	if _, ok := c.Get("b"); !ok {
+		t.Fatal("'b' evicted although the cache held only two live entries")
 	}
 }
 

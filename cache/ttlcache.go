@@ -7,25 +7,25 @@ import (
 )
 
 // entry holds a cached value along with its expiration metadata.
-type entry[K comparable, V any] struct {
-	key       K
+type entry[V any] struct {
 	value     V
 	permanent bool          // permanent entries never expire by TTL
 	expiresAt time.Time     // zero for permanent entries
-	elem      *list.Element // position in LRU list (nil for non-permanent)
+	elem      *list.Element // position in the LRU list; the element holds the key
 }
 
-// TTLCache is a generic thread-safe key-value cache with per-entry expiration.
-// Non-permanent entries expire after the configured default TTL. Permanent
-// entries (inserted via [SetPermanent]) never expire by TTL but are subject to
-// bounded LRU eviction when MaxSize is set. Accessing a permanent entry via
-// [Get] promotes it to most-recently-used.
+// TTLCache is a generic thread-safe key-value cache with per-entry
+// expiration. Entries stored with [TTLCache.Set] expire after the default
+// TTL; entries stored with [TTLCache.SetPermanent] never expire by TTL. Both
+// kinds count against MaxSize when it is set, and the least recently used
+// entry of either kind is evicted when the cap is exceeded. A Get promotes
+// the entry to most recently used.
 type TTLCache[K comparable, V any] struct {
 	mu         sync.Mutex
-	entries    map[K]entry[K, V]
+	entries    map[K]entry[V]
 	lru        *list.List // front = least recently used, back = most recently used
 	defaultTTL time.Duration
-	maxSize    int // max permanent entries (0 = unlimited)
+	maxSize    int // max entries of any kind (0 = unlimited)
 	now        func() time.Time
 }
 
@@ -46,9 +46,11 @@ func WithClock[K comparable, V any](now func() time.Time) Option[K, V] {
 	return func(c *TTLCache[K, V]) { c.now = now }
 }
 
-// WithMaxSize sets the maximum number of permanent entries. When exceeded,
-// the least recently used permanent entry is evicted. 0 means unlimited.
-// This limit does NOT apply to TTL-based entries.
+// WithMaxSize caps the number of entries, TTL and permanent alike. When a
+// store would exceed n, the least recently used entry is evicted first. 0
+// means unlimited. A TTL cache keyed by caller-supplied values needs this
+// cap: without it every distinct key holds a map slot until it is read
+// again or the sweep reaches it.
 func WithMaxSize[K comparable, V any](n int) Option[K, V] {
 	return func(c *TTLCache[K, V]) { c.maxSize = n }
 }
@@ -56,7 +58,7 @@ func WithMaxSize[K comparable, V any](n int) Option[K, V] {
 // New creates a TTLCache with the given default TTL and options.
 func New[K comparable, V any](defaultTTL time.Duration, opts ...Option[K, V]) *TTLCache[K, V] {
 	c := &TTLCache[K, V]{
-		entries:    make(map[K]entry[K, V]),
+		entries:    make(map[K]entry[V]),
 		lru:        list.New(),
 		defaultTTL: defaultTTL,
 		now:        time.Now,
@@ -67,9 +69,9 @@ func New[K comparable, V any](defaultTTL time.Duration, opts ...Option[K, V]) *T
 	return c
 }
 
-// Get returns the value and true if the key exists and has not expired.
-// Expired non-permanent entries are evicted on access. Permanent entries
-// are promoted to most-recently-used on access.
+// Get returns the value and true if the key exists and has not expired. An
+// expired entry is removed on access. A hit promotes the entry to most
+// recently used.
 func (c *TTLCache[K, V]) Get(key K) (V, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -79,31 +81,55 @@ func (c *TTLCache[K, V]) Get(key K) (V, bool) {
 		return zero, false
 	}
 	if !e.permanent && c.now().After(e.expiresAt) {
-		delete(c.entries, key)
+		c.removeLocked(key, e)
 		var zero V
 		return zero, false
 	}
-	if e.elem != nil {
-		c.lru.MoveToBack(e.elem)
-	}
+	c.lru.MoveToBack(e.elem)
 	return e.value, true
 }
 
-// Set stores a value with the cache's default TTL. If the key was previously a
-// permanent entry, its LRU element is removed so it no longer counts against
-// MaxSize and cannot be double-tracked by a later SetPermanent.
+// Set stores a value with the cache's default TTL. Storing over a permanent
+// key makes it a TTL entry.
 func (c *TTLCache[K, V]) Set(key K, value V) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if e, ok := c.entries[key]; ok && e.elem != nil {
-		c.lru.Remove(e.elem)
-	}
 	c.sweepExpiredLocked()
-	c.entries[key] = entry[K, V]{
-		key:       key,
-		value:     value,
-		expiresAt: c.now().Add(c.defaultTTL),
+	c.putLocked(key, entry[V]{value: value, expiresAt: c.now().Add(c.defaultTTL)})
+}
+
+// SetPermanent stores a value that never expires by TTL. It still counts
+// against MaxSize and can be evicted as least recently used.
+func (c *TTLCache[K, V]) SetPermanent(key K, value V) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.putLocked(key, entry[V]{value: value, permanent: true})
+}
+
+// putLocked stores e under key, reusing the key's LRU position when it is
+// already present and evicting the least recently used entry when the cap
+// is exceeded. The caller must hold c.mu.
+func (c *TTLCache[K, V]) putLocked(key K, e entry[V]) {
+	if old, ok := c.entries[key]; ok {
+		e.elem = old.elem
+		c.lru.MoveToBack(e.elem)
+	} else {
+		e.elem = c.lru.PushBack(key)
 	}
+	c.entries[key] = e
+	if c.maxSize > 0 && c.lru.Len() > c.maxSize {
+		front := c.lru.Front()
+		// The list holds keys and nothing else; PushBack above is the only writer.
+		evict := front.Value.(K) //nolint:errcheck // the LRU list holds keys only
+		c.removeLocked(evict, c.entries[evict])
+	}
+}
+
+// removeLocked drops key from the map and the LRU list. The caller must hold
+// c.mu.
+func (c *TTLCache[K, V]) removeLocked(key K, e entry[V]) {
+	c.lru.Remove(e.elem)
+	delete(c.entries, key)
 }
 
 // sweepExpiredLocked opportunistically reclaims expired non-permanent entries
@@ -123,7 +149,7 @@ func (c *TTLCache[K, V]) sweepExpiredLocked() {
 		}
 		scanned++
 		if !e.permanent && now.After(e.expiresAt) {
-			delete(c.entries, k)
+			c.removeLocked(k, e)
 		}
 	}
 }
@@ -136,47 +162,11 @@ func (c *TTLCache[K, V]) Len() int {
 	return len(c.entries)
 }
 
-// SetPermanent stores a value that never expires by TTL. If MaxSize is
-// configured, the least recently used permanent entry is evicted when the
-// cap is exceeded.
-func (c *TTLCache[K, V]) SetPermanent(key K, value V) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	existing, exists := c.entries[key]
-	if exists && existing.elem != nil {
-		// Already tracked — move to back (most recently used) and update value.
-		c.lru.MoveToBack(existing.elem)
-	} else {
-		// New permanent entry — append to back of LRU list.
-		elem := c.lru.PushBack(key)
-		existing.elem = elem
-		if c.maxSize > 0 && c.lru.Len() > c.maxSize {
-			// Evict the least recently used permanent entry (front of list).
-			front := c.lru.Front()
-			// The list holds keys and nothing else; PushBack above is the only writer.
-			evictKey := front.Value.(K) //nolint:errcheck // the LRU list holds keys only
-			c.lru.Remove(front)
-			delete(c.entries, evictKey)
-		}
-	}
-
-	c.entries[key] = entry[K, V]{
-		key:       key,
-		value:     value,
-		permanent: true,
-		elem:      existing.elem,
-	}
-}
-
 // Invalidate removes an entry regardless of its TTL or permanence.
 func (c *TTLCache[K, V]) Invalidate(key K) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if e, ok := c.entries[key]; ok {
-		if e.elem != nil {
-			c.lru.Remove(e.elem)
-		}
-		delete(c.entries, key)
+		c.removeLocked(key, e)
 	}
 }
