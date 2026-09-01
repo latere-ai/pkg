@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.50.0 - 2026-09-01
+
 ### Changed
 
 - `oidc` is the one OIDC relying party. `oidclogin` moved in as
