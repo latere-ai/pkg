@@ -56,8 +56,8 @@ func TestDelayJitterBounds(t *testing.T) {
 
 func TestZeroPolicyUsesDefaults(t *testing.T) {
 	var p Policy
-	if p.attempts() != DefaultMaxAttempts || p.base() != DefaultBase || p.ceiling() != DefaultMax || p.jitter() != DefaultJitter {
-		t.Fatalf("zero policy = %d %v %v %v", p.attempts(), p.base(), p.ceiling(), p.jitter())
+	if p.Attempts() != DefaultMaxAttempts || p.base() != DefaultBase || p.ceiling() != DefaultMax || p.jitter() != DefaultJitter {
+		t.Fatalf("zero policy = %d %v %v %v", p.Attempts(), p.base(), p.ceiling(), p.jitter())
 	}
 }
 

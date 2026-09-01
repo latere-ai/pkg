@@ -46,7 +46,9 @@ type Policy struct {
 	Jitter float64
 }
 
-func (p Policy) attempts() int {
+// Attempts reports the attempt budget, with the default applied. A caller
+// that drives its own loop pairs it with [Policy.Delay].
+func (p Policy) Attempts() int {
 	if p.MaxAttempts <= 0 {
 		return DefaultMaxAttempts
 	}
@@ -115,7 +117,7 @@ func (p Policy) delay(attempt int, random func() float64) time.Duration {
 // so a caller's errors.Is on its own sentinels keeps working. A cancellation
 // during the wait returns ctx.Err().
 func Do(ctx context.Context, p Policy, fn func(context.Context) error) error {
-	budget := p.attempts()
+	budget := p.Attempts()
 	for attempt := 1; ; attempt++ {
 		err := fn(ctx)
 		if err == nil {
