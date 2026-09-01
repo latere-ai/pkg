@@ -2,8 +2,6 @@ package oidc
 
 import (
 	"cmp"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -13,6 +11,7 @@ import (
 	"time"
 
 	"golang.org/x/oauth2"
+	"latere.ai/x/pkg/jwtauth"
 )
 
 // ErrSessionExpired is returned by SessionFromRequest when the dashboard session
@@ -67,16 +66,8 @@ type jwtClaims struct {
 // verifying the signature. The token was just issued by our own auth
 // service via a trusted exchange, so verification is unnecessary.
 func decodeJWTClaims(accessToken string) (*jwtClaims, error) {
-	parts := strings.SplitN(accessToken, ".", 3)
-	if len(parts) < 2 {
-		return nil, fmt.Errorf("invalid JWT: expected 3 parts, got %d", len(parts))
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil, err
-	}
 	var c jwtClaims
-	if err := json.Unmarshal(payload, &c); err != nil {
+	if err := jwtauth.DecodePayload(accessToken, &c); err != nil {
 		return nil, err
 	}
 	return &c, nil

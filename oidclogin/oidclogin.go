@@ -20,7 +20,6 @@ package oidclogin
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -246,16 +245,8 @@ func fetchDiscovery(ctx context.Context, hc *http.Client, issuer string) (*disco
 // generic claim map. Callers must verify the token before relying on these
 // claims for anything security-sensitive.
 func decodeJWTPayload(raw string) (map[string]any, error) {
-	parts := strings.Split(raw, ".")
-	if len(parts) != 3 {
-		return nil, fmt.Errorf("malformed jwt")
-	}
-	b, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil, err
-	}
 	var m map[string]any
-	if err := json.Unmarshal(b, &m); err != nil {
+	if err := jwtauth.DecodePayload(raw, &m); err != nil {
 		return nil, err
 	}
 	return m, nil

@@ -308,22 +308,35 @@ func claimsFromRawPayload(raw rawPayload) *Claims {
 // Claims so callers can apply their own lifecycle policy, but it is
 // not enforced here.
 func ParseUnverified(rawToken string) (*Claims, error) {
-	parts := strings.Split(rawToken, ".")
-	if len(parts) != 3 {
-		return nil, ErrMalformedToken
-	}
-	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil, ErrMalformedToken
-	}
 	var raw rawPayload
-	if err := json.Unmarshal(payloadBytes, &raw); err != nil {
-		return nil, ErrMalformedToken
+	if err := DecodePayload(rawToken, &raw); err != nil {
+		return nil, err
 	}
 	if raw.Sub == "" {
 		return nil, ErrMalformedToken
 	}
 	return claimsFromRawPayload(raw), nil
+}
+
+// DecodePayload unmarshals the payload segment of a compact JWT into v
+// without verifying the signature. It is the one place a token is split and
+// base64-decoded for its claims; every caller that has already verified the
+// token, or holds one that never left a trusted boundary, reads through it.
+// Anything else uses [Validator.Validate]. A token that is not three
+// segments, or whose payload is not base64url JSON, is [ErrMalformedToken].
+func DecodePayload(rawToken string, v any) error {
+	parts := strings.Split(rawToken, ".")
+	if len(parts) != 3 {
+		return ErrMalformedToken
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ErrMalformedToken
+	}
+	if err := json.Unmarshal(payload, v); err != nil {
+		return ErrMalformedToken
+	}
+	return nil
 }
 
 // ── Middleware ───────────────────────────────────────────────────────────────
