@@ -1,0 +1,14 @@
+#!/bin/sh
+# pre-push: refuse to push a v* tag that has no CHANGELOG.md section, so the
+# release workflow never sees a tag it has to fail. Reads the changelog at the
+# tag's commit, which is what the workflow will read.
+# Install with: make hooks    Bypass once with: git push --no-verify
+while read -r local_ref local_sha remote_ref remote_sha; do
+	case "$local_ref" in
+	refs/tags/v*) ;;
+	*) continue ;;
+	esac
+	tag=${local_ref#refs/tags/}
+	.github/scripts/release-notes.sh "$tag" "$local_sha" >/dev/null || exit 1
+done
+exit 0

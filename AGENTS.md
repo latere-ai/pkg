@@ -39,4 +39,13 @@ make fuzz           # run fuzz tests (30s)
 make cover          # enforce a 90% floor per package
 make cover-html     # open coverage report in browser
 make validate       # no-tracked-specs, deps, cgo-free, vuln, fuzz
+make release VERSION=vX.Y.Z   # move Unreleased notes under the version, commit, tag, push
 ```
+
+## Releases
+
+A tag is a release, and a release has notes. `CHANGELOG.md` keeps one
+section per tag; the release workflow and the pre-push hook both refuse a
+tag without one. Add notes under `## Unreleased` in the same commit as the
+change they describe, in the audience's words: what a consumer gains, what
+breaks, what to do about it.

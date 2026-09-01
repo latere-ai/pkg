@@ -1,5 +1,5 @@
 .PHONY: test test-race race fuzz cover cover-html fmt fmt-check hooks vuln lint-modernize lint-config lint \
-	test-hermetic cgo-free deps validate no-tracked-specs
+	test-hermetic cgo-free deps validate no-tracked-specs release release-notes
 
 GO ?= go
 FUZZTIME ?= 30s
@@ -144,3 +144,13 @@ hooks:
 	git config core.hooksPath .githooks
 	@[ -e CLAUDE.md ] || [ -L CLAUDE.md ] || ln -s AGENTS.md CLAUDE.md
 	@echo "installed git hooks (core.hooksPath=.githooks)"
+
+# release cuts a tag from CHANGELOG.md: the notes under "Unreleased" become
+# the section for VERSION, then commit, tag, and push. The release workflow
+# publishes the GitHub release from that section. See .github/scripts.
+release:
+	@.github/scripts/release-cut.sh "$(VERSION)"
+
+# release-notes prints the changelog section for TAG, or fails.
+release-notes:
+	@.github/scripts/release-notes.sh "$(TAG)"

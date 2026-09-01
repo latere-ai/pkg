@@ -132,6 +132,20 @@ The module is at `v0.x`. The API is not frozen: a minor version bump may
 contain a breaking change, so pin an exact version and read the release notes
 before upgrading. Package layout and the module path are stable.
 
+## Releasing
+
+Every tag has a section in [CHANGELOG.md](CHANGELOG.md), and that section is
+the body of the GitHub release. Write notes under `Unreleased` as changes
+land, then:
+
+```bash
+make release VERSION=v0.50.0
+```
+
+This moves the `Unreleased` notes under the version, commits, tags, and
+pushes. The release workflow refuses a tag with no section, and the
+pre-push hook installed by `make hooks` refuses to push one.
+
 ## Testing
 
 The suite is hermetic. It needs no database, no credentials, and no outbound
