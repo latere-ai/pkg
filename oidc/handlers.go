@@ -179,8 +179,8 @@ func isSafeRedirect(target string) bool {
 // the callback can redirect the user back to their original page.
 func (c *Client) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	verifier := GenerateVerifier()
-
 	state := GenerateState()
+	nonce := GenerateState()
 
 	returnTo := r.URL.Query().Get("return_to")
 	if !isSafeRedirect(returnTo) {
@@ -191,6 +191,7 @@ func (c *Client) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		CodeVerifier: verifier,
 		State:        state,
 		ReturnTo:     returnTo,
+		Nonce:        nonce,
 	}); err != nil {
 		slog.Error("oidc: set flow state", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -203,7 +204,7 @@ func (c *Client) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	// through this same list so unknown query strings don't leak into
 	// the authorize URL accidentally.
 	extra := forwardedAuthorizeParams(r.URL.Query())
-	http.Redirect(w, r, c.AuthCodeURLWithOpts(state, verifier, extra), http.StatusFound)
+	http.Redirect(w, r, c.authCodeURL(state, nonce, verifier, extra), http.StatusFound)
 }
 
 // forwardedAuthorizeParams is the allowlist of query parameters on
@@ -266,6 +267,18 @@ func (c *Client) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		slog.Error("oidc: token exchange", "error", err)
 		http.Redirect(w, r, "/?auth_error=token_exchange_failed", http.StatusFound)
 		return
+	}
+
+	// An ID token, when the issuer returned one, must verify against the
+	// issuer's keys and carry this login's nonce. The auth service returns
+	// one on every authorization-code exchange; an issuer that omits it
+	// falls through to the access-token checks alone.
+	if idToken, _ := token.Extra("id_token").(string); idToken != "" {
+		if _, err := c.provider.VerifyIDToken(r.Context(), token, flow.Nonce); err != nil {
+			slog.Warn("oidc: verify id_token", "error", err)
+			http.Redirect(w, r, "/?auth_error=invalid_id_token", http.StatusFound)
+			return
+		}
 	}
 
 	// Validate the access token is a well-formed JWT before building a

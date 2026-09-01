@@ -1,7 +1,16 @@
-// Package oidc provides an OAuth 2.0 / OIDC Relying Party client for
-// integrating Latere AI services with the auth service. It handles
-// Authorization Code + PKCE flows, encrypted cookie-based sessions,
-// token refresh, and userinfo fetching.
+// Package oidc is the OAuth 2.0 / OIDC relying party for Latere services.
+//
+// [Provider] is one issuer: endpoints, keys, and a [ClaimsMapper] that turns
+// verified claims into an [Identity]. [NewProvider] discovers a standard
+// issuer (Latere auth, Keycloak, Google, Cognito) and drives the
+// Authorization Code + PKCE flow against it with ID-token verification.
+// Authentication is portable; authorization is not, so role mapping is the
+// mapper's job and an application decides access from the result.
+//
+// [Client] is the Latere auth service surface built on a Provider:
+// encrypted cookie sessions, token refresh, the shared /me assembly, org
+// switching, the device-code flow, and the login, callback, and logout
+// handlers.
 //
 // Usage:
 //
@@ -10,6 +19,9 @@
 //	if client == nil {
 //	    // auth not configured, run without login
 //	}
+//
+// Token verification pins RS256 through jwtauth. An issuer configured for
+// ES256 or PS256 is not supported here.
 package oidc
 
 import (
@@ -84,6 +96,9 @@ type FlowState struct {
 	CodeVerifier string `json:"cv"`
 	State        string `json:"st"`
 	ReturnTo     string `json:"rt"`
+	// Nonce binds the ID token returned by the exchange to this login;
+	// HandleCallback rejects an ID token that carries any other value.
+	Nonce string `json:"nc,omitempty"`
 }
 
 // Config holds auth integration configuration.
@@ -131,7 +146,7 @@ type Config struct {
 // Client is the OIDC Relying Party for a latere-ai service.
 type Client struct {
 	cfg       Config
-	oauthCfg  oauth2.Config
+	provider  *Provider
 	cookieKey [32]byte
 }
 
@@ -217,9 +232,12 @@ func New(cfg Config) *Client {
 		authStyle = oauth2.AuthStyleInParams
 	}
 
+	// The auth service's layout is fixed, so the provider is built from it
+	// directly rather than discovered: New stays synchronous and needs no
+	// network to construct a client.
 	c := &Client{
 		cfg: cfg,
-		oauthCfg: oauth2.Config{
+		provider: newProvider(&oauth2.Config{
 			ClientID:     cfg.ClientID,
 			ClientSecret: cfg.ClientSecret,
 			RedirectURL:  cfg.RedirectURL,
@@ -230,7 +248,7 @@ func New(cfg Config) *Client {
 				AuthStyle:     authStyle,
 			},
 			Scopes: scopes,
-		},
+		}, cfg.AuthURL, cfg.AuthURL+"/.well-known/jwks.json", http.DefaultClient, LatereMapper{}),
 	}
 
 	// Cookie key + startup log only matter for relying parties using
@@ -271,8 +289,8 @@ func (c *Client) AuthURL() string {
 
 // --- PKCE and state ---
 
-// GenerateVerifier creates a PKCE code verifier.
-// Uses the oauth2 package's built-in generator for correct formatting.
+// GenerateVerifier creates a PKCE code verifier for [Client.AuthCodeURL] and
+// [Provider.AuthCodeURL] alike.
 func GenerateVerifier() string {
 	return oauth2.GenerateVerifier()
 }
@@ -301,9 +319,13 @@ func (c *Client) AuthCodeURL(state, verifier string) string {
 // Each value becomes a single oauth2.SetAuthURLParam so unknown keys
 // round-trip through to the auth server unchanged.
 func (c *Client) AuthCodeURLWithOpts(state, verifier string, extra url.Values) string {
-	opts := []oauth2.AuthCodeOption{
-		oauth2.S256ChallengeOption(verifier),
-	}
+	return c.authCodeURL(state, "", verifier, extra)
+}
+
+// authCodeURL is AuthCodeURLWithOpts with the ID-token nonce HandleLogin
+// binds into the flow cookie.
+func (c *Client) authCodeURL(state, nonce, verifier string, extra url.Values) string {
+	var opts []oauth2.AuthCodeOption
 	// Stamp the audience on every authorize URL. Without it, fosite
 	// emits aud:[] in the access token (the JWT strategy always
 	// materialises the claim from the granted audience set, even when
@@ -313,7 +335,7 @@ func (c *Client) AuthCodeURLWithOpts(state, verifier string, extra url.Values) s
 		opts = append(opts, oauth2.SetAuthURLParam("audience", c.cfg.Audience))
 	}
 	opts = append(opts, authURLParams(extra)...)
-	return c.oauthCfg.AuthCodeURL(state, opts...)
+	return c.provider.AuthCodeURL(state, nonce, verifier, opts...)
 }
 
 // authURLParams converts extra query values into oauth2 auth-URL options. It
@@ -345,9 +367,7 @@ func (c *Client) Exchange(r *http.Request, code, verifier string) (*oauth2.Token
 // non-HTTP-handler contexts (background workers, internal auth bridges)
 // where threading a *http.Request just to pass its Context is awkward.
 func (c *Client) ExchangeContext(ctx context.Context, code, verifier string) (*oauth2.Token, error) {
-	return c.oauthCfg.Exchange(ctx, code,
-		oauth2.VerifierOption(verifier),
-	)
+	return c.provider.Exchange(ctx, code, verifier)
 }
 
 // FetchUserInfo calls the auth service /userinfo endpoint.
@@ -397,7 +417,7 @@ func (c *Client) FetchUserInfoContext(ctx context.Context, accessToken string) (
 // Use this for headless / CLI flows. Browser-based clients should
 // use HandleLogin instead.
 func (c *Client) DeviceAuth(ctx context.Context, extra url.Values) (*oauth2.DeviceAuthResponse, error) {
-	return c.oauthCfg.DeviceAuth(ctx, authURLParams(extra)...)
+	return c.provider.DeviceAuth(ctx, authURLParams(extra)...)
 }
 
 // DeviceAccessToken polls the token endpoint with the device-code
@@ -405,7 +425,7 @@ func (c *Client) DeviceAuth(ctx context.Context, extra url.Values) (*oauth2.Devi
 // 8628 slow_down / authorization_pending semantics are honoured by
 // the underlying oauth2 client.
 func (c *Client) DeviceAccessToken(ctx context.Context, da *oauth2.DeviceAuthResponse) (*oauth2.Token, error) {
-	return c.oauthCfg.DeviceAccessToken(ctx, da)
+	return c.provider.DeviceAccessToken(ctx, da)
 }
 
 // RefreshToken uses a refresh token to obtain a new access token.
@@ -416,10 +436,7 @@ func (c *Client) RefreshToken(r *http.Request, refreshToken string) (*oauth2.Tok
 // RefreshTokenContext is the context-only form of RefreshToken.
 // Same flow; pick this when threading r is awkward.
 func (c *Client) RefreshTokenContext(ctx context.Context, refreshToken string) (*oauth2.Token, error) {
-	ts := c.oauthCfg.TokenSource(ctx, &oauth2.Token{
-		RefreshToken: refreshToken,
-	})
-	return ts.Token()
+	return c.provider.Refresh(ctx, refreshToken)
 }
 
 // httpDo is a package-level variable for testability.

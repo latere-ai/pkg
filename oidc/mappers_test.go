@@ -1,4 +1,4 @@
-package oidclogin
+package oidc
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 
 func TestMapperForProvider_All(t *testing.T) {
 	for _, p := range []string{"", "latere", "keycloak", "google", "cognito"} {
-		if _, err := mapperForProvider(p); err != nil {
+		if _, err := mapperForKind(p); err != nil {
 			t.Errorf("provider %q: %v", p, err)
 		}
 	}

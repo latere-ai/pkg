@@ -1,4 +1,4 @@
-package oidclogin
+package oidc
 
 import (
 	"context"
@@ -122,13 +122,13 @@ func baseIDClaims(idp *fakeIDP, clientID, nonce string) map[string]any {
 	}
 }
 
-func newAuth(t *testing.T, idp *fakeIDP, clientID, provider string) *Authenticator {
+func newAuth(t *testing.T, idp *fakeIDP, clientID, provider string) *Provider {
 	t.Helper()
-	a, err := New(context.Background(), Config{
+	a, err := NewProvider(context.Background(), ProviderConfig{
 		Issuer:      idp.srv.URL,
 		ClientID:    clientID,
 		RedirectURL: "https://app.example.com/cb",
-		Provider:    provider,
+		Kind:        provider,
 		HTTPClient:  idp.srv.Client(),
 	})
 	if err != nil {
@@ -138,15 +138,15 @@ func newAuth(t *testing.T, idp *fakeIDP, clientID, provider string) *Authenticat
 }
 
 func TestNew_RequiresFields(t *testing.T) {
-	if _, err := New(context.Background(), Config{ClientID: "c", RedirectURL: "r"}); err == nil {
+	if _, err := NewProvider(context.Background(), ProviderConfig{ClientID: "c", RedirectURL: "r"}); err == nil {
 		t.Error("missing issuer should error")
 	}
 }
 
 func TestNew_UnknownProvider(t *testing.T) {
 	idp := newFakeIDP(t)
-	_, err := New(context.Background(), Config{
-		Issuer: idp.srv.URL, ClientID: "c", RedirectURL: "r", Provider: "nope", HTTPClient: idp.srv.Client(),
+	_, err := NewProvider(context.Background(), ProviderConfig{
+		Issuer: idp.srv.URL, ClientID: "c", RedirectURL: "r", Kind: "nope", HTTPClient: idp.srv.Client(),
 	})
 	if err == nil {
 		t.Error("unknown provider should error")
@@ -303,7 +303,7 @@ func TestFetchDiscovery_Errors(t *testing.T) {
 		http.Error(w, "nope", http.StatusInternalServerError)
 	}))
 	defer srv.Close()
-	if _, err := New(context.Background(), Config{Issuer: srv.URL, ClientID: "c", RedirectURL: "r", HTTPClient: srv.Client()}); err == nil {
+	if _, err := NewProvider(context.Background(), ProviderConfig{Issuer: srv.URL, ClientID: "c", RedirectURL: "r", HTTPClient: srv.Client()}); err == nil {
 		t.Error("discovery non-200 should error")
 	}
 
@@ -312,7 +312,7 @@ func TestFetchDiscovery_Errors(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(discoveryDoc{Issuer: "x"})
 	}))
 	defer srv2.Close()
-	if _, err := New(context.Background(), Config{Issuer: srv2.URL, ClientID: "c", RedirectURL: "r", HTTPClient: srv2.Client()}); err == nil {
+	if _, err := NewProvider(context.Background(), ProviderConfig{Issuer: srv2.URL, ClientID: "c", RedirectURL: "r", HTTPClient: srv2.Client()}); err == nil {
 		t.Error("discovery missing endpoints should error")
 	}
 }

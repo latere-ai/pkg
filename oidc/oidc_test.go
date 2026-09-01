@@ -221,8 +221,8 @@ func TestNewPublicClientWithCookieKey(t *testing.T) {
 	if c.cookieKey == [32]byte{} {
 		t.Error("cookie key should not be zero")
 	}
-	if c.oauthCfg.Endpoint.AuthStyle != oauth2.AuthStyleInParams {
-		t.Errorf("public client AuthStyle = %v, want AuthStyleInParams", c.oauthCfg.Endpoint.AuthStyle)
+	if c.provider.oauth.Endpoint.AuthStyle != oauth2.AuthStyleInParams {
+		t.Errorf("public client AuthStyle = %v, want AuthStyleInParams", c.provider.oauth.Endpoint.AuthStyle)
 	}
 }
 
@@ -240,8 +240,8 @@ func TestNewConfidentialClientAuthStyle(t *testing.T) {
 	if c == nil {
 		t.Fatal("New returned nil")
 	}
-	if c.oauthCfg.Endpoint.AuthStyle != oauth2.AuthStyleInHeader {
-		t.Errorf("confidential client AuthStyle = %v, want AuthStyleInHeader", c.oauthCfg.Endpoint.AuthStyle)
+	if c.provider.oauth.Endpoint.AuthStyle != oauth2.AuthStyleInHeader {
+		t.Errorf("confidential client AuthStyle = %v, want AuthStyleInHeader", c.provider.oauth.Endpoint.AuthStyle)
 	}
 }
 

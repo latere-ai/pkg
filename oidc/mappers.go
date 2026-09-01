@@ -1,4 +1,4 @@
-package oidclogin
+package oidc
 
 import "cmp"
 

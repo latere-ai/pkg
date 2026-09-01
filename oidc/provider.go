@@ -1,22 +1,4 @@
-// Package oidclogin is a portable, IDP-agnostic OAuth 2.0 / OIDC Relying Party
-// for the browser Authorization Code + PKCE flow. Unlike pkg/oidc (which targets
-// the latere auth service and adds encrypted sessions, /me, org switching, and
-// billing), oidclogin speaks only standard OIDC: it discovers endpoints from an
-// issuer, drives a public PKCE login, verifies the returned ID token, and maps
-// its claims to a generic Identity. Point it at latere auth, a Keycloak realm,
-// Google, or AWS Cognito by configuration alone.
-//
-// Authentication is portable; authorization is not. Each IDP exposes identity
-// and roles differently (Keycloak realm_access.roles, latere roles/scopes,
-// Google identity-only, Cognito cognito:groups), so role mapping is delegated to
-// a per-provider ClaimsMapper. The portable surface is lowest-common-denominator
-// authentication plus mapped claims; an app decides access from the result.
-//
-// Token verification reuses pkg/jwtauth, which pins RS256. latere, Google, and
-// Cognito sign with RS256, as does Keycloak's realm default. An IDP configured
-// for ES256/PS256 is not supported by this package — that is the trigger to
-// reach for a full OIDC library such as coreos/go-oidc.
-package oidclogin
+package oidc
 
 import (
 	"context"
@@ -52,17 +34,17 @@ type ClaimsMapper interface {
 	Map(idClaims, accessClaims map[string]any) (Identity, error)
 }
 
-// Config configures an Authenticator.
-type Config struct {
+// ProviderConfig configures a [Provider] built by [NewProvider].
+type ProviderConfig struct {
 	Issuer       string // OIDC issuer, e.g. https://auth.latere.ai or a Keycloak realm URL
 	ClientID     string
 	ClientSecret string // optional; empty means a public client (PKCE only)
 	RedirectURL  string
 	Scopes       []string // defaults to ["openid","email","profile"]
 
-	// Provider selects the built-in ClaimsMapper: "latere" (default),
+	// Kind selects the built-in ClaimsMapper: "latere" (default),
 	// "keycloak", "google", or "cognito". Ignored when Mapper is set.
-	Provider string
+	Kind string
 	// Mapper overrides Provider with a custom claim mapper.
 	Mapper ClaimsMapper
 
@@ -71,8 +53,11 @@ type Config struct {
 	HTTPClient *http.Client
 }
 
-// Authenticator runs the OIDC flow against one issuer. Safe for concurrent use.
-type Authenticator struct {
+// Provider is one issuer: its endpoints, its keys, and the mapper that turns
+// its claims into an [Identity]. [NewProvider] discovers the endpoints from
+// the issuer; the Latere [Client] builds one from the auth service's fixed
+// layout. Safe for concurrent use.
+type Provider struct {
 	oauth      *oauth2.Config
 	idVerifier *jwtauth.Validator // verifies the ID token: sig + aud(==ClientID) + exp
 	atVerifier *jwtauth.Validator // verifies the access token: sig + exp (aud skipped)
@@ -88,12 +73,12 @@ type discoveryDoc struct {
 	JWKSURI               string `json:"jwks_uri"`
 }
 
-// New discovers the issuer's OIDC endpoints and builds an Authenticator. It
-// performs a network fetch of the discovery document, so call it at startup with
-// a bounded context.
-func New(ctx context.Context, cfg Config) (*Authenticator, error) {
+// NewProvider discovers the issuer's OIDC endpoints and builds a Provider. It
+// performs a network fetch of the discovery document, so call it at startup
+// with a bounded context.
+func NewProvider(ctx context.Context, cfg ProviderConfig) (*Provider, error) {
 	if cfg.Issuer == "" || cfg.ClientID == "" || cfg.RedirectURL == "" {
-		return nil, fmt.Errorf("oidclogin: issuer, client id, and redirect url are required")
+		return nil, fmt.Errorf("oidc: issuer, client id, and redirect url are required")
 	}
 	hc := cfg.HTTPClient
 	if hc == nil {
@@ -117,53 +102,78 @@ func New(ctx context.Context, cfg Config) (*Authenticator, error) {
 
 	mapper := cfg.Mapper
 	if mapper == nil {
-		mapper, err = mapperForProvider(cfg.Provider)
+		mapper, err = mapperForKind(cfg.Kind)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	return &Authenticator{
-		oauth: &oauth2.Config{
-			ClientID:     cfg.ClientID,
-			ClientSecret: cfg.ClientSecret,
-			RedirectURL:  cfg.RedirectURL,
-			Scopes:       scopes,
-			Endpoint: oauth2.Endpoint{
-				AuthURL:   doc.AuthorizationEndpoint,
-				TokenURL:  doc.TokenEndpoint,
-				AuthStyle: authStyle,
-			},
+	return newProvider(&oauth2.Config{
+		ClientID:     cfg.ClientID,
+		ClientSecret: cfg.ClientSecret,
+		RedirectURL:  cfg.RedirectURL,
+		Scopes:       scopes,
+		Endpoint: oauth2.Endpoint{
+			AuthURL:   doc.AuthorizationEndpoint,
+			TokenURL:  doc.TokenEndpoint,
+			AuthStyle: authStyle,
 		},
+	}, doc.Issuer, doc.JWKSURI, hc, mapper), nil
+}
+
+// newProvider assembles a Provider from resolved endpoints. It is the one
+// constructor behind NewProvider and the Latere Client.
+func newProvider(oauth *oauth2.Config, issuer, jwksURL string, hc *http.Client, mapper ClaimsMapper) *Provider {
+	return &Provider{
+		oauth: oauth,
 		// idVerifier checks aud == ClientID. Issuer is validated separately
 		// (issuerOK) so Google's scheme-optional iss is accepted.
 		idVerifier: jwtauth.New(jwtauth.Config{
-			JWKSURL: doc.JWKSURI, Audiences: []string{cfg.ClientID}, HTTPClient: hc,
+			JWKSURL: jwksURL, Audiences: []string{oauth.ClientID}, HTTPClient: hc,
 		}),
 		// atVerifier skips aud (an access token's audience is the resource
-		// server, not this client) — signature + exp are still enforced.
-		atVerifier: jwtauth.New(jwtauth.Config{JWKSURL: doc.JWKSURI, HTTPClient: hc}),
-		issuer:     doc.Issuer,
+		// server, not this client); signature and exp are still enforced.
+		atVerifier: jwtauth.New(jwtauth.Config{JWKSURL: jwksURL, HTTPClient: hc}),
+		issuer:     issuer,
 		mapper:     mapper,
-	}, nil
+	}
 }
 
-// AuthCodeURL builds the authorize URL, binding the CSRF state, the replay
-// nonce, and the PKCE S256 challenge derived from verifier (create it with
-// oauth2.GenerateVerifier()).
-func (a *Authenticator) AuthCodeURL(state, nonce, verifier string) string {
-	return a.oauth.AuthCodeURL(state,
-		oauth2.S256ChallengeOption(verifier),
-		oauth2.SetAuthURLParam("nonce", nonce),
-	)
+// AuthCodeURL builds the authorize URL, binding the CSRF state, the PKCE
+// S256 challenge derived from verifier (from [GenerateVerifier]), and the
+// replay nonce when one is given. extra carries further parameters the
+// issuer understands.
+func (a *Provider) AuthCodeURL(state, nonce, verifier string, extra ...oauth2.AuthCodeOption) string {
+	opts := []oauth2.AuthCodeOption{oauth2.S256ChallengeOption(verifier)}
+	if nonce != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("nonce", nonce))
+	}
+	return a.oauth.AuthCodeURL(state, append(opts, extra...)...)
+}
+
+// Refresh trades a refresh token for a new token set.
+func (a *Provider) Refresh(ctx context.Context, refreshToken string) (*oauth2.Token, error) {
+	return a.oauth.TokenSource(ctx, &oauth2.Token{RefreshToken: refreshToken}).Token()
+}
+
+// DeviceAuth starts an RFC 8628 device authorization. extra carries issuer
+// extension parameters.
+func (a *Provider) DeviceAuth(ctx context.Context, extra ...oauth2.AuthCodeOption) (*oauth2.DeviceAuthResponse, error) {
+	return a.oauth.DeviceAuth(ctx, extra...)
+}
+
+// DeviceAccessToken polls the token endpoint with the device-code grant
+// until the user approves, denies, or the code expires.
+func (a *Provider) DeviceAccessToken(ctx context.Context, da *oauth2.DeviceAuthResponse) (*oauth2.Token, error) {
+	return a.oauth.DeviceAccessToken(ctx, da)
 }
 
 // Exchange swaps the authorization code for tokens, proving possession of the
 // PKCE verifier. No client secret is sent for a public client.
-func (a *Authenticator) Exchange(ctx context.Context, code, verifier string) (*oauth2.Token, error) {
+func (a *Provider) Exchange(ctx context.Context, code, verifier string) (*oauth2.Token, error) {
 	tok, err := a.oauth.Exchange(ctx, code, oauth2.VerifierOption(verifier))
 	if err != nil {
-		return nil, fmt.Errorf("oidclogin: code exchange: %w", err)
+		return nil, fmt.Errorf("oidc: code exchange: %w", err)
 	}
 	return tok, nil
 }
@@ -173,23 +183,23 @@ func (a *Authenticator) Exchange(ctx context.Context, code, verifier string) (*o
 // verification (signature/aud/exp/alg via jwtauth — RS256 pinned, so alg=none /
 // HS256-confusion is rejected), its issuer does not match, or its nonce does not
 // match the nonce bound at AuthCodeURL time.
-func (a *Authenticator) VerifyIDToken(_ context.Context, tok *oauth2.Token, nonce string) (Identity, error) {
+func (a *Provider) VerifyIDToken(_ context.Context, tok *oauth2.Token, nonce string) (Identity, error) {
 	raw, _ := tok.Extra("id_token").(string)
 	if raw == "" {
-		return Identity{}, fmt.Errorf("oidclogin: token response missing id_token")
+		return Identity{}, fmt.Errorf("oidc: token response missing id_token")
 	}
 	if _, err := a.idVerifier.Validate(raw); err != nil {
-		return Identity{}, fmt.Errorf("oidclogin: verify id_token: %w", err)
+		return Identity{}, fmt.Errorf("oidc: verify id_token: %w", err)
 	}
 	idClaims, err := decodeJWTPayload(raw)
 	if err != nil {
-		return Identity{}, fmt.Errorf("oidclogin: decode id_token: %w", err)
+		return Identity{}, fmt.Errorf("oidc: decode id_token: %w", err)
 	}
 	if !issuerOK(stringClaim(idClaims["iss"]), a.issuer) {
-		return Identity{}, fmt.Errorf("oidclogin: id_token issuer mismatch")
+		return Identity{}, fmt.Errorf("oidc: id_token issuer mismatch")
 	}
 	if stringClaim(idClaims["nonce"]) != nonce {
-		return Identity{}, fmt.Errorf("oidclogin: id_token nonce mismatch")
+		return Identity{}, fmt.Errorf("oidc: id_token nonce mismatch")
 	}
 
 	// Best-effort: read roles from the access token only if it is a JWT we can
@@ -222,18 +232,18 @@ func fetchDiscovery(ctx context.Context, hc *http.Client, issuer string) (*disco
 	}
 	resp, err := hc.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("oidclogin: discover %q: %w", issuer, err)
+		return nil, fmt.Errorf("oidc: discover %q: %w", issuer, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("oidclogin: discover %q: status %d", issuer, resp.StatusCode)
+		return nil, fmt.Errorf("oidc: discover %q: status %d", issuer, resp.StatusCode)
 	}
 	var doc discoveryDoc
 	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
-		return nil, fmt.Errorf("oidclogin: decode discovery: %w", err)
+		return nil, fmt.Errorf("oidc: decode discovery: %w", err)
 	}
 	if doc.AuthorizationEndpoint == "" || doc.TokenEndpoint == "" || doc.JWKSURI == "" {
-		return nil, fmt.Errorf("oidclogin: discovery for %q is missing endpoints", issuer)
+		return nil, fmt.Errorf("oidc: discovery for %q is missing endpoints", issuer)
 	}
 	if doc.Issuer == "" {
 		doc.Issuer = issuer
@@ -293,16 +303,12 @@ func stringsClaim(v any) []string {
 	return nil
 }
 
-// GenerateVerifier mirrors pkg/oidc so callers have one source for PKCE verifier
-// generation regardless of which RP they use.
-func GenerateVerifier() string { return oauth2.GenerateVerifier() }
-
-// mapperForProvider returns the built-in ClaimsMapper for a provider key. An
-// empty key defaults to "latere". Unknown keys are an error.
-func mapperForProvider(provider string) (ClaimsMapper, error) {
-	switch provider {
+// mapperForKind returns the built-in ClaimsMapper for an issuer kind. An
+// empty kind defaults to "latere". Unknown kinds are an error.
+func mapperForKind(kind string) (ClaimsMapper, error) {
+	switch kind {
 	case "", "latere":
-		return latereMapper{}, nil
+		return LatereMapper{}, nil
 	case "keycloak":
 		return KeycloakMapper{}, nil
 	case "google":
@@ -310,15 +316,15 @@ func mapperForProvider(provider string) (ClaimsMapper, error) {
 	case "cognito":
 		return CognitoMapper{}, nil
 	default:
-		return nil, fmt.Errorf("oidclogin: unknown provider %q", provider)
+		return nil, fmt.Errorf("oidc: unknown issuer kind %q", kind)
 	}
 }
 
-// latereMapper maps latere auth ID-token claims. latere stamps identity on the
+// LatereMapper maps latere auth ID-token claims. latere stamps identity on the
 // ID token and roles on the access token (and/or a "roles" claim); read both.
-type latereMapper struct{}
+type LatereMapper struct{}
 
-func (latereMapper) Map(idClaims, accessClaims map[string]any) (Identity, error) {
+func (LatereMapper) Map(idClaims, accessClaims map[string]any) (Identity, error) {
 	roles := stringsClaim(idClaims["roles"])
 	if accessClaims != nil {
 		roles = unionStrings(roles, stringsClaim(accessClaims["roles"]))
