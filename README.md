@@ -97,6 +97,7 @@ second service needed the same thing.
 | Package | What it gives you |
 |---|---|
 | [`atomicfile`](atomicfile/) | Write-then-rename file replacement, so a reader never observes a half-written file |
+| [`bearer`](bearer/) | Token extraction from `Authorization: Bearer` with the RFC 7235 case-insensitive scheme, and constant-time comparison |
 | [`cache`](cache/) | Generic TTL cache with optional LRU bounding and an injectable clock, plus `Lazy`, a once-computed value with error memoization |
 | [`circuitbreaker`](circuitbreaker/) | Trip-on-failure gate that stops hammering a dependency that is already down |
 | [`cmdexec`](cmdexec/) | Fluent subprocess builder and a transactional sequencer that rolls back completed steps when a later one fails |
@@ -111,8 +112,10 @@ second service needed the same thing.
 | [`pagination`](pagination/) | Cursor pagination helpers |
 | [`pubsub`](pubsub/) | In-process topic fanout with per-subscriber buffering |
 | [`registry`](registry/) | Generic slug-keyed registry |
+| [`relpath`](relpath/) | Traversal-safe relative paths: validate, join under a base, and symlink-aware containment |
+| [`retry`](retry/) | Bounded exponential backoff with jitter and a driver that runs a function under it |
 | [`routine`](routine/) | Periodic fire-and-forget callbacks keyed by UUID, one timer each, with an injectable clock |
-| [`sanitize`](sanitize/) | Rune-safe display truncation and container-safe slug generation |
+| [`sanitize`](sanitize/) | Rune-safe display truncation, byte-budget truncation that never splits a rune, and container-safe slug generation |
 | [`set`](set/) | Generic set |
 | [`slugutil`](slugutil/) | Kebab-case identifier validation |
 | [`statemachine`](statemachine/) | Declarative transition table with guarded moves |
@@ -120,7 +123,9 @@ second service needed the same thing.
 | [`tail`](tail/) | Last-n elements of a slice, without copying |
 | [`trackedwg`](trackedwg/) | Wait group that reports what is still outstanding |
 | [`tree`](tree/) | Generic tree construction and rendering |
+| [`uniq`](uniq/) | Order-preserving deduplication, with a trim-and-drop-empties form for string lists |
 | [`uuidutil`](uuidutil/) | UUID parsing helpers |
+| [`wait`](wait/) | Cancellable sleep, ticker loop, and poll; `wait/waittest` polls a condition in a test until it holds |
 | [`watcher`](watcher/) | Filesystem change notification with debouncing |
 
 Package-level documentation, including the streaming grammar and per-provider
