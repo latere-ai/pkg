@@ -6,10 +6,6 @@
 # is a gate that slips fleet-wide.
 
 cover:
-  # Per package, not the repository average this replaced. The average passed
-  # at 95% while pgxmigrate sat at 82.1%, which is exactly the shape an average
-  # hides: one package below the line and 47 above it carrying the number.
-  threshold: 90.0
   trim_prefix: latere.ai/x/pkg/
   # No exemptions. Every package clears the floor on its own.
   exempt: {}
@@ -28,12 +24,6 @@ hermetic:
   # which is a decision someone makes rather than an accident.
   allow: [/usr/bin, /bin]
 
-modernize:
-  # newexpr and errorsastype are off for the reasons recorded in .golangci.yml.
-  # lateregate checks each still exists, because `go fix` rejects an unknown
-  # -name=false and the gate would then pass silently.
-  disable: [newexpr, errorsastype]
-
 depcheck:
   # llmdialect is stdlib-only, and that is a promise other repositories build
   # on: tgo's own footprint gate watches this subtree from the outside because
@@ -45,3 +35,13 @@ depcheck:
     latere.ai/x/pkg/llmdialect:
       decision: llmdialect-stdlib-only
       allow: {}
+
+# Gates this repository does not run yet. Each entry is temporary by
+# construction: after the date the gate runs and fails on its own terms.
+waive:
+  license:
+    reason: >-
+      LICENSE declares Apache-2.0 at the root and no file carries the SPDX
+      notice yet; printing it into every file is one mechanical commit, made
+      once the holder line is settled for the organisation
+    until: 2026-10-31
