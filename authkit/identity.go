@@ -126,7 +126,7 @@ func Middleware(next http.Handler, a Authenticator) http.Handler {
 			// Log the detailed error server-side but return a generic body:
 			// authenticator errors can wrap internal detail (tokeninfo HTTP
 			// responses, backend topology) we must not disclose to clients.
-			slog.Debug("authkit: authentication failed", "error", err)
+			slog.DebugContext(r.Context(), "authkit: authentication failed", "error", err)
 			jwtauth.WriteUnauthorized(w, "unauthorized")
 			return
 		}

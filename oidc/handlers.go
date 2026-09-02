@@ -193,7 +193,7 @@ func (c *Client) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		ReturnTo:     returnTo,
 		Nonce:        nonce,
 	}); err != nil {
-		slog.Error("oidc: set flow state", "error", err)
+		slog.ErrorContext(r.Context(), "oidc: set flow state", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -240,14 +240,14 @@ func (c *Client) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// Check for error from auth service.
 	if errParam := r.URL.Query().Get("error"); errParam != "" {
 		desc := r.URL.Query().Get("error_description")
-		slog.Warn("oidc: callback error", "error", errParam, "description", desc)
+		slog.WarnContext(r.Context(), "oidc: callback error", "error", errParam, "description", desc)
 		http.Redirect(w, r, "/?auth_error="+url.QueryEscape(errParam), http.StatusFound)
 		return
 	}
 
 	flow, err := c.GetFlowState(r)
 	if err != nil {
-		slog.Warn("oidc: get flow state", "error", err)
+		slog.WarnContext(r.Context(), "oidc: get flow state", "error", err)
 		http.Redirect(w, r, "/login", http.StatusFound)
 		return
 	}
@@ -255,7 +255,7 @@ func (c *Client) HandleCallback(w http.ResponseWriter, r *http.Request) {
 
 	// Verify state.
 	if r.URL.Query().Get("state") != flow.State {
-		slog.Warn("oidc: state mismatch")
+		slog.WarnContext(r.Context(), "oidc: state mismatch")
 		http.Redirect(w, r, "/login", http.StatusFound)
 		return
 	}
@@ -264,7 +264,7 @@ func (c *Client) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
 	token, err := c.Exchange(r, code, flow.CodeVerifier)
 	if err != nil {
-		slog.Error("oidc: token exchange", "error", err)
+		slog.ErrorContext(r.Context(), "oidc: token exchange", "error", err)
 		http.Redirect(w, r, "/?auth_error=token_exchange_failed", http.StatusFound)
 		return
 	}
@@ -275,7 +275,7 @@ func (c *Client) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// falls through to the access-token checks alone.
 	if idToken, _ := token.Extra("id_token").(string); idToken != "" {
 		if _, err := c.provider.VerifyIDToken(r.Context(), token, flow.Nonce); err != nil {
-			slog.Warn("oidc: verify id_token", "error", err)
+			slog.WarnContext(r.Context(), "oidc: verify id_token", "error", err)
 			http.Redirect(w, r, "/?auth_error=invalid_id_token", http.StatusFound)
 			return
 		}
@@ -286,14 +286,14 @@ func (c *Client) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// is decoded by SessionFromToken; name and picture not present in the
 	// token are filled by a follow-up /userinfo round-trip in UserFromRequest.
 	if _, err := decodeJWTClaims(token.AccessToken); err != nil {
-		slog.Error("oidc: decode JWT claims", "error", err)
+		slog.ErrorContext(r.Context(), "oidc: decode JWT claims", "error", err)
 		http.Redirect(w, r, "/?auth_error=invalid_token", http.StatusFound)
 		return
 	}
 
 	sess := SessionFromToken(token, c.cfg.SessionTTL)
 	if err := c.SetSession(w, sess); err != nil {
-		slog.Error("oidc: set session", "error", err)
+		slog.ErrorContext(r.Context(), "oidc: set session", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -399,7 +399,7 @@ func (c *Client) UserFromRequest(w http.ResponseWriter, r *http.Request) *User {
 		// degradation visible: a 401 here means the access token lacks the
 		// issuer audience, so name/avatar silently go missing. See the
 		// audience-tagging contract in the auth service bootstrap.
-		slog.Warn("oidc: /userinfo failed; display name + avatar will be missing",
+		slog.WarnContext(r.Context(), "oidc: /userinfo failed; display name + avatar will be missing",
 			"error", err, "sub", u.Sub)
 	}
 	return u
@@ -422,7 +422,7 @@ func (c *Client) refreshExpiredSession(w http.ResponseWriter, r *http.Request, s
 	}
 	token, err := c.RefreshToken(r, sess.RefreshToken)
 	if err != nil {
-		slog.Debug("oidc: token refresh failed", "error", err)
+		slog.DebugContext(r.Context(), "oidc: token refresh failed", "error", err)
 		c.ClearSession(w)
 		return false
 	}
@@ -434,7 +434,7 @@ func (c *Client) refreshExpiredSession(w http.ResponseWriter, r *http.Request, s
 	// Persist the refreshed session so the next request doesn't need to refresh
 	// again.
 	if err := c.SetSession(w, sess); err != nil {
-		slog.Warn("oidc: failed to persist refreshed session", "error", err)
+		slog.WarnContext(r.Context(), "oidc: failed to persist refreshed session", "error", err)
 	}
 	return true
 }
@@ -504,7 +504,7 @@ func (c *Client) SessionFromRequest(w http.ResponseWriter, r *http.Request) (*Se
 	refreshed.User.Email = cmp.Or(refreshed.User.Email, sess.User.Email)
 
 	if err := c.SetSession(w, refreshed); err != nil {
-		slog.Warn("oidc: failed to persist refreshed session", "error", err)
+		slog.WarnContext(r.Context(), "oidc: failed to persist refreshed session", "error", err)
 	}
 	return refreshed, nil
 }

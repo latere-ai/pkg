@@ -116,7 +116,7 @@ func (c *Client) BuildMeFromToken(ctx context.Context, accessToken string) (*Me,
 	} else if uerr != nil {
 		// A 401 here means the access token lacks the issuer audience: name +
 		// avatar silently go missing without this log.
-		slog.Warn("oidc: /userinfo failed; display name + avatar will be missing",
+		slog.WarnContext(ctx, "oidc: /userinfo failed; display name + avatar will be missing",
 			"error", uerr, "sub", me.Sub)
 		degraded = uerr
 	}
@@ -131,7 +131,7 @@ func (c *Client) BuildMeFromToken(ctx context.Context, accessToken string) (*Me,
 			}
 		}
 	} else {
-		slog.Warn("oidc: /me/orgs failed; org switcher will be empty",
+		slog.WarnContext(ctx, "oidc: /me/orgs failed; org switcher will be empty",
 			"error", oerr, "sub", me.Sub)
 		if degraded == nil {
 			degraded = oerr
