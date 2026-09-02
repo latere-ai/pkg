@@ -43,6 +43,8 @@ import (
 	"strings"
 	"time"
 
+	"latere.ai/x/pkg/otel"
+
 	"golang.org/x/oauth2"
 
 	"latere.ai/x/pkg/envutil"
@@ -248,7 +250,7 @@ func New(cfg Config) *Client {
 				AuthStyle:     authStyle,
 			},
 			Scopes: scopes,
-		}, cfg.AuthURL, cfg.AuthURL+"/.well-known/jwks.json", http.DefaultClient, LatereMapper{}),
+		}, cfg.AuthURL, cfg.AuthURL+"/.well-known/jwks.json", otel.HTTPClient(), LatereMapper{}),
 	}
 
 	// Cookie key + startup log only matter for relying parties using
@@ -441,7 +443,7 @@ func (c *Client) RefreshTokenContext(ctx context.Context, refreshToken string) (
 
 // httpDo is a package-level variable for testability.
 var httpDo = func(req *http.Request) (*http.Response, error) {
-	return http.DefaultClient.Do(req)
+	return otel.HTTPClient().Do(req)
 }
 
 // --- Cookie helpers ---

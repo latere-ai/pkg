@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 
+	"latere.ai/x/pkg/otel"
+
 	"golang.org/x/oauth2"
 
 	"latere.ai/x/pkg/jwtauth"
@@ -82,7 +84,7 @@ func NewProvider(ctx context.Context, cfg ProviderConfig) (*Provider, error) {
 	}
 	hc := cfg.HTTPClient
 	if hc == nil {
-		hc = http.DefaultClient
+		hc = otel.HTTPClient()
 	}
 	doc, err := fetchDiscovery(ctx, hc, cfg.Issuer)
 	if err != nil {

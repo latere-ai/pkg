@@ -10,6 +10,18 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Changed
+
+- Every outbound HTTP client the module builds carries the otel transport:
+  `authkit.NewTokenInfoClient`, `jwtauth`'s JWKS fetch, `luxsdk`'s default
+  client, the `oidc` token exchange, discovery and userinfo calls, and the
+  `otel` telemetry relay. A downstream span now joins the caller's trace
+  instead of opening a new one. Nothing changes for a caller that supplied
+  its own client.
+- `oidc` and `authkit` log through the `*Context` slog variants on the
+  request path, so the otelslog bridge stamps trace and span ids on the
+  records.
+
 ### Fixed
 
 - `cache`: a `SetPermanent` insert no longer lets an expired TTL entry take a

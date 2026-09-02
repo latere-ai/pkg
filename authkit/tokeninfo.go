@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"latere.ai/x/pkg/otel"
 )
 
 // TokenInfo is the subset of the auth service's GET /tokeninfo response that
@@ -53,7 +55,7 @@ type TokenInfoClient struct {
 func NewTokenInfoClient(url string) *TokenInfoClient {
 	return &TokenInfoClient{
 		URL:    url,
-		Client: &http.Client{Timeout: 3 * time.Second},
+		Client: &http.Client{Timeout: 3 * time.Second, Transport: otel.Transport(nil)},
 	}
 }
 

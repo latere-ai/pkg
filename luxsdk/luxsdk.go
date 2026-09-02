@@ -32,6 +32,8 @@ import (
 	"slices"
 	"strings"
 
+	"latere.ai/x/pkg/otel"
+
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
 )
@@ -143,7 +145,7 @@ type settings struct {
 }
 
 func applyOptions(opts []Option) settings {
-	s := settings{hc: http.DefaultClient}
+	s := settings{hc: otel.HTTPClient()}
 	for _, o := range opts {
 		o(&s)
 	}

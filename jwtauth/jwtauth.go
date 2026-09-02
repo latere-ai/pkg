@@ -84,6 +84,8 @@ import (
 	"sync"
 	"time"
 
+	"latere.ai/x/pkg/otel"
+
 	"latere.ai/x/pkg/bearer"
 	"latere.ai/x/pkg/httpjson"
 )
@@ -177,7 +179,7 @@ func New(cfg Config) *Validator {
 // ── Package-level vars for testability ──────────────────────────────────────
 
 var httpGet = func(url string) (*http.Response, error) {
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second, Transport: otel.Transport(nil)}
 	return client.Get(url) //nolint:gosec
 }
 

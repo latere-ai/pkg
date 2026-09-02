@@ -28,7 +28,7 @@ const maxTelemetryBody = 1 << 20 // 1 MiB
 
 // telemetryClient forwards browser payloads to the collector. A package var so
 // tests can adjust the timeout/transport without a live backend.
-var telemetryClient = &http.Client{Timeout: 10 * time.Second}
+var telemetryClient = &http.Client{Timeout: 10 * time.Second, Transport: Transport(nil)}
 
 // telemetryRateEnv names the sustained byte budget, in bytes per second, that
 // the relay will forward. Zero or negative disables the limit.
