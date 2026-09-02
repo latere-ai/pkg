@@ -191,6 +191,30 @@ func TestTTLCache_GetExpiredReleasesLRUSlot(t *testing.T) {
 	}
 }
 
+// TestTTLCache_SetPermanentSweepsExpiredBeforeEviction verifies that a
+// permanent insert does not let an expired TTL entry consume the size cap and
+// evict a live key instead.
+func TestTTLCache_SetPermanentSweepsExpiredBeforeEviction(t *testing.T) {
+	now := time.Unix(0, 0)
+	c := New[string, int](time.Minute, WithMaxSize[string, int](2), WithClock[string, int](func() time.Time { return now }))
+
+	c.SetPermanent("live", 1)
+	c.Set("expired", 2) // most recently used, so "live" is the LRU
+	now = now.Add(2 * time.Minute)
+
+	c.SetPermanent("new", 3)
+
+	if _, ok := c.Get("live"); !ok {
+		t.Fatal("'live' was evicted even though only one non-expired entry remained")
+	}
+	if _, ok := c.Get("expired"); ok {
+		t.Fatal("expired TTL entry survived a later permanent insert")
+	}
+	if v, ok := c.Get("new"); !ok || v != 3 {
+		t.Fatalf("Get(new) = (%d, %v), want (3, true)", v, ok)
+	}
+}
+
 // TestTTLCache_Invalidate verifies that Invalidate removes a TTL-based entry.
 func TestTTLCache_Invalidate(t *testing.T) {
 	c := New[string, int](time.Minute)

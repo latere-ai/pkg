@@ -118,6 +118,9 @@ func (c *TTLCache[K, V]) putLocked(key K, e entry[V]) {
 	}
 	c.entries[key] = e
 	if c.maxSize > 0 && c.lru.Len() > c.maxSize {
+		if c.removeOneExpiredLocked(c.now()) {
+			return
+		}
 		front := c.lru.Front()
 		// The list holds keys and nothing else; PushBack above is the only writer.
 		evict := front.Value.(K) //nolint:errcheck // the LRU list holds keys only
@@ -130,6 +133,18 @@ func (c *TTLCache[K, V]) putLocked(key K, e entry[V]) {
 func (c *TTLCache[K, V]) removeLocked(key K, e entry[V]) {
 	c.lru.Remove(e.elem)
 	delete(c.entries, key)
+}
+
+// removeOneExpiredLocked removes one expired non-permanent entry, returning
+// whether it reclaimed a slot. The caller must hold c.mu.
+func (c *TTLCache[K, V]) removeOneExpiredLocked(now time.Time) bool {
+	for k, e := range c.entries {
+		if !e.permanent && now.After(e.expiresAt) {
+			c.removeLocked(k, e)
+			return true
+		}
+	}
+	return false
 }
 
 // sweepExpiredLocked opportunistically reclaims expired non-permanent entries

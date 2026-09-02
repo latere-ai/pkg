@@ -10,6 +10,11 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Fixed
+
+- `cache`: a `SetPermanent` insert no longer lets an expired TTL entry take a
+  `MaxSize` slot and evict a live key.
+
 ## v0.50.0 - 2026-09-01
 
 ### Changed
