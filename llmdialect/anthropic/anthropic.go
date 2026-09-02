@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package anthropic implements the Anthropic Messages dialect for
 // llmdialect. This file carries the frontend codec (caller side):
 // decoding a Messages API request into the IR, encoding an IR response

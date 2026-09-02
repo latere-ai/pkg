@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package lux implements the lux-native dialect for llmdialect: the
 // neutral IR itself, made public as a stable, snake_case JSON wire
 // format. Because the dialect is the IR, the frontend

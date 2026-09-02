@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 package lux
 
 // The backend codec (upstream side): encoding an IR request as a lux

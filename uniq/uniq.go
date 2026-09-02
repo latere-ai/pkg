@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package uniq removes duplicates from a slice while keeping the first
 // occurrence and the original order. [slices.Compact] removes adjacent
 // duplicates only, and sorting first destroys an order the caller chose.

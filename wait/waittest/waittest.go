@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package waittest polls a condition in a test until it holds or a deadline
 // passes. It replaces the deadline-loop-sleep block that every test with a
 // background goroutine otherwise writes for itself, each with its own

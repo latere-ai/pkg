@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package dag provides generic operations on directed acyclic graphs
 // represented as adjacency lists.
 package dag

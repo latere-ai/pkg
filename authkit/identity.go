@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package authkit provides product-agnostic authentication glue for
 // Latere AI services. It defines the shared Identity type and
 // Authenticator interface so independent services share one

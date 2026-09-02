@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package ir defines the neutral intermediate representation that all
 // llmdialect frontends and backends translate through. The IR is a
 // superset of the OpenAI (Chat Completions, Responses) and Anthropic

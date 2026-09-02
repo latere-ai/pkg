@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package tokencount estimates the input token count of an IR request
 // without a model tokenizer. It exists for count_tokens emulation when
 // the backend dialect has no counting endpoint: the estimate targets

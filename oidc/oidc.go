@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package oidc is the OAuth 2.0 / OIDC relying party for Latere services.
 //
 // [Provider] is one issuer: endpoints, keys, and a [ClaimsMapper] that turns

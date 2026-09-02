@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package otel sets up OpenTelemetry tracing and metrics.
 //
 // By default, telemetry is disabled (noop). Set OTEL_EXPORTER_OTLP_ENDPOINT to

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package gitutil provides low-level git operations used for repository
 // management, worktree isolation, and rebase conflict handling.
 //

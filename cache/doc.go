@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package cache provides a thread-safe in-memory TTL cache with optional
 // bounded LRU eviction.
 //

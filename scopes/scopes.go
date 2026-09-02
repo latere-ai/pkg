@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package scopes is the source of truth for every OAuth/RBAC scope
 // the latere.ai auth service can issue.
 //

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Latere AI
+# SPDX-License-Identifier: Apache-2.0
+
 .PHONY: check test test-race race fuzz cover cover-html fmt fmt-check hooks vuln lint-modernize lint-config lint \
 	test-hermetic cgo-free deps validate no-tracked-specs release release-notes
 

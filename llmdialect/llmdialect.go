@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package llmdialect translates between LLM inference wire dialects —
 // Anthropic Messages, OpenAI Chat Completions, OpenAI Responses, and
 // the lux-native dialect (the IR itself as a public wire format) —

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 package scopes
 
 // OpenID Connect / OAuth 2.0 standard scopes.

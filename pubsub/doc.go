@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package pubsub provides a generic fan-out pub/sub hub with a bounded replay
 // buffer for reconnecting subscribers.
 //

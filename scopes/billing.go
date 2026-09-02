@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 package scopes
 
 // BillingReport gates the meter-submission endpoint auth exposes at

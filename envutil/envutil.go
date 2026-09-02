@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package envutil provides helpers for reading typed values from
 // environment variables with defaults and optional minimum bounds.
 package envutil

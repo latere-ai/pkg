@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package errwriter writes a stream of output and remembers the first error,
 // so a caller checks once instead of at every call.
 //

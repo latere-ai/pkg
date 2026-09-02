@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // This file carries the backend codec (upstream side) of the OpenAI
 // Responses dialect: encoding an IR request as a Responses API body,
 // decoding the response, and decoding the Responses SSE stream into

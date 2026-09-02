@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package sanitize provides string sanitization utilities: display and
 // byte-budget truncation, slug generation, and slug validation.
 //

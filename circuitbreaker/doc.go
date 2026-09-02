@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package circuitbreaker provides two fault isolation implementations for
 // protecting against cascading failures.
 //

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package bearer reads the token from an Authorization: Bearer header and
 // compares tokens in constant time. The scheme is matched case-insensitively,
 // as RFC 7235 section 2.1 requires, which is the one detail that the copies

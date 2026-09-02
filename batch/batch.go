@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package batch provides a generic, non-blocking batching pump: producers
 // Add items without ever blocking (a full intake buffer drops the item and
 // reports it), while a single Run goroutine accumulates items and hands them to

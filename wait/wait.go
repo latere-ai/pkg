@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package wait provides cancellable time primitives: a sleep, a ticker loop,
 // and a poll. Each returns as soon as its context is done, so a shutdown is
 // never held up by a timer that was started before it.

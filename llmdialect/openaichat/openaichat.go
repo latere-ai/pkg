@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package openaichat implements the OpenAI Chat Completions dialect
 // for llmdialect. This file carries the backend codec (upstream side):
 // encoding an IR request as a Chat Completions body, decoding the

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package syncmap provides a type-safe generic wrapper around sync.Map.
 //
 // The stdlib sync.Map uses any for keys and values, requiring a type assertion

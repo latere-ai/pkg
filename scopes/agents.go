@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 package scopes
 
 // Agent-API scopes gate the topos agent surface: sessions, attach, and the

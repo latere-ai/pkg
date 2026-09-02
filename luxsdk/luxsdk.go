@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package luxsdk is the first-party Go client for the Latere Lux
 // gateway's native dialect: one typed request /
 // response / streaming shape, POST /lux/v1/generate, any provider Lux

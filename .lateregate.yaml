@@ -36,12 +36,11 @@ depcheck:
       decision: llmdialect-stdlib-only
       allow: {}
 
-# Gates this repository does not run yet. Each entry is temporary by
-# construction: after the date the gate runs and fails on its own terms.
-waive:
-  license:
-    reason: >-
-      LICENSE declares Apache-2.0 at the root and no file carries the SPDX
-      notice yet; printing it into every file is one mechanical commit, made
-      once the holder line is settled for the organisation
-    until: 2026-10-31
+license:
+  # The identifier every source file carries and the holder it names. There
+  # is no default: this is the decision the gate checks the tree against.
+  # `go tool lateregate license -w` writes the notice where it is missing.
+  spdx: Apache-2.0
+  holder: Latere AI
+  extensions: ['.go']
+  names: [Makefile]

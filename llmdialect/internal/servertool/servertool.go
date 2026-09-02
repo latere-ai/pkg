@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package servertool encodes and decodes provider-executed tool entries.
 //
 // Anthropic Messages and OpenAI Chat Completions both carry these as objects

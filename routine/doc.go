@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package routine schedules periodic fire-and-forget callbacks keyed by UUID.
 //
 // Each routine owns one [time.AfterFunc] timer, arms it according to a

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package openairesp implements the OpenAI Responses dialect for
 // llmdialect — the wire shape Codex speaks. It ships both codecs, and
 // only the stateless subset: requests carrying previous_response_id or

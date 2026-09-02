@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package jwtauth provides JWKS-based RS256 JWT validation for services
 // that accept tokens issued by the Latere auth service.
 //

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package registry holds generic helpers for merging a built-in catalog with
 // user-authored items keyed by a unique slug. It is shared by the agents and
 // flow stores, which otherwise duplicated the same merge and lookup logic.

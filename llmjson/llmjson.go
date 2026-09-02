@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package llmjson repairs the JSON a language model returns when it was asked
 // for JSON and answered with something close to it.
 //

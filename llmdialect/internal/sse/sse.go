@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package sse implements minimal server-sent-events framing shared by
 // the llmdialect codecs: a Reader that yields one event per call and a
 // Writer that emits `event:`/`data:` frames. It covers exactly the SSE

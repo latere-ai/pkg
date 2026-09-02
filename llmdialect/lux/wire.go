@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 package lux
 
 // The lux wire vocabulary: exported, JSON-tagged mirrors of the IR

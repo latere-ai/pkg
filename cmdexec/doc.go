@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package cmdexec provides a fluent command builder and transactional command
 // sequencer with rollback and deferred cleanup.
 //

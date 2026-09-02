@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package httpjson provides helpers for decoding JSON request bodies and
 // writing JSON responses in HTTP handlers.
 package httpjson

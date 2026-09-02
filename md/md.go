@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package md provides shared Markdown utilities: YAML frontmatter parsing
 // and HTML rendering with GitHub Flavored Markdown.
 //

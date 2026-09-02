@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package watcher provides a reusable event loop for background goroutines that
 // react to wake signals and/or periodic tickers.
 //

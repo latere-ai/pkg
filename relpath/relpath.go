@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package relpath answers one question: does a caller-supplied path stay
 // under the directory it is meant for. A traversal ("../x"), an absolute
 // path, or an embedded NUL must not escape the base, and a symlink inside the

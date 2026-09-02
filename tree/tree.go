@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package tree provides a generic rooted tree with parent-child
 // relationships and a key-based index.
 package tree

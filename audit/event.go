@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package audit defines the canonical audit-event envelope used across
 // Latere services and the abstractions emitters share.
 //

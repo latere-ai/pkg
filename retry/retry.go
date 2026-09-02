@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
 // Package retry runs a function under a bounded exponential backoff policy
 // with jitter. The budget is finite on purpose: an unbounded retry against a
 // permanently failing input is an infinite loop that reads as activity on
