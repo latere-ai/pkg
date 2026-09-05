@@ -24,6 +24,13 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Fixed
 
+- `llmdialect/anthropic`: the backend now carries
+  `usage.output_tokens_details.thinking_tokens` into `ir.Usage.ReasoningTokens`.
+  A Responses-dialect caller (codex) driving an Anthropic model through the
+  compat surface saw `reasoning_tokens: 0` on every call even when the model
+  thought, and could not tell an ignored effort from an applied one. Streaming
+  and non-streaming responses both pick it up; `output_tokens` is unchanged
+  (thinking was always included in it).
 - `relpath.Contains`: resolve symlinks before parent traversal (`link/..`),
   preventing paths from being accepted under a different directory than the
   one the filesystem actually accesses.

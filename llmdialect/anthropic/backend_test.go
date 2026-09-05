@@ -355,3 +355,37 @@ func FuzzBackendDecodeResponse(f *testing.F) {
 		_, _ = NewBackend(BackendOptions{}).DecodeResponse(body) // must not panic
 	})
 }
+
+// Anthropic reports thinking under output_tokens_details.thinking_tokens.
+// Without carrying it into ir.Usage.ReasoningTokens, a Responses-dialect
+// caller (codex) sees reasoning_tokens: 0 for every Anthropic model even
+// when the model thought, and cannot tell "effort ignored" from "effort
+// applied".
+func TestDecodeResponseCarriesThinkingTokensAsReasoning(t *testing.T) {
+	t.Parallel()
+	body := []byte(`{"type":"message","id":"msg_1","model":"claude-fable-5-1","role":"assistant",
+		"content":[{"type":"thinking","thinking":"...","signature":"sig"},{"type":"text","text":"390"}],
+		"stop_reason":"end_turn",
+		"usage":{"input_tokens":31,"output_tokens":180,"cache_read_input_tokens":0,
+		         "cache_creation_input_tokens":0,"output_tokens_details":{"thinking_tokens":51}}}`)
+	resp, err := (&Backend{}).DecodeResponse(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Usage.ReasoningTokens != 51 {
+		t.Fatalf("ReasoningTokens = %d, want 51", resp.Usage.ReasoningTokens)
+	}
+	if resp.Usage.OutputTokens != 180 {
+		t.Fatalf("OutputTokens = %d, want 180 (thinking is included, not added)", resp.Usage.OutputTokens)
+	}
+	// A response with no details block, the pre-thinking shape, still parses.
+	resp, err = (&Backend{}).DecodeResponse([]byte(`{"type":"message","id":"m","model":"x","role":"assistant",
+		"content":[{"type":"text","text":"hi"}],"stop_reason":"end_turn",
+		"usage":{"input_tokens":1,"output_tokens":2}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Usage.ReasoningTokens != 0 {
+		t.Fatalf("ReasoningTokens = %d, want 0 without details", resp.Usage.ReasoningTokens)
+	}
+}

@@ -303,21 +303,31 @@ func encodeImageSource(img *ir.Image) map[string]any {
 	return map[string]any{"type": "base64", "media_type": img.MediaType, "data": img.Data}
 }
 
-// backendUsage is the Messages usage object.
+// backendUsage is the Messages usage object. output_tokens_details is
+// present when the model thought (effort or thinking requested); its
+// thinking_tokens are the Anthropic name for what the Responses dialect
+// reports as reasoning_tokens, and are already included in output_tokens.
 type backendUsage struct {
 	InputTokens              int64 `json:"input_tokens"`
 	OutputTokens             int64 `json:"output_tokens"`
 	CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
 	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+	OutputTokensDetails      *struct {
+		ThinkingTokens int64 `json:"thinking_tokens"`
+	} `json:"output_tokens_details"`
 }
 
 func (u *backendUsage) toUsage() ir.Usage {
-	return ir.Usage{
+	out := ir.Usage{
 		InputTokens:           u.InputTokens,
 		OutputTokens:          u.OutputTokens,
 		CacheReadInputTokens:  u.CacheReadInputTokens,
 		CacheWriteInputTokens: u.CacheCreationInputTokens,
 	}
+	if u.OutputTokensDetails != nil {
+		out.ReasoningTokens = u.OutputTokensDetails.ThinkingTokens
+	}
+	return out
 }
 
 // DecodeResponse parses a non-streaming Messages response into the IR.
