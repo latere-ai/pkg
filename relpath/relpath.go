@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -46,7 +47,7 @@ func Clean(rel string) (string, error) {
 func Join(base, rel string) (string, error) {
 	base = filepath.Clean(base)
 	target := filepath.Join(base, rel)
-	if target != base && !strings.HasPrefix(target, base+string(filepath.Separator)) {
+	if !containsLexically(base, target) {
 		return "", fmt.Errorf("relpath: %q escapes %q", rel, base)
 	}
 	return target, nil
@@ -56,7 +57,8 @@ func Join(base, rel string) (string, error) {
 // absolute and symlinks are resolved. root must exist. target need not: the
 // longest existing prefix of target is resolved and the rest is appended
 // unchanged, so a file about to be created is judged by the directory it
-// will land in.
+// will land in. An unresolved symlink returns an error, even if its target
+// does not exist, because discarding the link would hide an escape.
 //
 // On macOS /tmp is a symlink to /private/tmp, so a lexical prefix test
 // against an unresolved root is wrong in both directions. Contains resolves
@@ -78,7 +80,12 @@ func Contains(root, target string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return t == r || strings.HasPrefix(t, r+string(filepath.Separator)), nil
+	return containsLexically(r, t), nil
+}
+
+func containsLexically(root, target string) bool {
+	rel, err := filepath.Rel(root, target)
+	return err == nil && filepath.IsLocal(rel)
 }
 
 // resolveExisting resolves symlinks in the longest existing prefix of the
@@ -92,6 +99,15 @@ func resolveExisting(p string) (string, error) {
 		}
 		if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) {
 			return "", err
+		}
+		// EvalSymlinks also reports ENOENT for a dangling link. It is an
+		// existing path component, so never strip it as if it were absent.
+		info, statErr := os.Lstat(p)
+		if statErr == nil && info.Mode()&fs.ModeSymlink != 0 {
+			return "", err
+		}
+		if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) && !errors.Is(statErr, syscall.ENOTDIR) {
+			return "", statErr
 		}
 		parent := filepath.Dir(p)
 		if parent == p {

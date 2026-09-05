@@ -188,3 +188,54 @@ func TestContainsUnreadableTargetIsAnError(t *testing.T) {
 		t.Fatal("permission error was swallowed")
 	}
 }
+
+func TestJoinRootBases(t *testing.T) {
+	for _, base := range []string{".", "", string(filepath.Separator)} {
+		t.Run(base, func(t *testing.T) {
+			got, err := Join(base, "child")
+			if want := filepath.Join(base, "child"); err != nil || got != want {
+				t.Fatalf("Join(%q, child) = %q, %v; want %q", base, got, err, want)
+			}
+		})
+	}
+	for _, base := range []string{".", ""} {
+		if _, err := Join(base, "../outside"); err == nil {
+			t.Fatalf("Join(%q, ../outside) accepted escape", base)
+		}
+	}
+}
+
+func TestContainsFilesystemRoot(t *testing.T) {
+	target := t.TempDir()
+	root := filepath.VolumeName(target) + string(filepath.Separator)
+	if got, err := Contains(root, target); err != nil || !got {
+		t.Fatalf("Contains(%q, %q) = %v, %v; want true", root, target, got, err)
+	}
+}
+
+func TestContainsDanglingSymlinkEscape(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "root")
+	if err := os.Mkdir(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, relative := range []bool{false, true} {
+		name := "absolute"
+		linkTarget := filepath.Join(dir, "outside")
+		if relative {
+			name = "relative"
+			linkTarget = "../outside"
+		}
+		t.Run(name, func(t *testing.T) {
+			link := filepath.Join(root, name)
+			if err := os.Symlink(linkTarget, link); err != nil {
+				t.Fatal(err)
+			}
+			for _, target := range []string{link, filepath.Join(link, "child")} {
+				if inside, err := Contains(root, target); err == nil && inside {
+					t.Fatalf("Contains accepted dangling escape %q", target)
+				}
+			}
+		})
+	}
+}

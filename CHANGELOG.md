@@ -24,6 +24,9 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Fixed
 
+- `relpath`: containment checks accept children of `.` and filesystem roots,
+  and reject unresolved symlinks instead of treating them as missing paths.
+
 - `cache`: a `SetPermanent` insert no longer lets an expired TTL entry take a
   `MaxSize` slot and evict a live key.
 
