@@ -24,6 +24,9 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Fixed
 
+- `dircp`: the Go fallback creates the destination directory, including for
+  empty sources, and reports invalid source or destination roots as errors.
+
 - `relpath`: containment checks accept children of `.` and filesystem roots,
   and reject unresolved symlinks instead of treating them as missing paths.
 

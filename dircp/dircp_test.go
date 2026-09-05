@@ -301,3 +301,69 @@ func TestCopyGo_EntryInfoError(t *testing.T) {
 		t.Fatalf("expected injected info error, got %v", err)
 	}
 }
+
+func TestCopyCreatesDestination(t *testing.T) {
+	for _, copyFn := range []struct {
+		name string
+		fn   func(string, string) error
+	}{{"go", CopyGo}, {"fallback", Copy}} {
+		t.Run(copyFn.name, func(t *testing.T) {
+			t.Setenv("PATH", t.TempDir())
+			for _, contents := range []string{"empty", "file", "symlink"} {
+				t.Run(contents, func(t *testing.T) {
+					src := t.TempDir()
+					dst := filepath.Join(t.TempDir(), "new", "destination")
+					if contents == "file" {
+						if err := os.WriteFile(filepath.Join(src, "file"), []byte("copied"), 0o644); err != nil {
+							t.Fatal(err)
+						}
+					}
+					if contents == "symlink" {
+						if err := os.Symlink("missing", filepath.Join(src, "link")); err != nil {
+							t.Fatal(err)
+						}
+					}
+					if err := copyFn.fn(src, dst); err != nil {
+						t.Fatal(err)
+					}
+					info, err := os.Stat(dst)
+					if err != nil || !info.IsDir() {
+						t.Fatalf("destination directory: %v, %v", info, err)
+					}
+					if contents == "file" {
+						got, err := os.ReadFile(filepath.Join(dst, "file"))
+						if err != nil || string(got) != "copied" {
+							t.Fatalf("copied file = %q, %v", got, err)
+						}
+					}
+					if contents == "symlink" {
+						got, err := os.Readlink(filepath.Join(dst, "link"))
+						if err != nil || got != "missing" {
+							t.Fatalf("copied link = %q, %v", got, err)
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestCopyGoRejectsFileSource(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(src, []byte("data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := CopyGo(src, filepath.Join(t.TempDir(), "dst")); err == nil {
+		t.Fatal("file source reported success without copying anything")
+	}
+}
+
+func TestCopyGoDestinationRootError(t *testing.T) {
+	dst := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(dst, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := CopyGo(t.TempDir(), dst); err == nil {
+		t.Fatal("accepted a file destination")
+	}
+}

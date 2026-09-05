@@ -11,6 +11,7 @@ package dircp
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -45,7 +46,8 @@ var (
 )
 
 // CopyGo is a pure-Go recursive directory copy. It walks src and recreates
-// the directory tree under dst, copying regular files and symlinks.
+// the directory tree under dst, copying regular files and symlinks. It creates
+// dst and any missing parents. src must be a directory.
 func CopyGo(src, dst string) error {
 	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -56,7 +58,10 @@ func CopyGo(src, dst string) error {
 			return err
 		}
 		if rel == "." {
-			return nil
+			if !d.IsDir() {
+				return fmt.Errorf("dircp: source %q is not a directory", src)
+			}
+			return os.MkdirAll(dst, 0755)
 		}
 		target := filepath.Join(dst, rel)
 		if d.IsDir() {
