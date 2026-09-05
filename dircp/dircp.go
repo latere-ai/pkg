@@ -83,18 +83,35 @@ func CopyGo(src, dst string) error {
 }
 
 // CopyFile copies a single file from src to dst, creating dst with the given
-// permissions. If dst already exists it is truncated.
+// permissions. If dst already exists it is truncated. A destination referring
+// to the source file (including hard links and symlinks) is rejected.
 func CopyFile(src, dst string, mode fs.FileMode) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = in.Close() }()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY, mode)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = out.Close() }()
+	// Compare the opened files before truncating: different paths may still
+	// identify the same inode through a hard link or symlink.
+	sourceInfo, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	destinationInfo, err := out.Stat()
+	if err != nil {
+		return err
+	}
+	if os.SameFile(sourceInfo, destinationInfo) {
+		return fmt.Errorf("dircp: %q and %q refer to the same file", src, dst)
+	}
+	if err := out.Truncate(0); err != nil {
+		return err
+	}
 	if _, err := ioCopy(out, in); err != nil {
 		return err
 	}

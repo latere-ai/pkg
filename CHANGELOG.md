@@ -24,6 +24,9 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Fixed
 
+- `dircp.CopyFile`: copying onto the source, a hard link, or a symlink to it
+  returns an error without destroying the source contents.
+
 - `dircp`: the Go fallback creates the destination directory, including for
   empty sources, and reports invalid source or destination roots as errors.
 

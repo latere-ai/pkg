@@ -367,3 +367,52 @@ func TestCopyGoDestinationRootError(t *testing.T) {
 		t.Fatal("accepted a file destination")
 	}
 }
+
+func TestCopyFileRejectsSameFile(t *testing.T) {
+	for _, kind := range []string{"same path", "hard link", "symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			src := filepath.Join(dir, "source")
+			dst := src
+			const content = "irreplaceable source data"
+			if err := os.WriteFile(src, []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if kind != "same path" {
+				dst = filepath.Join(dir, "alias")
+				link := os.Link
+				if kind == "symlink" {
+					link = os.Symlink
+				}
+				if err := link(src, dst); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := CopyFile(src, dst, 0o644); err == nil {
+				t.Error("copying a file onto itself must fail")
+			}
+			got, err := os.ReadFile(src)
+			if err != nil || string(got) != content {
+				t.Fatalf("source data changed: %q, %v", got, err)
+			}
+		})
+	}
+}
+
+func TestCopyFileTruncatesExistingDestination(t *testing.T) {
+	dir := t.TempDir()
+	src, dst := filepath.Join(dir, "src"), filepath.Join(dir, "dst")
+	if err := os.WriteFile(src, []byte("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, []byte("old longer content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := CopyFile(src, dst, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil || string(got) != "new" {
+		t.Fatalf("destination = %q, %v", got, err)
+	}
+}
