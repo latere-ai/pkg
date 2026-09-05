@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.51.0 - 2026-09-05
+
 ### Changed
 
 - Every outbound HTTP client the module builds carries the otel transport:
