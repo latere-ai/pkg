@@ -24,6 +24,9 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Fixed
 
+- `circuitbreaker`: a half-open probe stays exclusive until it reports a
+  result, even when the cooldown elapses while the probe is still running.
+
 - `dircp.CopyFile`: copying onto the source, a hard link, or a symlink to it
   returns an error without destroying the source contents.
 

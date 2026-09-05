@@ -265,7 +265,7 @@ func TestBreaker_HalfOpenFailureReopens(t *testing.T) {
 }
 
 // TestBreaker_HalfOpenAllowReturnsFalse verifies that a second Allow call while
-// in half-open state returns false and reopens the breaker, ensuring only one
+// in half-open state returns false and keeps the probe active, ensuring only one
 // probe operation is permitted.
 func TestBreaker_HalfOpenAllowReturnsFalse(t *testing.T) {
 	const threshold = 2
@@ -282,12 +282,12 @@ func TestBreaker_HalfOpenAllowReturnsFalse(t *testing.T) {
 		t.Fatal("probe Allow() should return true")
 	}
 
-	// Second concurrent Allow in HalfOpen → should return false and reopen.
+	// Second concurrent Allow in HalfOpen must leave the probe slot occupied.
 	if b.Allow() {
 		t.Fatal("Allow() should return false while half-open probe is active")
 	}
-	if b.State() != Open {
-		t.Fatalf("expected Open after second Allow in half-open, got %v", b.State())
+	if b.State() != HalfOpen {
+		t.Fatalf("expected HalfOpen after second Allow in half-open, got %v", b.State())
 	}
 }
 
@@ -445,5 +445,31 @@ func TestBackoffBreaker_RecordSuccessResets(t *testing.T) {
 	}
 	if b.IsOpen() {
 		t.Fatal("breaker should be closed after success")
+	}
+}
+
+func TestBreakerAllowsOnlyOneUnresolvedProbe(t *testing.T) {
+	// A zero cooldown makes each open state eligible immediately, without
+	// sleeps. The probe must still remain exclusive until it reports a result.
+	b := New(1, 0)
+	b.RecordFailure()
+	if !b.Allow() {
+		t.Fatal("first probe was denied")
+	}
+	for range 10 {
+		if b.Allow() {
+			t.Fatal("allowed another probe before the first resolved")
+		}
+	}
+	if b.State() != HalfOpen {
+		t.Fatalf("active probe state = %v", b.State())
+	}
+	b.RecordFailure()
+	if !b.Allow() {
+		t.Fatal("failed probe did not permit a later retry")
+	}
+	b.RecordSuccess()
+	if !b.Allow() || b.State() != Closed {
+		t.Fatal("successful probe did not restore traffic")
 	}
 }

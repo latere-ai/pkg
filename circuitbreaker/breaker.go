@@ -58,8 +58,8 @@ func New(threshold int, openDuration time.Duration) *Breaker {
 //   - Closed state: always returns true.
 //   - Open state: returns false unless openDuration has elapsed, in which
 //     case the circuit transitions to half-open and returns true (the probe).
-//   - Half-open state: returns false; transitions back to open so that
-//     subsequent calls block until RecordSuccess closes the circuit.
+//   - Half-open state: returns false until the active probe reports success
+//     or failure through RecordSuccess or RecordFailure.
 func (b *Breaker) Allow() bool {
 	state := State(b.state.Load())
 	switch state {
@@ -78,11 +78,9 @@ func (b *Breaker) Allow() bool {
 		return false
 
 	case HalfOpen:
-		// Probe was already dispatched. Transition back to open so that
-		// further callers block until the probe resolves.
-		if b.state.CompareAndSwap(int32(HalfOpen), int32(Open)) {
-			b.openAt.Store(time.Now().UnixNano())
-		}
+		// Keep the probe slot occupied until its result arrives. Reopening
+		// here would admit another probe after the cooldown while this one
+		// is still running.
 		return false
 
 	default:
