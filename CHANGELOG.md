@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.52.0 - 2026-09-06
+
 ### Changed
 
 - `llmdialect/anthropic`: the backend encodes structured output as
