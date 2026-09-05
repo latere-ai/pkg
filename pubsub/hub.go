@@ -29,7 +29,8 @@ type Hub[T any] struct {
 	deltaSeq atomic.Int64 // monotonically increasing sequence counter
 
 	// Replay buffer: bounded ring of recent messages for reconnecting clients.
-	// Protected by replayMu (RWMutex: writers append, readers call Since).
+	// replayMu serializes publication through fanout as well as guarding replay;
+	// readers call Since under its read lock.
 	replayMu  sync.RWMutex
 	replayBuf []Sequenced[T]
 	replayCap int
@@ -90,17 +91,20 @@ func (h *Hub[T]) cloneValue(v T) T {
 // replay buffer, and fans out to all subscribers. Overflowed subscribers have
 // their channel closed and are evicted.
 func (h *Hub[T]) Publish(value T) {
-	seq := h.deltaSeq.Add(1)
+	// Sequence allocation, replay, and delivery must share one order. A
+	// publisher overtaking another would invalidate Since's binary search
+	// and let live consumers advance past events they have not received.
+	h.replayMu.Lock()
+	defer h.replayMu.Unlock()
+	seq := h.deltaSeq.Load() + 1
 
 	// Append to bounded replay buffer. Clone directly from value: each consumer
 	// (the ring entry below and every subscriber) gets its own clone, so there
 	// is no need for an intermediate clone-of-value to re-clone from.
-	h.replayMu.Lock()
 	h.replayBuf = append(h.replayBuf, Sequenced[T]{Seq: seq, Value: h.cloneValue(value)})
 	if len(h.replayBuf) > h.replayCap {
 		h.replayBuf = h.replayBuf[len(h.replayBuf)-h.replayCap:]
 	}
-	h.replayMu.Unlock()
 
 	// Fan out to live subscribers. Non-blocking send: if a subscriber's
 	// channel is full, close it and mark for eviction to prevent a slow
@@ -121,6 +125,9 @@ func (h *Hub[T]) Publish(value T) {
 		delete(h.subscribers, id)
 	}
 	h.subMu.Unlock()
+
+	// Expose the cursor only after the value is retained and delivered.
+	h.deltaSeq.Store(seq)
 
 	// Fan out wake signal. Non-blocking send into capacity-1 channels
 	// naturally coalesces burst notifications: if a signal is already

@@ -24,6 +24,10 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Fixed
 
+- `pubsub`: concurrent publishers preserve sequence order in replay and live
+  delivery, so reconnecting consumers do not skip events. `LatestSeq` no
+  longer advances before the event is available.
+
 - `circuitbreaker`: a half-open probe stays exclusive until it reports a
   result, even when the cooldown elapses while the probe is still running.
 

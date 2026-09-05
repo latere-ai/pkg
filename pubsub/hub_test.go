@@ -261,3 +261,64 @@ func TestHub_ConcurrentSafe(_ *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestHubConcurrentPublishOrder(t *testing.T) {
+	const n = 128
+	for range 10 {
+		h := NewHub[int](WithReplayCapacity[int](n))
+		id, ch := h.Subscribe()
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for i := range n {
+			wg.Go(func() { <-start; h.Publish(i) })
+		}
+		close(start)
+		wg.Wait()
+		items, gap := h.Since(0)
+		if gap || len(items) != n {
+			t.Fatalf("replay has %d entries, gap=%v", len(items), gap)
+		}
+		for i, item := range items {
+			want := int64(i + 1)
+			if item.Seq != want {
+				t.Fatalf("replay entry %d has sequence %d, want %d", i, item.Seq, want)
+			}
+			select {
+			case live := <-ch:
+				if live != item {
+					t.Fatalf("live entry %+v differs from replay %+v", live, item)
+				}
+			default:
+				t.Fatalf("missing live event %d", want)
+			}
+			suffix, gap := h.Since(want)
+			if gap || len(suffix) != n-i-1 {
+				t.Fatalf("Since(%d) has %d entries, gap=%v", want, len(suffix), gap)
+			}
+		}
+		h.Unsubscribe(id)
+	}
+}
+
+func TestHubLatestSeqExcludesUnpublishedValue(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	defer unblock()
+	h := NewHub[int](WithClone[int](func(v int) int {
+		close(entered)
+		<-release
+		return v
+	}))
+	done := make(chan struct{})
+	go func() { defer close(done); h.Publish(1) }()
+	<-entered
+	if got := h.LatestSeq(); got != 0 {
+		t.Errorf("LatestSeq = %d before the value entered replay", got)
+	}
+	unblock()
+	<-done
+	if got := h.LatestSeq(); got != 1 {
+		t.Fatalf("LatestSeq after publication = %d", got)
+	}
+}
