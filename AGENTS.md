@@ -15,12 +15,11 @@ Every package in this repo must meet these requirements:
 
 ### Coverage
 
-- **Every package** must be at **>= 90%**, which is stricter than a module
-  average even though the number is lower: an average lets one package sit
-  under the line while the others carry it, which is how `pgxmigrate` ran at
-  82.1% behind a passing 95%.
-- CI enforces it per package; exemptions live in `.lateregate.yaml` and the
-  value in the map is the reason, so an entry cannot exist without one.
+- **Every package** must be at **>= 90%**. The floor is per package, not a
+  module average: an average lets one package sit under the line while the
+  others carry it.
+- CI enforces it per package. Exemptions live in `.lateregate.yaml`, keyed by
+  package with the reason as the value, so an entry cannot exist without one.
 - Use package-level function variables for external constructors to make error paths testable without adding dependencies.
 
 ### Dependencies
