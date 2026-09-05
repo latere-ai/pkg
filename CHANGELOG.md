@@ -25,6 +25,8 @@ under **Removed** or **Changed** with what to do about it.
   400 (Claude Opus 4.7 and later, Claude Sonnet 5, Claude Fable 5); the
   codec carries no model table, the gateway decides per model.
 - `llmdialect/ir.LossTopP`, the loss field for a dropped `top_p`.
+- `luxsdk.Effort`, the reasoning effort type, alongside the effort constants
+  it already re-exported.
 
 ## v0.51.0 - 2026-09-05
 

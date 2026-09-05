@@ -55,6 +55,7 @@ type (
 	WebSearch      = lux.WebSearch
 	ToolChoice     = lux.ToolChoice
 	Reasoning      = lux.Reasoning
+	Effort         = ir.Effort
 	ResponseSchema = lux.ResponseSchema
 	Usage          = lux.Usage
 	Event          = lux.Event
