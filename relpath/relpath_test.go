@@ -239,3 +239,49 @@ func TestContainsDanglingSymlinkEscape(t *testing.T) {
 		})
 	}
 }
+
+func TestContainsResolvesSymlinksBeforeParentTraversal(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "root")
+	outside := filepath.Join(dir, "outside")
+	for _, p := range []string{root, filepath.Join(outside, "sub")} {
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(outside, "existing"), []byte("outside"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "sub"), filepath.Join(root, "link")); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	for _, base := range []string{root, "root"} {
+		for _, leaf := range []string{"existing", "new", "missing/deep/file", "missing/deep/"} {
+			// Do not filepath.Join: the OS resolves link before processing '..'.
+			target := base + "/link/../" + leaf
+			if inside, err := Contains(root, target); err == nil && inside {
+				t.Fatalf("accepted symlink/.. escape %q", target)
+			}
+		}
+	}
+}
+
+func TestContainsPreservesParentTraversalWithinRoot(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("sub", filepath.Join(root, "link")); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	for _, target := range []string{"link/../new", "link/../missing/deep/", "new", "new/", ""} {
+		if inside, err := Contains(root, target); err != nil || !inside {
+			t.Errorf("Contains(%q, %q) = %v, %v; want true", root, target, inside, err)
+		}
+	}
+	if inside, err := Contains(root+"/link/..", filepath.Join(root, "new")); err != nil || !inside {
+		t.Fatalf("root with symlink/.. = %v, %v; want true", inside, err)
+	}
+}

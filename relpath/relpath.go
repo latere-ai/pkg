@@ -64,23 +64,29 @@ func Join(base, rel string) (string, error) {
 // against an unresolved root is wrong in both directions. Contains resolves
 // both sides.
 func Contains(root, target string) (bool, error) {
-	r, err := filepath.Abs(root)
+	r, err := evalAbsolute(root)
 	if err != nil {
 		return false, err
 	}
-	r, err = filepath.EvalSymlinks(r)
-	if err != nil {
-		return false, err
-	}
-	t, err := filepath.Abs(target)
-	if err != nil {
-		return false, err
-	}
-	t, err = resolveExisting(t)
+	t, err := resolveExisting(target)
 	if err != nil {
 		return false, err
 	}
 	return containsLexically(r, t), nil
+}
+
+// Resolve before making absolute to preserve symlink/.. semantics, then
+// resolve again because the working directory itself may have a symlink alias.
+func evalAbsolute(p string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return "", err
+	}
+	absolute, err := filepath.Abs(resolved)
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(absolute)
 }
 
 func containsLexically(root, target string) bool {
@@ -89,11 +95,12 @@ func containsLexically(root, target string) bool {
 }
 
 // resolveExisting resolves symlinks in the longest existing prefix of the
-// absolute path p and re-attaches the remainder unchanged.
+// path p and re-attaches the remainder unchanged. Parent traversal is kept
+// intact until symlinks in the existing prefix have been resolved.
 func resolveExisting(p string) (string, error) {
 	rest := ""
 	for {
-		resolved, err := filepath.EvalSymlinks(p)
+		resolved, err := evalAbsolute(p)
 		if err == nil {
 			return filepath.Join(resolved, rest), nil
 		}
@@ -109,11 +116,24 @@ func resolveExisting(p string) (string, error) {
 		if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) && !errors.Is(statErr, syscall.ENOTDIR) {
 			return "", statErr
 		}
-		parent := filepath.Dir(p)
+		// Split without cleaning: Dir would erase "link/.." before the
+		// filesystem has resolved link, potentially changing the target.
+		parent, base := filepath.Split(p)
+		if base == "" {
+			trimmed := strings.TrimRight(p, string(filepath.Separator))
+			if trimmed == filepath.VolumeName(p) {
+				return "", err
+			}
+			p = trimmed
+			continue
+		}
+		if parent == "" {
+			parent = "."
+		}
 		if parent == p {
 			return "", err
 		}
-		rest = filepath.Join(filepath.Base(p), rest)
+		rest = filepath.Join(base, rest)
 		p = parent
 	}
 }

@@ -24,6 +24,10 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Fixed
 
+- `relpath.Contains`: resolve symlinks before parent traversal (`link/..`),
+  preventing paths from being accepted under a different directory than the
+  one the filesystem actually accesses.
+
 - `pubsub`: concurrent publishers preserve sequence order in replay and live
   delivery, so reconnecting consumers do not skip events. `LatestSeq` no
   longer advances before the event is available.
