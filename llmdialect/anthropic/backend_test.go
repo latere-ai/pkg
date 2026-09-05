@@ -124,15 +124,48 @@ func TestBackendEncodeDefaultMaxTokensAndSchema(t *testing.T) {
 	if got["max_tokens"].(float64) != 4096 {
 		t.Fatalf("default max_tokens wrong: %v", got["max_tokens"])
 	}
-	of := got["output_format"].(map[string]any)
+	if _, retired := got["output_format"]; retired {
+		t.Fatalf("retired top-level output_format emitted: %v", got["output_format"])
+	}
+	of := got["output_config"].(map[string]any)["format"].(map[string]any)
 	if of["type"] != "json_schema" || of["schema"] == nil {
-		t.Fatalf("output_format wrong: %v", of)
+		t.Fatalf("output_config.format wrong: %v", of)
 	}
 
 	got = encodeBack(t, &ir.Request{Model: "m", Messages: []ir.Message{userMsg("x")}},
 		BackendOptions{DefaultMaxTokens: 999})
 	if got["max_tokens"].(float64) != 999 {
 		t.Fatalf("custom default wrong: %v", got["max_tokens"])
+	}
+}
+
+// Models from Claude Opus 4.7 on reject temperature, top_p, and top_k with a
+// 400. With DropSampling the body omits them and the loss report names each
+// one the caller set, so a caller can still tell its sampling did not apply.
+func TestBackendEncodeDropSampling(t *testing.T) {
+	req := &ir.Request{
+		Model:       "claude-opus-5",
+		Messages:    []ir.Message{userMsg("x")},
+		Temperature: f64(0.2),
+		TopP:        f64(0.9),
+		TopK:        i64(40),
+	}
+	got := encodeBack(t, req, BackendOptions{DropSampling: true})
+	for _, key := range []string{"temperature", "top_p", "top_k"} {
+		if _, present := got[key]; present {
+			t.Fatalf("%s forwarded under DropSampling: %v", key, got[key])
+		}
+	}
+	want := []ir.LossField{ir.LossTemperature, ir.LossTopP, ir.LossTopK}
+	if fields := req.Loss.Fields(); !slices.Equal(fields, want) {
+		t.Fatalf("loss = %v, want %v", fields, want)
+	}
+
+	// A caller that set nothing loses nothing.
+	req = &ir.Request{Model: "claude-opus-5", Messages: []ir.Message{userMsg("x")}}
+	encodeBack(t, req, BackendOptions{DropSampling: true})
+	if fields := req.Loss.Fields(); len(fields) != 0 {
+		t.Fatalf("unexpected loss without sampling params: %v", fields)
 	}
 }
 

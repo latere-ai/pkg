@@ -10,6 +10,22 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Changed
+
+- `llmdialect/anthropic`: the backend encodes structured output as
+  `output_config.format`; the top-level `output_format` member is retired
+  API-wide and no longer emitted. The frontend decodes both spellings, and
+  `output_config` is a known request key rather than a loss.
+
+### Added
+
+- `llmdialect/anthropic.BackendOptions.DropSampling`: omit `temperature`,
+  `top_p`, and `top_k` from the body and record each one the caller set in
+  the loss report. Set it for models that reject sampling parameters with a
+  400 (Claude Opus 4.7 and later, Claude Sonnet 5, Claude Fable 5); the
+  codec carries no model table, the gateway decides per model.
+- `llmdialect/ir.LossTopP`, the loss field for a dropped `top_p`.
+
 ## v0.51.0 - 2026-09-05
 
 ### Changed

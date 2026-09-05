@@ -56,7 +56,7 @@ var requestKeys = map[string]bool{
 	"model": true, "max_tokens": true, "system": true, "messages": true,
 	"tools": true, "tool_choice": true, "temperature": true, "top_p": true,
 	"top_k": true, "stop_sequences": true, "stream": true, "metadata": true,
-	"thinking": true, "output_format": true,
+	"thinking": true, "output_format": true, "output_config": true,
 }
 
 // DecodeRequest parses a Messages API request body into the IR.
@@ -92,12 +92,12 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 			BudgetTokens int64  `json:"budget_tokens"`
 		} `json:"thinking"`
 		OutputConfig *struct {
-			Effort string `json:"effort"`
+			Effort string            `json:"effort"`
+			Format *wireOutputFormat `json:"format"`
 		} `json:"output_config"`
-		OutputFormat *struct {
-			Type   string          `json:"type"`
-			Schema json.RawMessage `json:"schema"`
-		} `json:"output_format"`
+		// OutputFormat is the retired top-level spelling; current callers
+		// send output_config.format. Both decode to the same schema.
+		OutputFormat *wireOutputFormat `json:"output_format"`
 	}
 	if err := json.Unmarshal(body, &wire); err != nil {
 		return nil, fmt.Errorf("anthropic: malformed request: %w", err)
@@ -188,13 +188,24 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	case wire.Thinking != nil && wire.Thinking.Type == "adaptive":
 		req.Reasoning = &ir.Reasoning{}
 	}
-	if wire.OutputFormat != nil {
-		if wire.OutputFormat.Type != "json_schema" {
-			return nil, fmt.Errorf("anthropic: %w", unknownValue("output_format.type", wire.OutputFormat.Type, "json_schema"))
+	format, formatKey := wire.OutputFormat, "output_format.type"
+	if wire.OutputConfig != nil && wire.OutputConfig.Format != nil {
+		format, formatKey = wire.OutputConfig.Format, "output_config.format.type"
+	}
+	if format != nil {
+		if format.Type != "json_schema" {
+			return nil, fmt.Errorf("anthropic: %w", unknownValue(formatKey, format.Type, "json_schema"))
 		}
-		req.Schema = &ir.ResponseSchema{Name: "output", Schema: wire.OutputFormat.Schema}
+		req.Schema = &ir.ResponseSchema{Name: "output", Schema: format.Schema}
 	}
 	return req, nil
+}
+
+// wireOutputFormat is the structured-output request, spelled the same
+// under output_config.format and under the retired top-level output_format.
+type wireOutputFormat struct {
+	Type   string          `json:"type"`
+	Schema json.RawMessage `json:"schema"`
 }
 
 type wireMessage struct {

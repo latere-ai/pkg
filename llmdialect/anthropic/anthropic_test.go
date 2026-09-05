@@ -303,6 +303,28 @@ func TestDecodeRequestOutputFormat(t *testing.T) {
 	}
 }
 
+// The current API spells structured output as output_config.format; a
+// caller on that shape decodes to the same schema, and output_config is a
+// known key rather than a loss.
+func TestDecodeRequestOutputConfigFormat(t *testing.T) {
+	req := decode(t, `{"model":"m","messages":[{"role":"user","content":"x"}],
+		"output_config":{"effort":"high","format":{"type":"json_schema","schema":{"type":"object"}}}}`)
+	if req.Schema == nil || string(req.Schema.Schema) != `{"type":"object"}` {
+		t.Fatalf("schema wrong: %+v", req.Schema)
+	}
+	if req.Reasoning == nil || req.Reasoning.Effort != ir.EffortHigh {
+		t.Fatalf("effort wrong: %+v", req.Reasoning)
+	}
+	if slices.Contains(req.Loss.Fields(), "output_config") {
+		t.Fatalf("output_config reported as loss: %v", req.Loss.Fields())
+	}
+	_, err := (&Frontend{}).DecodeRequest([]byte(`{"model":"m","messages":[{"role":"user","content":"x"}],
+		"output_config":{"format":{"type":"grammar"}}}`))
+	if err == nil || !strings.Contains(err.Error(), "output_config.format.type") {
+		t.Fatalf("unknown output_config.format.type not rejected: %v", err)
+	}
+}
+
 func TestDecodeRequestToolResultBlockContent(t *testing.T) {
 	req := decode(t, `{"model":"m","messages":[{"role":"user","content":[
 		{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":[

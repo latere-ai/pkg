@@ -24,6 +24,12 @@ type BackendOptions struct {
 	// DefaultMaxTokens is injected when the caller omitted max_tokens
 	// (required by the Messages API). Zero means 4096.
 	DefaultMaxTokens int64
+	// DropSampling omits temperature, top_p, and top_k from the body and
+	// records each one the caller set in req.Loss. Set it for models that
+	// reject sampling parameters with a 400 (Claude Opus 4.7 and later,
+	// Claude Sonnet 5, Claude Fable 5). The gateway decides per model; the
+	// codec carries no model table.
+	DropSampling bool
 }
 
 // Backend is the upstream-side Messages codec.
@@ -130,20 +136,32 @@ func (b *Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 		body["tool_choice"] = tc
 	}
 
-	if req.Temperature != nil {
-		t := *req.Temperature
-		if t > 1 {
-			// OpenAI's scale runs to 2; Anthropic's caps at 1.
-			t = 1
+	if b.opts.DropSampling {
+		if req.Temperature != nil {
 			req.Loss.Add(ir.LossTemperature)
 		}
-		body["temperature"] = t
-	}
-	if req.TopP != nil {
-		body["top_p"] = *req.TopP
-	}
-	if req.TopK != nil {
-		body["top_k"] = *req.TopK
+		if req.TopP != nil {
+			req.Loss.Add(ir.LossTopP)
+		}
+		if req.TopK != nil {
+			req.Loss.Add(ir.LossTopK)
+		}
+	} else {
+		if req.Temperature != nil {
+			t := *req.Temperature
+			if t > 1 {
+				// OpenAI's scale runs to 2; Anthropic's caps at 1.
+				t = 1
+				req.Loss.Add(ir.LossTemperature)
+			}
+			body["temperature"] = t
+		}
+		if req.TopP != nil {
+			body["top_p"] = *req.TopP
+		}
+		if req.TopK != nil {
+			body["top_k"] = *req.TopK
+		}
 	}
 	if len(req.StopSequences) > 0 {
 		body["stop_sequences"] = req.StopSequences
@@ -172,7 +190,14 @@ func (b *Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 		body["output_config"] = oc
 	}
 	if req.Schema != nil {
-		body["output_format"] = map[string]any{"type": "json_schema", "schema": req.Schema.Schema}
+		// Structured output rides under output_config.format; the
+		// top-level output_format member is retired API-wide.
+		oc, _ := body["output_config"].(map[string]any)
+		if oc == nil {
+			oc = map[string]any{}
+		}
+		oc["format"] = map[string]any{"type": "json_schema", "schema": req.Schema.Schema}
+		body["output_config"] = oc
 	}
 	if req.UserID != "" {
 		body["metadata"] = map[string]any{"user_id": req.UserID}

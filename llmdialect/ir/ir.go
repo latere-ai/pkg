@@ -319,6 +319,7 @@ const (
 	LossToolStrict        LossField = "tools.strict"
 	LossTopK              LossField = "top_k"
 	LossTopLogProbs       LossField = "top_logprobs"
+	LossTopP              LossField = "top_p"
 	LossUserTruncated     LossField = "user.truncated"
 	LossWebSearch         LossField = "web_search_options"
 	LossWebSearchLocation LossField = "web_search_options.user_location"
