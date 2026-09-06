@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: Apache-2.0
 
-package authkit
+package cli
 
 import (
 	"encoding/json"
@@ -49,7 +49,7 @@ type FileTokenStore struct {
 // so a read-only environment can still call Load without side effects.
 func NewFileTokenStore(path string) (*FileTokenStore, error) {
 	if path == "" {
-		return nil, errors.New("authkit: FileTokenStore path is empty")
+		return nil, errors.New("authkit/cli: FileTokenStore path is empty")
 	}
 	return &FileTokenStore{Path: path}, nil
 }
@@ -61,27 +61,27 @@ func NewFileTokenStore(path string) (*FileTokenStore, error) {
 func DefaultFileTokenStorePath() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
-		return "", fmt.Errorf("authkit: locate user config dir: %w", err)
+		return "", fmt.Errorf("authkit/cli: locate user config dir: %w", err)
 	}
 	return filepath.Join(dir, "latere", "token.json"), nil
 }
 
 func (s *FileTokenStore) Save(t *oauth2.Token) error {
 	if t == nil {
-		return errors.New("authkit: Save nil token")
+		return errors.New("authkit/cli: Save nil token")
 	}
 	if err := os.MkdirAll(filepath.Dir(s.Path), 0o700); err != nil {
-		return fmt.Errorf("authkit: create token dir: %w", err)
+		return fmt.Errorf("authkit/cli: create token dir: %w", err)
 	}
 	data, err := json.Marshal(t)
 	if err != nil {
-		return fmt.Errorf("authkit: marshal token: %w", err)
+		return fmt.Errorf("authkit/cli: marshal token: %w", err)
 	}
 	// Write to a sibling tempfile then rename for atomicity. Avoids
 	// truncating the existing file on a partial write.
 	tmp, err := os.CreateTemp(filepath.Dir(s.Path), ".token-*.tmp")
 	if err != nil {
-		return fmt.Errorf("authkit: create temp token: %w", err)
+		return fmt.Errorf("authkit/cli: create temp token: %w", err)
 	}
 	tmpPath := tmp.Name()
 	cleaned := false
@@ -92,17 +92,17 @@ func (s *FileTokenStore) Save(t *oauth2.Token) error {
 	}()
 	if err := tmp.Chmod(0o600); err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("authkit: chmod temp token: %w", err)
+		return fmt.Errorf("authkit/cli: chmod temp token: %w", err)
 	}
 	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("authkit: write temp token: %w", err)
+		return fmt.Errorf("authkit/cli: write temp token: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("authkit: close temp token: %w", err)
+		return fmt.Errorf("authkit/cli: close temp token: %w", err)
 	}
 	if err := os.Rename(tmpPath, s.Path); err != nil {
-		return fmt.Errorf("authkit: rename token: %w", err)
+		return fmt.Errorf("authkit/cli: rename token: %w", err)
 	}
 	cleaned = true
 	return nil
@@ -114,14 +114,14 @@ func (s *FileTokenStore) Load() (*oauth2.Token, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("authkit: read token: %w", err)
+		return nil, fmt.Errorf("authkit/cli: read token: %w", err)
 	}
 	if len(data) == 0 {
 		return nil, nil
 	}
 	var t oauth2.Token
 	if err := json.Unmarshal(data, &t); err != nil {
-		return nil, fmt.Errorf("authkit: parse token: %w", err)
+		return nil, fmt.Errorf("authkit/cli: parse token: %w", err)
 	}
 	return &t, nil
 }
@@ -131,7 +131,7 @@ func (s *FileTokenStore) Clear() error {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
-		return fmt.Errorf("authkit: remove token: %w", err)
+		return fmt.Errorf("authkit/cli: remove token: %w", err)
 	}
 	return nil
 }

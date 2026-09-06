@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: Apache-2.0
 
-package authkit
+package cli
 
 import (
 	"context"
@@ -68,11 +68,11 @@ func NewDeviceCodeClient(c *oidc.Client, store TokenStore) *DeviceCodeClient {
 // custom OpenBrowser or test hook.
 func (d *DeviceCodeClient) Login(ctx context.Context) error {
 	if d == nil || d.OIDC == nil {
-		return errors.New("authkit: DeviceCodeClient.OIDC is nil")
+		return errors.New("authkit/cli: DeviceCodeClient.OIDC is nil")
 	}
 	da, err := d.OIDC.DeviceAuth(ctx, d.ExtraParams)
 	if err != nil {
-		return fmt.Errorf("authkit: device authorization: %w", err)
+		return fmt.Errorf("authkit/cli: device authorization: %w", err)
 	}
 
 	out := d.Output
@@ -103,13 +103,13 @@ func (d *DeviceCodeClient) Login(ctx context.Context) error {
 
 	tok, err := d.OIDC.DeviceAccessToken(ctx, da)
 	if err != nil {
-		return fmt.Errorf("authkit: device access token: %w", err)
+		return fmt.Errorf("authkit/cli: device access token: %w", err)
 	}
 	if d.Store == nil {
 		return nil
 	}
 	if err := d.Store.Save(tok); err != nil {
-		return fmt.Errorf("authkit: persist token: %w", err)
+		return fmt.Errorf("authkit/cli: persist token: %w", err)
 	}
 	return nil
 }
@@ -121,7 +121,7 @@ var execCommand = exec.Command
 
 func openBrowser(url string) error {
 	if url == "" {
-		return errors.New("authkit: empty URL")
+		return errors.New("authkit/cli: empty URL")
 	}
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
