@@ -84,6 +84,7 @@ res, err := c.Generate(ctx, &luxsdk.Request{
 | [`luxsdk`](luxsdk/) | First-party Go client for the Lux gateway's native dialect: typed generate, streaming, and token counting |
 | [`md`](md/) | YAML frontmatter parsing and GFM-to-HTML rendering |
 | [`otel`](otel/) | One-call OpenTelemetry bootstrap for traces, metrics, and structured logs, plus HTTP server and client instrumentation |
+| [`s3`](s3/) | S3 REST client in the standard library: put, create-if-absent, conditional get, head, delete, prefixed listing, and presigned GET and PUT, signed with Signature Version 4 and retried under `retry`; `s3/s3test` is an in-process endpoint for tests that verifies signatures and digests like a provider |
 | [`pgxmigrate`](pgxmigrate/) | Applies embedded golang-migrate migrations and reliably closes migrate's own connection pool afterward |
 | [`scopes`](scopes/) | Typed registry of the OAuth/RBAC scopes the Latere auth service issues, for call-site gating and OIDC discovery |
 

@@ -12,6 +12,24 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Added
 
+- `s3`, a client for the S3 REST API in the standard library, signed with
+  Signature Version 4 and checked against the signing documentation's
+  published vectors. It carries the primitives Latere services use and
+  nothing more: `PutObject` with Content-MD5, `CreateObject` (PUT with
+  `If-None-Match: *`, answering `ErrPreconditionFailed` when the key
+  exists), `GetObject` with `If-None-Match` answering `ErrNotModified`,
+  `HeadObject` answering `ErrNotFound`, `DeleteObject`, `ListObjects` with
+  prefix, delimiter, and start-after pagination, and `PresignGet` and
+  `PresignPut` with the Content-Length bound into the PUT's signature.
+  There is no `If-Match` on PUT: the providers the family runs on do not
+  agree on it, and the package documentation says which. A 5xx, a 429, or
+  a transport failure is retried under a `retry.Policy`; a 4xx is not.
+  `s3/s3test` is an in-process endpoint for a consumer's tests: it
+  verifies every signature, digest, and presigned expiry the way a
+  provider does, answers 412 to every `If-Match` the way the least
+  capable provider does, and injects failures for the retry path. A
+  service that carried a cloud SDK for these calls switches to this
+  package and drops the SDK.
 - `docs/writing/registers.md`, the platform-wide writing rule: every
   sentence is written for one of three readers (user, contributor,
   developer), and an error has one code, one fixed user sentence, and one
