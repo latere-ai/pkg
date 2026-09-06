@@ -249,12 +249,17 @@ func TestDecodeIngestBody(t *testing.T) {
 	}
 }
 
-// DecodeIngestBody never panics, and every entry it returns carries a secret
-// that re-encodes to what the body held.
+// DecodeIngestBody never panics, every static entry it returns carries a
+// secret that re-encodes to what the body held, and every oauth entry carries
+// a resolver and no static secret.
 func FuzzDecodeIngestBody(f *testing.F) {
 	f.Add([]byte(`{"entries":[{"placeholder":"cph_x","secret":"c2VjcmV0","allowed_hosts":["h"]}]}`))
 	f.Add([]byte(`not json`))
 	f.Add([]byte(`{"entries":[{"secret":"!!"}]}`))
+	f.Add([]byte(oauthBody))
+	f.Add([]byte(`{"entries":[{"placeholder":"cph_x","kind":"oauth_client_credentials","oauth":{"token_url":"u"}}]}`))
+	f.Add([]byte(`{"entries":[{"placeholder":"cph_x","kind":"static","secret":"","substitute_body":true}]}`))
+	f.Add([]byte(`{"entries":[{"placeholder":"cph_x","kind":"other"}]}`))
 	f.Fuzz(func(t *testing.T, body []byte) {
 		entries, err := DecodeIngestBody(body)
 		if err != nil {
@@ -271,8 +276,21 @@ func FuzzDecodeIngestBody(f *testing.F) {
 			t.Fatalf("decoded %d entries from %d", len(entries), len(in.Entries))
 		}
 		for i, e := range entries {
-			if base64.StdEncoding.EncodeToString(e.Secret) != in.Entries[i].Secret {
-				t.Fatalf("entry %d secret does not round-trip", i)
+			w := in.Entries[i]
+			if e.SubstituteBody != w.SubstituteBody || string(e.Placeholder) != w.Placeholder {
+				t.Fatalf("entry %d flags do not round-trip", i)
+			}
+			switch w.Kind {
+			case "", IngestKindStatic:
+				if e.Resolve != nil || base64.StdEncoding.EncodeToString(e.Secret) != w.Secret {
+					t.Fatalf("entry %d static secret does not round-trip", i)
+				}
+			case IngestKindOAuthClientCredentials:
+				if e.Resolve == nil || len(e.Secret) != 0 || w.OAuth == nil || w.OAuth.TokenURL == "" || w.OAuth.ClientID == "" || w.OAuth.ClientSecret == "" {
+					t.Fatalf("entry %d oauth accepted without its required fields", i)
+				}
+			default:
+				t.Fatalf("entry %d decoded with unknown kind %q", i, w.Kind)
 			}
 		}
 	})

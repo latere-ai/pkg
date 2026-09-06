@@ -182,6 +182,18 @@ func IngestEntryFor(placeholder string, secret []byte, allowedHosts []string) In
 	}
 }
 
+// IngestOAuthEntryFor builds an ingest entry whose secret is minted on the
+// gateway by the client_credentials grant: the client secret crosses the wire
+// once, and the gateway holds the token cache.
+func IngestOAuthEntryFor(placeholder string, oauth IngestOAuth, allowedHosts []string) IngestEntry {
+	return IngestEntry{
+		Placeholder:  placeholder,
+		AllowedHosts: allowedHosts,
+		Kind:         IngestKindOAuthClientCredentials,
+		OAuth:        &oauth,
+	}
+}
+
 // PushMap replaces the principal's substitution map on the gateway. A nil
 // Client is a no-op.
 func (c *Client) PushMap(ctx context.Context, principal string, entries []IngestEntry) error {

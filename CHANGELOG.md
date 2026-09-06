@@ -10,6 +10,23 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+The egress ingest wire format carries the v0.56.0 features, so a control
+plane that pushes maps over HTTP can use dynamic credentials and body
+substitution. Every existing body decodes exactly as before.
+
+### Added
+
+- `egress.IngestEntry` gains `kind` (`static`, the default when absent, or
+  `oauth_client_credentials`), `substitute_body`, and for the oauth kind an
+  `oauth` object `{token_url, client_id, client_secret, scope, audience}`
+  (`IngestOAuth`). `DecodeIngestBody` and `IngestHandler` turn an oauth
+  entry into an `Entry` with its own `OAuthClientCredentials` resolver, so
+  the token cache lives with the map and is dropped with it. An unknown
+  kind, or an oauth entry missing `token_url`, `client_id`, or
+  `client_secret`, rejects the body with a 400 that names the entry and the
+  field. `IngestKindStatic` and `IngestKindOAuthClientCredentials` name the
+  kinds; `IngestOAuthEntryFor` builds an oauth entry for `Client.PushMap`.
+
 ## v0.56.0 - 2026-09-06
 
 ### Changed

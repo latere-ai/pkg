@@ -6,6 +6,8 @@ package egress
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -13,12 +15,44 @@ import (
 	"latere.ai/x/pkg/bearer"
 )
 
+// Kinds of credential a pushed map may carry, the IngestEntry.Kind values.
+const (
+	// IngestKindStatic is a secret held in IngestEntry.Secret. An empty Kind
+	// means the same, so a body written before Kind existed decodes as it
+	// always did.
+	IngestKindStatic = "static"
+	// IngestKindOAuthClientCredentials is a token minted on demand by
+	// [OAuthClientCredentials] from IngestEntry.OAuth.
+	IngestKindOAuthClientCredentials = "oauth_client_credentials"
+)
+
 // IngestEntry is one credential in a pushed map. Secret is base64 so arbitrary
-// bytes survive JSON transport.
+// bytes survive JSON transport. Kind selects the credential kind; the fields
+// that follow it are the additive ones a static entry may leave out.
 type IngestEntry struct {
 	Placeholder  string   `json:"placeholder"`
-	Secret       string   `json:"secret"` // base64 (std)
+	Secret       string   `json:"secret"` // base64 (std); the static kind's secret
 	AllowedHosts []string `json:"allowed_hosts"`
+
+	// Kind is [IngestKindStatic] (or empty) or
+	// [IngestKindOAuthClientCredentials]. Any other value rejects the body.
+	Kind string `json:"kind,omitempty"`
+	// SubstituteBody sets [Entry.SubstituteBody].
+	SubstituteBody bool `json:"substitute_body,omitempty"`
+	// OAuth is the token endpoint for the oauth_client_credentials kind and
+	// must be present for it; token_url, client_id, and client_secret are
+	// required.
+	OAuth *IngestOAuth `json:"oauth,omitempty"`
+}
+
+// IngestOAuth is the client_credentials grant an oauth entry mints from: the
+// fields of [OAuthClientCredentials] that cross the wire.
+type IngestOAuth struct {
+	TokenURL     string `json:"token_url"`
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	Scope        string `json:"scope,omitempty"`
+	Audience     string `json:"audience,omitempty"`
 }
 
 // IngestBody is the payload the control plane PUTs to push a principal's map.
@@ -85,26 +119,66 @@ func (h *IngestHandler) put(w http.ResponseWriter, r *http.Request) {
 
 // DecodeIngestBody parses a pushed map into the entries a [Registry] stores.
 // It is the wire-to-engine step [IngestHandler] runs, exported so a front door
-// that receives maps over another transport can share it. A secret that is
-// not standard base64 rejects the whole body.
+// that receives maps over another transport can share it. A static secret
+// that is not standard base64, an unknown kind, or an oauth entry missing
+// token_url, client_id, or client_secret rejects the whole body with an
+// error that names the entry and the field. An oauth entry gets its own
+// [OAuthClientCredentials], so the token cache lives and dies with the map.
 func DecodeIngestBody(body []byte) ([]Entry, error) {
 	var in IngestBody
 	if err := json.Unmarshal(body, &in); err != nil {
 		return nil, &ingestError{"invalid json: " + err.Error()}
 	}
 	entries := make([]Entry, 0, len(in.Entries))
-	for _, e := range in.Entries {
-		secret, err := base64.StdEncoding.DecodeString(e.Secret)
-		if err != nil {
-			return nil, &ingestError{"invalid base64 secret"}
+	for i, e := range in.Entries {
+		out := Entry{
+			Placeholder:    []byte(e.Placeholder),
+			AllowedHosts:   e.AllowedHosts,
+			SubstituteBody: e.SubstituteBody,
 		}
-		entries = append(entries, Entry{
-			Placeholder:  []byte(e.Placeholder),
-			Secret:       secret,
-			AllowedHosts: e.AllowedHosts,
-		})
+		switch e.Kind {
+		case "", IngestKindStatic:
+			secret, err := base64.StdEncoding.DecodeString(e.Secret)
+			if err != nil {
+				return nil, &ingestError{"invalid base64 secret"}
+			}
+			out.Secret = secret
+		case IngestKindOAuthClientCredentials:
+			cc, err := e.OAuth.resolver()
+			if err != nil {
+				return nil, &ingestError{fmt.Sprintf("entry %d (%s): %v", i, e.Placeholder, err)}
+			}
+			out.Resolve = cc.Resolve
+		default:
+			return nil, &ingestError{fmt.Sprintf("entry %d (%s): unknown kind %q", i, e.Placeholder, e.Kind)}
+		}
+		entries = append(entries, out)
 	}
 	return entries, nil
+}
+
+// resolver builds the entry's OAuthClientCredentials, or says which
+// required field is missing.
+func (o *IngestOAuth) resolver() (*OAuthClientCredentials, error) {
+	if o == nil {
+		return nil, errors.New("missing oauth")
+	}
+	for _, f := range []struct{ name, value string }{
+		{"oauth.token_url", o.TokenURL},
+		{"oauth.client_id", o.ClientID},
+		{"oauth.client_secret", o.ClientSecret},
+	} {
+		if f.value == "" {
+			return nil, errors.New("missing " + f.name)
+		}
+	}
+	return &OAuthClientCredentials{
+		TokenURL:     o.TokenURL,
+		ClientID:     o.ClientID,
+		ClientSecret: o.ClientSecret,
+		Scope:        o.Scope,
+		Audience:     o.Audience,
+	}, nil
 }
 
 // ingestError is a client-caused decode failure; its text is safe to return
