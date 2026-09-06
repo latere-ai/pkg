@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.58.0 - 2026-09-06
+
 ### Added
 
 - `metrics.Counter.Value` and `metrics.Histogram.Count` read a series
