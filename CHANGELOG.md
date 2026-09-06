@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.54.0 - 2026-09-06
+
 The egress credential-substitution engine is now a shared package, so a
 second front door can be built on the same core, and the host allow-list rule
 it scopes secrets by is its own package.
