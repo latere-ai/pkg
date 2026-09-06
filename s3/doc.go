@@ -6,8 +6,11 @@
 // documentation's published vectors. It carries exactly the primitives
 // Latere services use against an S3 compatible store and nothing more:
 // put, create-if-absent, get with If-None-Match, head, delete, a prefixed
-// listing, and presigned GET and PUT URLs. A service that needs another
-// call adds it here rather than a cloud SDK.
+// listing, and presigned GET and PUT URLs. An upload carries a
+// Content-Type through [Body.ContentType], a presigned PUT pins one
+// through [WithContentType], and GET and HEAD read it back on
+// [Object.ContentType]. A service that needs another call adds it here
+// rather than a cloud SDK.
 //
 // # What the providers honour
 //
