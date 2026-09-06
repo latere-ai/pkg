@@ -1,18 +1,9 @@
 #!/bin/sh
-# pre-push: golangci-lint over the packages this push changes (the check
-# lives in lateregate), then refuse to push a v* tag that has no CHANGELOG.md
-# section, so the release workflow never sees a tag it has to fail. The
-# changelog is read at the tag's commit, which is what the workflow reads.
-# Refs arrive on stdin once, so they are captured and fed to each check.
+# pre-push: a release tag is refused unless CHANGELOG.md at its commit has a
+# section for it, then golangci-lint runs over the packages this push
+# changes, so a finding is seen before CI rather than as a fix commit after
+# it. The checks live in lateregate; this file only calls it. Refs arrive on
+# stdin, once: a repository that adds its own check below reads $refs.
 # Install with: make hooks    Bypass once with: git push --no-verify
 refs=$(cat)
 printf '%s\n' "$refs" | go tool lateregate prepush || exit 1
-printf '%s\n' "$refs" | while read -r local_ref local_sha remote_ref remote_sha; do
-	case "$local_ref" in
-	refs/tags/v*) ;;
-	*) continue ;;
-	esac
-	tag=${local_ref#refs/tags/}
-	.github/scripts/release-notes.sh "$tag" "$local_sha" >/dev/null || exit 1
-done || exit 1
-exit 0

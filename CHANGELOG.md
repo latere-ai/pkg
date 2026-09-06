@@ -10,6 +10,13 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+The changelog rule this file describes now lives in `lateregate`, shared by
+every latere.ai repository: `make release` and `make release-notes` call
+`go tool lateregate release` and `release-notes`, the pre-push hook refuses
+a release tag without a section through `lateregate prepush`, and the
+release workflow publishes through `notes-release.yml` in latere-ai/ci.
+The two shell scripts under `.github/scripts` are gone.
+
 ## v0.55.0 - 2026-09-06
 
 `dag` gains the two operations its one consumer was hand-rolling beside it,

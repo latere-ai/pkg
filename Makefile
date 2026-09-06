@@ -113,13 +113,14 @@ hooks:
 
 # release cuts a tag from CHANGELOG.md: the notes under "Unreleased" become
 # the section for VERSION, then commit, tag, and push. The release workflow
-# publishes the GitHub release from that section. See .github/scripts.
+# publishes the GitHub release from that section. The rule lives in
+# lateregate; these targets are names for it.
 release:
-	@.github/scripts/release-cut.sh "$(VERSION)"
+	@go tool lateregate release "$(VERSION)"
 
 # release-notes prints the changelog section for TAG, or fails.
 release-notes:
-	@.github/scripts/release-notes.sh "$(TAG)"
+	@go tool lateregate release-notes "$(TAG)"
 
 # The whole shared bar. Every gate lives in lateregate, pinned as a tool in
 # go.mod; this target is a name for `go tool lateregate` and nothing else.

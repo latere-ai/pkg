@@ -142,7 +142,9 @@ make release VERSION=v0.50.0
 
 This moves the `Unreleased` notes under the version, commits, tags, and
 pushes. The release workflow refuses a tag with no section, and the
-pre-push hook installed by `make hooks` refuses to push one.
+pre-push hook installed by `make hooks` refuses to push one. The rule is
+`lateregate release` and `lateregate release-notes`, shared by every
+latere.ai repository; the Makefile targets are names for them.
 
 ## Testing
 
