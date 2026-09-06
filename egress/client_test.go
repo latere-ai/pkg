@@ -23,11 +23,11 @@ var jsonUnmarshal = json.Unmarshal
 func TestClient_PushAndPurge(t *testing.T) {
 	reg := NewRegistry()
 	mux := http.NewServeMux()
-	(&IngestHandler{Registry: reg}).Mount(mux)
+	(&IngestHandler{Registry: reg, Token: testIngestToken}).Mount(mux)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	c := NewClient(srv.URL).WithHTTPClient(srv.Client())
+	c := NewClient(srv.URL).WithHTTPClient(srv.Client()).WithIngestToken(testIngestToken)
 	ctx := context.Background()
 
 	err := c.PushMap(ctx, "p-1", []IngestEntry{

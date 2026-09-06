@@ -17,10 +17,57 @@ func ingestServer(t *testing.T) (*Registry, *httptest.Server) {
 	t.Helper()
 	reg := NewRegistry()
 	mux := http.NewServeMux()
-	(&IngestHandler{Registry: reg}).Mount(mux)
+	(&IngestHandler{Registry: reg, Token: testIngestToken}).Mount(mux)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return reg, srv
+}
+
+// testIngestToken is the shared secret ingestServer configures; requests in
+// this file present it unless the test is about the missing-token path.
+const testIngestToken = "test-ingest-token"
+
+// withIngestToken attaches the shared secret to req.
+func withIngestToken(req *http.Request) *http.Request {
+	req.Header.Set("Authorization", "Bearer "+testIngestToken)
+	return req
+}
+
+// An unset Token must fail closed: with no shared secret provisioned the
+// handler rejects every push and purge instead of accepting any caller.
+func TestIngest_EmptyTokenRejectsEverything(t *testing.T) {
+	reg := NewRegistry()
+	reg.Set("p-1", []Entry{{Placeholder: []byte("cph_x"), Secret: []byte("s"), AllowedHosts: []string{"api.example.com"}}})
+	mux := http.NewServeMux()
+	(&IngestHandler{Registry: reg}).Mount(mux)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	for _, tc := range []struct{ name, method, bearer string }{
+		{"put without bearer", http.MethodPut, ""},
+		{"put with any bearer", http.MethodPut, "anything"},
+		{"delete without bearer", http.MethodDelete, ""},
+		{"delete with any bearer", http.MethodDelete, "anything"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, _ := http.NewRequest(tc.method, srv.URL+"/internal/maps/p-1", strings.NewReader(`{"entries":[]}`))
+			if tc.bearer != "" {
+				req.Header.Set("Authorization", "Bearer "+tc.bearer)
+			}
+			resp, err := srv.Client().Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
+			if resp.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("want 401, got %d", resp.StatusCode)
+			}
+		})
+	}
+	// Neither the put nor the delete touched the registry.
+	if m, found := reg.Get("p-1"); !found || m.Empty() {
+		t.Fatalf("registry changed by unauthorized requests: found=%v", found)
+	}
 }
 
 func TestIngest_PutAndDelete(t *testing.T) {
@@ -29,7 +76,7 @@ func TestIngest_PutAndDelete(t *testing.T) {
 		base64.StdEncoding.EncodeToString([]byte("realsecret")) +
 		`","allowed_hosts":["api.example.com"]}]}`
 	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/internal/maps/p-1", strings.NewReader(body))
-	resp, err := srv.Client().Do(req)
+	resp, err := srv.Client().Do(withIngestToken(req))
 	if err != nil || resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("put: %v code=%d", err, resp.StatusCode)
 	}
@@ -44,7 +91,7 @@ func TestIngest_PutAndDelete(t *testing.T) {
 
 	// DELETE purges.
 	dreq, _ := http.NewRequest(http.MethodDelete, srv.URL+"/internal/maps/p-1", nil)
-	dresp, err := srv.Client().Do(dreq)
+	dresp, err := srv.Client().Do(withIngestToken(dreq))
 	if err != nil || dresp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete: %v code=%d", err, dresp.StatusCode)
 	}
@@ -62,7 +109,7 @@ func TestIngest_BadRequests(t *testing.T) {
 	}
 	for i, body := range cases {
 		req, _ := http.NewRequest(http.MethodPut, srv.URL+"/internal/maps/p-1", strings.NewReader(body))
-		resp, err := srv.Client().Do(req)
+		resp, err := srv.Client().Do(withIngestToken(req))
 		if err != nil {
 			t.Fatalf("case %d: %v", i, err)
 		}
@@ -76,8 +123,8 @@ func TestIngest_BadRequests(t *testing.T) {
 
 func TestIngest_MissingID(t *testing.T) {
 	reg := NewRegistry()
-	h := &IngestHandler{Registry: reg}
-	req := httptest.NewRequest(http.MethodPut, "/internal/maps/", strings.NewReader(`{"entries":[]}`))
+	h := &IngestHandler{Registry: reg, Token: testIngestToken}
+	req := withIngestToken(httptest.NewRequest(http.MethodPut, "/internal/maps/", strings.NewReader(`{"entries":[]}`)))
 	req.SetPathValue("id", "")
 	rr := httptest.NewRecorder()
 	h.put(rr, req)
@@ -92,8 +139,8 @@ func (errReader) Read([]byte) (int, error) { return 0, errors.New("read boom") }
 
 // A request body that errors on read yields 400 from the ingest handler.
 func TestIngest_ReadBodyError(t *testing.T) {
-	h := &IngestHandler{Registry: NewRegistry()}
-	req := httptest.NewRequest(http.MethodPut, "/internal/maps/p", errReader{})
+	h := &IngestHandler{Registry: NewRegistry(), Token: testIngestToken}
+	req := withIngestToken(httptest.NewRequest(http.MethodPut, "/internal/maps/p", errReader{}))
 	req.SetPathValue("id", "p")
 	rr := httptest.NewRecorder()
 	h.put(rr, req)

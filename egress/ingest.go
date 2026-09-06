@@ -35,9 +35,9 @@ type IngestBody struct {
 // same-host loopback dial (a CONNECT tunnel that reaches this listener without
 // leaving the network namespace) bypasses deployment mTLS and any network
 // policy, so the map API cannot rely on the mesh alone to keep one principal
-// from rewriting another's map. An empty Token disables the check (a
-// deployment that has not yet provisioned the secret), so provisioning it is
-// what activates the boundary.
+// from rewriting another's map. An empty Token authorizes nothing: every
+// request is rejected with 401, so a deployment that has not provisioned the
+// secret fails closed instead of accepting any caller.
 type IngestHandler struct {
 	Registry *Registry
 	Token    string
@@ -49,11 +49,11 @@ func (h *IngestHandler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /internal/maps/{id}", h.delete)
 }
 
-// authorized reports whether r carries the shared ingest secret. Always true when
-// no Token is configured.
+// authorized reports whether r carries the shared ingest secret. Always false
+// when no Token is configured: an unset secret must not open the map API.
 func (h *IngestHandler) authorized(r *http.Request) bool {
 	if h.Token == "" {
-		return true
+		return false
 	}
 	got, ok := bearer.FromRequest(r)
 	return ok && bearer.Equal(got, h.Token)
