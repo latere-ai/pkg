@@ -30,12 +30,25 @@ edits.
 - `egress.NewMapStrict`: `NewMap` that also returns the entries it dropped as
   `DroppedEntry` values wrapping `ErrEmptyPlaceholder`, `ErrNoAllowedHosts`,
   or `ErrSecretLineBreak`.
+- `egress.SubstituteHTTPRequestContext`: `SubstituteHTTPRequest` for maps
+  with resolver entries. Every resolver runs at most once per request, and
+  on an error the request is returned exactly as given.
+- `egress.Entry.SubstituteBody`: opt-in body substitution by
+  `SubstituteHTTPRequestContext`. A body with a known Content-Length of at
+  most `DefaultMaxBodyBytes` (64 KiB, or the `WithMaxBodyBytes` limit) and a
+  JSON, form, or text Content-Type is rewritten for entries that opted in,
+  with Content-Length following. A streaming, chunked, larger, or binary
+  body is never read, so SSE and uploads are never buffered.
 
 ### Changed
 
 - `egress.NewMap` drops a static secret containing CR or LF, and a resolved
   secret with a line break fails the substitution with `ErrSecretLineBreak`:
   a line break in a header value is a header injection.
+- `egress.SubstituteHTTPRequest` and `SubstituteHTTPRequestContext` never
+  rewrite Content-Length, Transfer-Encoding, TE, Trailer, Connection,
+  Keep-Alive, Upgrade, Proxy-Connection, Proxy-Authorization, or any
+  X-Forwarded-* header.
 
 ## v0.55.0 - 2026-09-06
 
