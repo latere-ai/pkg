@@ -104,20 +104,12 @@ func FuzzLoadCA(f *testing.F) {
 	})
 }
 
-// Every crypto seam's failure surfaces from GenerateCA and leafFor rather than
-// being swallowed.
+// Every crypto seam's failure surfaces from GenerateCA rather than being
+// swallowed.
 func TestGenerateCA_CryptoFailures(t *testing.T) {
 	boom := errors.New("boom")
-	prevKey, prevCreate, prevMarshal, prevRand := generateKey, createCertificate, marshalECKey, randRead
-	t.Cleanup(func() {
-		generateKey, createCertificate, marshalECKey, randRead = prevKey, prevCreate, prevMarshal, prevRand
-	})
-	failCreate := func(io.Reader, *x509.Certificate, *x509.Certificate, any, any) ([]byte, error) {
-		return nil, boom
-	}
-	badDER := func(io.Reader, *x509.Certificate, *x509.Certificate, any, any) ([]byte, error) {
-		return []byte("not-der"), nil
-	}
+	prevKey, prevCreate, prevMarshal := generateKey, createCertificate, marshalECKey
+	t.Cleanup(func() { generateKey, createCertificate, marshalECKey = prevKey, prevCreate, prevMarshal })
 
 	generateKey = func(elliptic.Curve, io.Reader) (*ecdsa.PrivateKey, error) { return nil, boom }
 	if _, _, _, err := GenerateCA(""); !errors.Is(err, boom) {
@@ -125,17 +117,15 @@ func TestGenerateCA_CryptoFailures(t *testing.T) {
 	}
 	generateKey = prevKey
 
-	randRead = func([]byte) (int, error) { return 0, boom }
-	if _, _, _, err := GenerateCA(""); !errors.Is(err, boom) {
-		t.Fatalf("serial failure not surfaced: %v", err)
+	createCertificate = func(io.Reader, *x509.Certificate, *x509.Certificate, any, any) ([]byte, error) {
+		return nil, boom
 	}
-	randRead = prevRand
-
-	createCertificate = failCreate
 	if _, _, _, err := GenerateCA(""); !errors.Is(err, boom) {
 		t.Fatalf("sign failure not surfaced: %v", err)
 	}
-	createCertificate = badDER
+	createCertificate = func(io.Reader, *x509.Certificate, *x509.Certificate, any, any) ([]byte, error) {
+		return []byte("not-der"), nil
+	}
 	if _, _, _, err := GenerateCA(""); err == nil {
 		t.Fatal("unparseable certificate should surface")
 	}
@@ -145,30 +135,28 @@ func TestGenerateCA_CryptoFailures(t *testing.T) {
 	if _, _, _, err := GenerateCA(""); !errors.Is(err, boom) {
 		t.Fatalf("key marshal failure not surfaced: %v", err)
 	}
-	marshalECKey = prevMarshal
+}
 
-	// leafFor shares the seams.
+// A leaf mint fails when the key cannot be generated or when the CA's private
+// key does not sign for its certificate.
+func TestLeafFor_MintFailures(t *testing.T) {
+	boom := errors.New("boom")
 	ca, _, _, err := GenerateCA("")
 	if err != nil {
 		t.Fatal(err)
 	}
-	generateKey = func(elliptic.Curve, io.Reader) (*ecdsa.PrivateKey, error) { return nil, boom }
+	ca.keygen = func() (*ecdsa.PrivateKey, error) { return nil, boom }
 	if _, err := ca.leafFor("a.example.com"); !errors.Is(err, boom) {
 		t.Fatalf("leaf keygen failure not surfaced: %v", err)
 	}
-	generateKey = prevKey
-	randRead = func([]byte) (int, error) { return 0, boom }
-	if _, err := ca.leafFor("b.example.com"); !errors.Is(err, boom) {
-		t.Fatalf("leaf serial failure not surfaced: %v", err)
+
+	other, _, _, err := GenerateCA("")
+	if err != nil {
+		t.Fatal(err)
 	}
-	randRead = prevRand
-	createCertificate = failCreate
-	if _, err := ca.leafFor("c.example.com"); !errors.Is(err, boom) {
-		t.Fatalf("leaf sign failure not surfaced: %v", err)
-	}
-	createCertificate = badDER
-	if _, err := ca.leafFor("d.example.com"); err == nil {
-		t.Fatal("unparseable leaf should surface")
+	mismatched := &CA{cert: ca.cert, key: other.key, certDER: ca.certDER, nowFn: time.Now, keygen: defaultKeygen, cache: map[string]*leaf{}}
+	if _, err := mismatched.leafFor("b.example.com"); err == nil {
+		t.Fatal("a CA key that does not match its certificate must fail to sign")
 	}
 }
 
@@ -265,14 +253,12 @@ func TestLeafFor_ConcurrentMintReusesFirst(t *testing.T) {
 	// locked sections.
 	entry := ca.cache["race.example.com"]
 	delete(ca.cache, "race.example.com")
-	prev := generateKey
-	generateKey = func(c elliptic.Curve, r io.Reader) (*ecdsa.PrivateKey, error) {
+	ca.keygen = func() (*ecdsa.PrivateKey, error) {
 		ca.mu.Lock()
 		ca.cache["race.example.com"] = entry
 		ca.mu.Unlock()
-		return prev(c, r)
+		return defaultKeygen()
 	}
-	t.Cleanup(func() { generateKey = prev })
 	second, err := ca.leafFor("race.example.com")
 	if err != nil {
 		t.Fatal(err)

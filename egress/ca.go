@@ -46,6 +46,11 @@ type CA struct {
 
 	// nowFn is time.Now, overridable in tests.
 	nowFn func() time.Time
+	// keygen mints a leaf private key. It is per instance rather than a
+	// package variable because leaf minting runs on hijacked connection
+	// goroutines that outlive the test that started them; a test swapping a
+	// package-level seam would race with them.
+	keygen func() (*ecdsa.PrivateKey, error)
 	// maxEntries caps the leaf cache; 0 means maxLeafCacheEntries. Overridable
 	// in tests to exercise eviction without minting thousands of leaves.
 	maxEntries int
@@ -76,12 +81,18 @@ type tlsCertificate struct {
 	Leaf        *x509.Certificate
 }
 
-// Seams over the crypto primitives so their failure paths are testable.
+// Seams over the crypto primitives GenerateCA uses, so its failure paths are
+// testable. Only GenerateCA reads them; leaf minting goes through CA.keygen.
 var (
 	generateKey       = ecdsa.GenerateKey
 	createCertificate = x509.CreateCertificate
 	marshalECKey      = x509.MarshalECPrivateKey
 )
+
+// defaultKeygen is the P-256 leaf keygen every CA starts with.
+func defaultKeygen() (*ecdsa.PrivateKey, error) {
+	return ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+}
 
 // GenerateCA mints a fresh self-signed egress CA whose subject common name is
 // commonName ([DefaultCACommonName] when empty). Returns the CA plus its
@@ -124,7 +135,7 @@ func GenerateCA(commonName string) (ca *CA, certPEM, keyPEM []byte, err error) {
 	}
 	certPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 	keyPEM = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
-	return &CA{cert: cert, key: key, certDER: der, nowFn: time.Now, cache: map[string]*leaf{}}, certPEM, keyPEM, nil
+	return &CA{cert: cert, key: key, certDER: der, nowFn: time.Now, keygen: defaultKeygen, cache: map[string]*leaf{}}, certPEM, keyPEM, nil
 }
 
 // LoadCA reconstructs a CA from a PEM cert + PEM EC private key (the operator
@@ -149,7 +160,7 @@ func LoadCA(certPEM, keyPEM []byte) (*CA, error) {
 	if err != nil {
 		return nil, fmt.Errorf("egress: parse CA key: %w", err)
 	}
-	return &CA{cert: cert, key: key, certDER: cBlock.Bytes, nowFn: time.Now, cache: map[string]*leaf{}}, nil
+	return &CA{cert: cert, key: key, certDER: cBlock.Bytes, nowFn: time.Now, keygen: defaultKeygen, cache: map[string]*leaf{}}, nil
 }
 
 // CertPEM returns the CA certificate PEM to install in the workload trust store.
@@ -193,7 +204,7 @@ func (c *CA) leafFor(host string) (tlsCertificate, error) {
 // mintLeaf signs a fresh leaf for host valid for leafTTL. It touches no shared
 // state, so callers invoke it without holding c.mu.
 func (c *CA) mintLeaf(host string, now time.Time) (tlsCertificate, error) {
-	key, err := generateKey(elliptic.P256(), rand.Reader)
+	key, err := c.keygen()
 	if err != nil {
 		return tlsCertificate{}, err
 	}
@@ -216,7 +227,7 @@ func (c *CA) mintLeaf(host string, now time.Time) (tlsCertificate, error) {
 	} else {
 		tmpl.DNSNames = []string{host}
 	}
-	der, err := createCertificate(rand.Reader, tmpl, c.cert, &key.PublicKey, c.key)
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, c.cert, &key.PublicKey, c.key)
 	if err != nil {
 		return tlsCertificate{}, err
 	}
@@ -253,12 +264,6 @@ func (c *CA) evictLocked(now time.Time) {
 	}
 }
 
-// randSerial draws a 128-bit certificate serial. It reads through randRead so
-// an entropy failure is reachable in tests.
 func randSerial() (*big.Int, error) {
-	buf := make([]byte, 16)
-	if _, err := randRead(buf); err != nil {
-		return nil, err
-	}
-	return new(big.Int).SetBytes(buf), nil
+	return rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
 }

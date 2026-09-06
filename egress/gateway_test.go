@@ -6,7 +6,6 @@ package egress
 import (
 	"bufio"
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -580,14 +579,9 @@ func TestGateway_MITMLeafMintFailure(t *testing.T) {
 	ca, _, _, _ := GenerateCA("")
 	reg := NewRegistry()
 	reg.Set("p-1", []Entry{{Placeholder: []byte("cph_x"), Secret: []byte("s"), AllowedHosts: []string{"api.provider.example"}}})
+	ca.keygen = func() (*ecdsa.PrivateKey, error) { return nil, errors.New("no keys") }
 	logs := &syncBuffer{}
 	gw := &Gateway{Registry: reg, CA: ca, Auth: StaticAuth{"Bearer t": "p-1"}, Log: slog.New(slog.NewTextHandler(logs, nil))}
-	// The seam is swapped before the server starts and restored after it has
-	// closed (cleanups run last-registered first), so the handler goroutine
-	// only ever observes the failing keygen.
-	prev := generateKey
-	generateKey = func(elliptic.Curve, io.Reader) (*ecdsa.PrivateKey, error) { return nil, errors.New("no keys") }
-	t.Cleanup(func() { generateKey = prev })
 	ts := httptest.NewServer(gw)
 	t.Cleanup(ts.Close)
 
