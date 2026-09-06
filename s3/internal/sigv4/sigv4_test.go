@@ -134,3 +134,120 @@ func FuzzEscape(f *testing.F) {
 		}
 	})
 }
+
+// The PUT Object example from the same documentation: a caller header,
+// x-amz-storage-class, and a signed payload.
+func TestSignMatchesTheDocumentedPutVector(t *testing.T) {
+	req := putVectorRequest()
+	vectorSigner.Sign(req, putVectorPayloadHash, vectorTime)
+	want := "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request, SignedHeaders=date;host;x-amz-content-sha256;x-amz-date;x-amz-storage-class, Signature=98ad721746da40c64f1a55b78f14c238d841ea1380cd77a1b5971af0ece108bd"
+	if got := req.Header.Get("Authorization"); got != want {
+		t.Fatalf("Authorization =\n%s\nwant\n%s", got, want)
+	}
+	if err := vectorSigner.Verify(req); err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+}
+
+const putVectorPayloadHash = "44ce7dd67c959e0d3524ffac1771dfbba87d2b6b4b4e99e42034a8b803f8b072"
+
+// putVectorRequest is the documented PUT Object request before signing.
+// The key carries a dollar sign, which the canonical URI escapes and Go's
+// path escaping does not, so RawPath is set the way the client sets it.
+func putVectorRequest() *http.Request {
+	u, _ := url.Parse("https://examplebucket.s3.amazonaws.com/")
+	u.Path, u.RawPath = "/test$file.text", "/test%24file.text"
+	req := &http.Request{Method: http.MethodPut, URL: u, Header: http.Header{}}
+	req.Header.Set("Date", "Fri, 24 May 2013 00:00:00 GMT")
+	req.Header.Set("x-amz-storage-class", "REDUCED_REDUNDANCY")
+	return req
+}
+
+// The published vectors carry no Content-Type. These two are the
+// documented PUT vector with Content-Type: text/plain added, and a
+// presigned PUT binding Content-Length and Content-Type, with signatures
+// computed independently of this package from the canonical request the
+// specification prescribes. A signature that drifts from them means the
+// header left the signature or its canonical form changed.
+func TestContentTypeIsInTheSignature(t *testing.T) {
+	req := putVectorRequest()
+	req.Header.Set("Content-Type", "text/plain")
+	vectorSigner.Sign(req, putVectorPayloadHash, vectorTime)
+	want := "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request, SignedHeaders=content-type;date;host;x-amz-content-sha256;x-amz-date;x-amz-storage-class, Signature=f093977030bf8d8069918f1b3546fd02cf697d43e763c40d58c109a2e197bdac"
+	if got := req.Header.Get("Authorization"); got != want {
+		t.Fatalf("Authorization =\n%s\nwant\n%s", got, want)
+	}
+	if err := vectorSigner.Verify(req); err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	req.Header.Set("Content-Type", "text/html")
+	if err := vectorSigner.Verify(req); err == nil {
+		t.Fatal("another Content-Type verified")
+	}
+
+	p := putVectorRequest()
+	p.Header = http.Header{}
+	p.Header.Set("Content-Length", "12")
+	p.Header.Set("Content-Type", "text/plain")
+	got := vectorSigner.Presign(p, vectorTime, time.Hour)
+	want = "https://examplebucket.s3.amazonaws.com/test%24file.text?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20130524%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20130524T000000Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost&X-Amz-Signature=2d2950388956fba80de33459411a13a91ae8305eadbd8ebbf93f58a3a54a000b"
+	if got != want {
+		t.Fatalf("presigned =\n%s\nwant\n%s", got, want)
+	}
+	good, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, got, nil)
+	good.Host, good.ContentLength = good.URL.Host, 12
+	good.Header.Set("Content-Type", "text/plain")
+	if err := vectorSigner.Verify(good); err != nil {
+		t.Fatalf("matching type: %v", err)
+	}
+	for name, ct := range map[string]string{"another type": "text/html", "no type": ""} {
+		bad, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, got, nil)
+		bad.Host, bad.ContentLength = bad.URL.Host, 12
+		if ct != "" {
+			bad.Header.Set("Content-Type", ct)
+		}
+		if err := vectorSigner.Verify(bad); err == nil {
+			t.Errorf("%s verified", name)
+		}
+	}
+}
+
+// A header value of any shape signs, verifies as sent, and stops
+// verifying once it changes, through both the header and the presigned
+// form.
+func FuzzSignVerifyHeaderRoundTrip(f *testing.F) {
+	f.Add("text/plain")
+	f.Add("  application/json; charset=utf-8 ")
+	f.Add("")
+	f.Add("a\tb")
+	f.Add("\xc2\x85x")
+	f.Fuzz(func(t *testing.T, ct string) {
+		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, "https://b.example.test/k", nil)
+		req.Header.Set("Content-Type", ct)
+		vectorSigner.Sign(req, UnsignedPayload, vectorTime)
+		if !strings.Contains(req.Header.Get("Authorization"), "SignedHeaders=content-type;host;") {
+			t.Fatalf("Content-Type not signed: %s", req.Header.Get("Authorization"))
+		}
+		if err := vectorSigner.Verify(req); err != nil {
+			t.Fatalf("Sign then Verify of %q: %v", ct, err)
+		}
+		req.Header.Set("Content-Type", ct+"x")
+		if err := vectorSigner.Verify(req); err == nil {
+			t.Fatalf("a changed Content-Type %q verified", ct)
+		}
+
+		p := &http.Request{Method: http.MethodPut, URL: req.URL, Header: http.Header{}}
+		p.Header.Set("Content-Type", ct)
+		u := vectorSigner.Presign(p, vectorTime, time.Hour)
+		back, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, u, nil)
+		back.Host = back.URL.Host
+		back.Header.Set("Content-Type", ct)
+		if err := vectorSigner.Verify(back); err != nil {
+			t.Fatalf("Presign then Verify of %q: %v", ct, err)
+		}
+		back.Header.Set("Content-Type", ct+"x")
+		if err := vectorSigner.Verify(back); err == nil {
+			t.Fatalf("a changed presigned Content-Type %q verified", ct)
+		}
+	})
+}

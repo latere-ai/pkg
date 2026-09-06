@@ -80,7 +80,9 @@ func CanonicalQuery(q url.Values) string {
 
 // Sign adds the x-amz-date, x-amz-content-sha256, and Authorization headers
 // to req. Every header already on the request is signed, so a caller
-// cannot hand the endpoint a header the signature does not cover.
+// cannot hand the endpoint a header the signature does not cover; a
+// Content-Type on an upload is in the signature exactly when the request
+// carries one.
 func (s Signer) Sign(req *http.Request, payloadHash string, at time.Time) {
 	amzDate := at.UTC().Format(DateFormat)
 	req.Header.Set("x-amz-date", amzDate)
@@ -100,7 +102,8 @@ func (s Signer) Sign(req *http.Request, payloadHash string, at time.Time) {
 // Presign returns req's URL with the signature carried in the query, valid
 // for expires from at. The headers on req are the ones the sender must
 // repeat exactly: host always, and any other the caller set, which is how
-// a presigned PUT binds its Content-Length. The payload is unsigned.
+// a presigned PUT binds its Content-Length and, when set, its
+// Content-Type. The payload is unsigned.
 func (s Signer) Presign(req *http.Request, at time.Time, expires time.Duration) string {
 	amzDate := at.UTC().Format(DateFormat)
 	if req.Host == "" {
