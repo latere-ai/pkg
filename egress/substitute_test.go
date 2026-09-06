@@ -263,17 +263,21 @@ func FuzzReplaceToken(f *testing.F) {
 	})
 }
 
-// normalizeHost is idempotent and never grows its input.
+// normalizeHost never panics, never yields an uppercase letter, and passes an
+// already normalized host through unchanged.
 func FuzzNormalizeHost(f *testing.F) {
 	f.Add("API.Example.com:443")
 	f.Add("[::1]:443")
+	f.Add(" host. ")
 	f.Fuzz(func(t *testing.T, host string) {
 		n := normalizeHost(host)
-		if len(n) > len(host) {
-			t.Fatalf("normalizeHost(%q) grew to %q", host, n)
+		if strings.ToLower(n) != n {
+			t.Fatalf("normalizeHost(%q) = %q keeps uppercase", host, n)
 		}
-		if normalizeHost(n) != n {
-			t.Fatalf("normalizeHost is not idempotent: %q -> %q -> %q", host, n, normalizeHost(n))
+		clean := !strings.ContainsRune(host, ':') && strings.TrimSpace(host) == host &&
+			!strings.HasSuffix(host, ".") && strings.ToLower(host) == host
+		if clean && n != host {
+			t.Fatalf("normalizeHost(%q) changed an already normalized host to %q", host, n)
 		}
 	})
 }

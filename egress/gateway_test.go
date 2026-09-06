@@ -527,7 +527,7 @@ func TestGateway_LogWhenSet(t *testing.T) {
 	ca, _, _, _ := GenerateCA("")
 	reg := NewRegistry()
 	reg.Set("p-1", []Entry{{Placeholder: []byte("cph_x"), Secret: []byte("s"), AllowedHosts: []string{"api.provider.example"}}})
-	gw := &Gateway{Registry: reg, CA: ca, Auth: StaticAuth{"Bearer t": "p-1"}, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	gw := &Gateway{Registry: reg, CA: ca, Auth: StaticAuth{"Bearer t": "p-1"}, Log: slog.New(slog.DiscardHandler)}
 	ts := httptest.NewServer(gw)
 	t.Cleanup(ts.Close)
 	caPool := x509.NewCertPool()

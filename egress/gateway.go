@@ -174,7 +174,7 @@ func (g *Gateway) passthrough(ctx context.Context, client net.Conn, hostport str
 	var d net.Dialer
 	up, err := d.DialContext(ctx, "tcp", withPort(hostport))
 	if err != nil {
-		g.log().Warn("egress passthrough dial", "host", hostport, "err", err)
+		g.log().WarnContext(ctx, "egress passthrough dial", "host", hostport, "err", err)
 		return
 	}
 	// Close both ends as soon as either direction finishes so a FIN from
@@ -203,7 +203,7 @@ func (g *Gateway) mitm(ctx context.Context, client net.Conn, hostport string, m 
 	host := hostOnly(hostport)
 	tc, err := g.CA.leafFor(host)
 	if err != nil {
-		g.log().Warn("egress leaf mint", "host", host, "err", err)
+		g.log().WarnContext(ctx, "egress leaf mint", "host", host, "err", err)
 		return
 	}
 	serverConf := &tls.Config{

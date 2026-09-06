@@ -68,7 +68,7 @@ func (r *RePusher) Reconcile(ctx context.Context) (int, error) {
 		ph, err := r.Placeholders.Placeholders(ctx, id)
 		if err != nil {
 			if r.Log != nil {
-				r.Log.Warn("egress re-push placeholders", "principal", id, "err", err)
+				r.Log.WarnContext(ctx, "egress re-push placeholders", "principal", id, "err", err)
 			}
 			continue
 		}
@@ -78,7 +78,7 @@ func (r *RePusher) Reconcile(ctx context.Context) (int, error) {
 		sec, err := r.Secrets.Secrets(ctx, id)
 		if err != nil {
 			if r.Log != nil {
-				r.Log.Warn("egress re-push secrets", "principal", id, "err", err)
+				r.Log.WarnContext(ctx, "egress re-push secrets", "principal", id, "err", err)
 			}
 			continue
 		}
@@ -88,7 +88,7 @@ func (r *RePusher) Reconcile(ctx context.Context) (int, error) {
 		}
 		if err := r.Push.PushMapAllReplicas(ctx, id, entries); err != nil {
 			if r.Log != nil {
-				r.Log.Warn("egress re-push", "principal", id, "err", err)
+				r.Log.WarnContext(ctx, "egress re-push", "principal", id, "err", err)
 			}
 			continue
 		}
@@ -107,9 +107,9 @@ func (r *RePusher) Run(ctx context.Context) {
 	}
 	step := func(ctx context.Context) {
 		if n, err := r.Reconcile(ctx); err != nil && r.Log != nil {
-			r.Log.Error("egress re-push reconcile", "err", err)
+			r.Log.ErrorContext(ctx, "egress re-push reconcile", "err", err)
 		} else if r.Log != nil && n > 0 {
-			r.Log.Debug("egress re-push reconcile", "pushed", n)
+			r.Log.DebugContext(ctx, "egress re-push reconcile", "pushed", n)
 		}
 	}
 	step(ctx)
