@@ -10,6 +10,53 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+The three auth packages are now one tree under `authkit`, with one
+principal type. Update imports, then the handful of renamed symbols below.
+Every browser session logs in again once after the relying party deploys.
+
+### Changed
+
+- `jwtauth` is now `authkit/jwt` and `oidc` is now `authkit/oidc`. Replace
+  the import paths and the `jwtauth.` qualifier with `jwt.`; no symbol
+  changed its name in the move. A local variable named `jwt` shadows the
+  package for the rest of its function, so rename it.
+- `authkit.Identity` is the one principal. `jwt.Claims` embeds it and adds
+  the token envelope (`Iss`, `Aud`, `Exp`); `oidc.User` embeds it and adds
+  the profile (`Name`, `Picture`, `DisplayName`, `Raw`). Field reads such
+  as `claims.Sub` and `user.OrgID` are unchanged. A composite literal that
+  sets those fields compiles as before on Go 1.27.
+- `Identity.PrincipalType` is the named type `authkit.PrincipalType`, with
+  `PrincipalUser`, `PrincipalService`, `PrincipalAgent`, and `PrincipalDev`.
+  `jwt.PrincipalType`, `jwt.PrincipalUser`, and `jwt.PrincipalService` are
+  aliases. Comparisons against string literals still compile.
+- `Identity` carries JSON tags (`sub`, `org_id`, `roles`, ...). `TokenID`
+  and `AuthMethod` are never serialised.
+- `oidc.User.OrgRoles` is the embedded `Roles`; `oidc.User.AvatarURL` is
+  gone, read `Picture`. The `avatar_url` access-token claim still feeds
+  `Picture` when `picture` is absent.
+- `oidc.ClaimsMapper.Map` and `Provider.VerifyIDToken` return `oidc.User`;
+  `oidc.Identity` is deleted and its `Subject` is `Sub`. A verified ID token
+  that maps to no subject is rejected.
+- `oidc.SessionCookieName` is `__Host-latere-session-v2`. A session written
+  under the previous shape stored roles under another key, so it is not
+  read; users sign in once more after deploy.
+- `jwt.Validator.Middleware` also stores the principal through
+  `authkit.WithIdentity`, so `authkit.IdentityFromContext` works behind it.
+- `authkit` imports no other auth package. The two authenticators that
+  needed one moved to where they are produced: `authkit.NewJWT` is
+  `jwt.NewAuthenticator` (type `jwt.Authenticator`), and
+  `authkit.NewSessionAuthenticator` is `oidc.NewSessionAuthenticator`.
+  `authkit.TokenInfo`, `TokenInfoClient`, `CachedTokenInfo`,
+  `TokenInfoLookup`, and `ErrRevoked` moved to `jwt` unchanged.
+- `authkit.FileTokenStore`, `TokenStore`, `DefaultFileTokenStorePath`,
+  `DeviceCodeClient`, and `NewDeviceCodeClient` moved to `authkit/cli`, the
+  only package in the tree that opens a browser or touches the home
+  directory.
+- `jwtauth.WriteUnauthorized` is `authkit.WriteUnauthorized`;
+  `oidc.SplitScopes` is `authkit.SplitScopes`.
+- Error strings from the JWT package start with `authkit/jwt:`; sentinel
+  errors are unchanged.
+
 ## v0.52.0 - 2026-09-06
 
 ### Changed
