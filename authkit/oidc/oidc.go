@@ -23,7 +23,7 @@
 //	    // auth not configured, run without login
 //	}
 //
-// Token verification pins RS256 through jwtauth. An issuer configured for
+// Token verification pins RS256 through authkit/jwt. An issuer configured for
 // ES256 or PS256 is not supported here.
 package oidc
 

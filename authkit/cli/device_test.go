@@ -17,7 +17,7 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"latere.ai/x/pkg/oidc"
+	"latere.ai/x/pkg/authkit/oidc"
 )
 
 // newDeviceTestClient stands up a fake auth server speaking the device

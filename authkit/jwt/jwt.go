@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: Apache-2.0
 
-// Package jwtauth provides JWKS-based RS256 JWT validation for services
+// Package jwt provides JWKS-based RS256 JWT validation for services
 // that accept tokens issued by the Latere auth service.
 //
 // # Design
@@ -57,7 +57,7 @@
 //
 // # Usage
 //
-//	v := jwtauth.New(jwtauth.Config{
+//	v := jwt.New(jwt.Config{
 //	    JWKSURL:   "https://auth.latere.ai/.well-known/jwks.json",
 //	    Issuer:    "https://auth.latere.ai",        // optional
 //	    Audiences: []string{"my-service-client-id"}, // optional
@@ -67,9 +67,9 @@
 //	mux.Handle("GET /api/resource", v.Middleware(handler))
 //
 //	// In a handler:
-//	claims := jwtauth.ClaimsFromContext(r.Context())
+//	claims := jwt.ClaimsFromContext(r.Context())
 //	_ = claims.Sub
-package jwtauth
+package jwt
 
 import (
 	"context"
@@ -124,14 +124,14 @@ type Claims struct {
 // ── Errors ──────────────────────────────────────────────────────────────────
 
 var (
-	ErrNoToken          = errors.New("jwtauth: missing bearer token")
-	ErrMalformedToken   = errors.New("jwtauth: malformed token")
-	ErrInvalidSignature = errors.New("jwtauth: invalid signature")
-	ErrTokenExpired     = errors.New("jwtauth: token expired")
-	ErrTokenNotValidYet = errors.New("jwtauth: token not valid yet")
-	ErrInvalidIssuer    = errors.New("jwtauth: invalid issuer")
-	ErrInvalidAudience  = errors.New("jwtauth: invalid audience")
-	ErrUnsupportedAlg   = errors.New("jwtauth: unsupported algorithm")
+	ErrNoToken          = errors.New("authkit/jwt: missing bearer token")
+	ErrMalformedToken   = errors.New("authkit/jwt: malformed token")
+	ErrInvalidSignature = errors.New("authkit/jwt: invalid signature")
+	ErrTokenExpired     = errors.New("authkit/jwt: token expired")
+	ErrTokenNotValidYet = errors.New("authkit/jwt: token not valid yet")
+	ErrInvalidIssuer    = errors.New("authkit/jwt: invalid issuer")
+	ErrInvalidAudience  = errors.New("authkit/jwt: invalid audience")
+	ErrUnsupportedAlg   = errors.New("authkit/jwt: unsupported algorithm")
 )
 
 // ── Config & Validator ──────────────────────────────────────────────────────
@@ -214,7 +214,7 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 
 	keys, err := v.cache.getKeysForKid(header.Kid)
 	if err != nil {
-		return nil, fmt.Errorf("jwtauth: fetch JWKS: %w", err)
+		return nil, fmt.Errorf("authkit/jwt: fetch JWKS: %w", err)
 	}
 
 	sigInput := parts[0] + "." + parts[1]
@@ -458,7 +458,7 @@ func (c *jwksCache) load(force bool) ([]jwkEntry, error) {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return c.cachedOr(fmt.Errorf("jwtauth: JWKS status %d", resp.StatusCode))
+		return c.cachedOr(fmt.Errorf("authkit/jwt: JWKS status %d", resp.StatusCode))
 	}
 
 	body, err := io.ReadAll(resp.Body)

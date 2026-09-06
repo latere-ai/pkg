@@ -75,15 +75,13 @@ res, err := c.Generate(ctx, &luxsdk.Request{
 | Package | What it gives you |
 |---|---|
 | [`audit`](audit/) | A canonical audit-event envelope plus emitters (stdout, OTLP) to serialize it through, so storage adapters stay a per-product concern |
-| [`authkit`](authkit/) | Product-agnostic authentication glue: one shared `Identity` type and `Authenticator` interface, so services share an implementation instead of maintaining drifting copies |
+| [`authkit`](authkit/) | The auth tree. The root holds the one `Identity` type, the `Authenticator` interface, and the middleware every service shares; `authkit/jwt` verifies RS256 tokens against a cached JWKS and authenticates bearer JWTs; `authkit/oidc` is the OIDC relying party with a `Provider` for any standard issuer (Latere auth, Keycloak, Google, Cognito) and the Latere `Client` with encrypted cookie sessions, token refresh, org switching, and a shared `/me` assembly; `authkit/cli` holds the token store and device-code login for command-line clients |
 | [`batch`](batch/) | A generic non-blocking batching pump: producers add without blocking, one goroutine flushes by size or interval and drains on shutdown |
 | [`email`](email/) | Transactional mail transport (Mailgun, SMTP, or a log-only fallback) that refuses header injection; subjects and bodies stay with the calling service |
-| [`jwtauth`](jwtauth/) | JWKS-based RS256 JWT validation with key caching, so a service verifies tokens locally instead of round-tripping to the issuer |
 | [`llmdialect`](llmdialect/) | Translation between LLM inference wire dialects (Anthropic Messages, OpenAI Chat Completions, OpenAI Responses, lux-native) through a neutral intermediate representation, with an explicit loss report instead of silent drops. Carries provider-executed tools (web search, web fetch) alongside the caller-implemented kind |
 | [`llmjson`](llmjson/) | Repairs the JSON a model meant to send: strips a markdown fence and escapes the raw newlines and tabs left inside string values, so a correct answer in the wrong encoding still decodes |
 | [`luxsdk`](luxsdk/) | First-party Go client for the Lux gateway's native dialect: typed generate, streaming, and token counting |
 | [`md`](md/) | YAML frontmatter parsing and GFM-to-HTML rendering |
-| [`oidc`](oidc/) | The OIDC relying party: a `Provider` for any standard issuer (Latere auth, Keycloak, Google, Cognito) with discovery, PKCE, and ID-token verification, and the Latere `Client` on top of it with encrypted cookie sessions, token refresh, org switching, and a shared `/me` assembly |
 | [`otel`](otel/) | One-call OpenTelemetry bootstrap for traces, metrics, and structured logs, plus HTTP server and client instrumentation |
 | [`pgxmigrate`](pgxmigrate/) | Applies embedded golang-migrate migrations and reliably closes migrate's own connection pool afterward |
 | [`scopes`](scopes/) | Typed registry of the OAuth/RBAC scopes the Latere auth service issues, for call-site gating and OIDC discovery |

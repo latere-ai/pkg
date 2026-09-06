@@ -16,7 +16,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"latere.ai/x/pkg/authkit"
-	"latere.ai/x/pkg/jwtauth"
+	"latere.ai/x/pkg/authkit/jwt"
 )
 
 // ErrSessionExpired is returned by SessionFromRequest when the dashboard session
@@ -72,7 +72,7 @@ type jwtClaims struct {
 // service via a trusted exchange, so verification is unnecessary.
 func decodeJWTClaims(accessToken string) (*jwtClaims, error) {
 	var c jwtClaims
-	if err := jwtauth.DecodePayload(accessToken, &c); err != nil {
+	if err := jwt.DecodePayload(accessToken, &c); err != nil {
 		return nil, err
 	}
 	return &c, nil

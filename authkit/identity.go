@@ -9,15 +9,15 @@
 // This package is the leaf of the auth tree. It imports no other auth
 // package; the packages that produce an Identity import it:
 //
-//	authkit          Identity, Authenticator, Middleware, CSRF, dev and static authenticators
-//	jwtauth          offline RS256 verification; Authenticator for bearer JWTs
-//	oidc             OIDC relying party; SessionAuthenticator for cookie sessions
-//	authkit/cli      token store and device-code login for command-line clients
+//	authkit        Identity, Authenticator, Middleware, CSRF, dev and static authenticators
+//	authkit/jwt    offline RS256 verification; Authenticator for bearer JWTs
+//	authkit/oidc   OIDC relying party; SessionAuthenticator for cookie sessions
+//	authkit/cli    token store and device-code login for command-line clients
 //
 // Typical usage:
 //
-//	v := jwtauth.New(jwtauth.Config{JWKSURL: ..., Issuer: ...})
-//	auth := jwtauth.NewAuthenticator(v, nil)
+//	v := jwt.New(jwt.Config{JWKSURL: ..., Issuer: ...})
+//	auth := jwt.NewAuthenticator(v, nil)
 //
 //	mux.Handle("GET /api/resource", authkit.Middleware(handler, auth))
 //

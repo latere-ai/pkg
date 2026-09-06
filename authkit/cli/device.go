@@ -13,7 +13,7 @@ import (
 	"os/exec"
 	"runtime"
 
-	"latere.ai/x/pkg/oidc"
+	"latere.ai/x/pkg/authkit/oidc"
 )
 
 // DeviceCodeClient drives the RFC 8628 device-authorization flow end to end

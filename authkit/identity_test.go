@@ -173,7 +173,7 @@ func TestWriteUnauthorized(t *testing.T) {
 }
 
 // TestAuthkitIsLeaf pins the dependency direction of the auth tree: this
-// package is imported by jwtauth, oidc, and cli, so it must not import any
+// package is imported by jwt, oidc, and cli, so it must not import any
 // of them, or anything else in pkg that does.
 func TestAuthkitIsLeaf(t *testing.T) {
 	out, err := exec.Command("go", "list", "-f", "{{join .Imports \"\\n\"}}", ".").Output()

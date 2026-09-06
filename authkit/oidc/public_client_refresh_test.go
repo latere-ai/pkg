@@ -45,7 +45,7 @@ func newPublicClient(t *testing.T, authURL string) *Client {
 }
 
 // TestPublicClientExchangeSendsNoSecret proves the secret-less authorization_code
-// exchange works through pkg/oidc's own provider: client_id rides in the body,
+// exchange works through authkit/oidc's own provider: client_id rides in the body,
 // no Authorization header, and the PKCE verifier is sent.
 func TestPublicClientExchangeSendsNoSecret(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

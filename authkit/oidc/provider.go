@@ -15,7 +15,7 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"latere.ai/x/pkg/jwtauth"
+	"latere.ai/x/pkg/authkit/jwt"
 )
 
 // ClaimsMapper turns verified token claims into a User. Roles is populated
@@ -55,9 +55,9 @@ type ProviderConfig struct {
 // layout. Safe for concurrent use.
 type Provider struct {
 	oauth      *oauth2.Config
-	idVerifier *jwtauth.Validator // verifies the ID token: sig + aud(==ClientID) + exp
-	atVerifier *jwtauth.Validator // verifies the access token: sig + exp (aud skipped)
-	issuer     string             // authoritative issuer from discovery
+	idVerifier *jwt.Validator // verifies the ID token: sig + aud(==ClientID) + exp
+	atVerifier *jwt.Validator // verifies the access token: sig + exp (aud skipped)
+	issuer     string         // authoritative issuer from discovery
 	mapper     ClaimsMapper
 }
 
@@ -124,12 +124,12 @@ func newProvider(oauth *oauth2.Config, issuer, jwksURL string, hc *http.Client, 
 		oauth: oauth,
 		// idVerifier checks aud == ClientID. Issuer is validated separately
 		// (issuerOK) so Google's scheme-optional iss is accepted.
-		idVerifier: jwtauth.New(jwtauth.Config{
+		idVerifier: jwt.New(jwt.Config{
 			JWKSURL: jwksURL, Audiences: []string{oauth.ClientID}, HTTPClient: hc,
 		}),
 		// atVerifier skips aud (an access token's audience is the resource
 		// server, not this client); signature and exp are still enforced.
-		atVerifier: jwtauth.New(jwtauth.Config{JWKSURL: jwksURL, HTTPClient: hc}),
+		atVerifier: jwt.New(jwt.Config{JWKSURL: jwksURL, HTTPClient: hc}),
 		issuer:     issuer,
 		mapper:     mapper,
 	}
@@ -176,7 +176,7 @@ func (a *Provider) Exchange(ctx context.Context, code, verifier string) (*oauth2
 
 // VerifyIDToken verifies the ID token from an exchanged token and maps its
 // claims to a User. It fails closed if id_token is missing, fails
-// verification (signature/aud/exp/alg via jwtauth — RS256 pinned, so alg=none /
+// verification (signature/aud/exp/alg via authkit/jwt — RS256 pinned, so alg=none /
 // HS256-confusion is rejected), its issuer does not match, or its nonce does not
 // match the nonce bound at AuthCodeURL time.
 func (a *Provider) VerifyIDToken(_ context.Context, tok *oauth2.Token, nonce string) (User, error) {
@@ -256,7 +256,7 @@ func fetchDiscovery(ctx context.Context, hc *http.Client, issuer string) (*disco
 // claims for anything security-sensitive.
 func decodeJWTPayload(raw string) (map[string]any, error) {
 	var m map[string]any
-	if err := jwtauth.DecodePayload(raw, &m); err != nil {
+	if err := jwt.DecodePayload(raw, &m); err != nil {
 		return nil, err
 	}
 	return m, nil
