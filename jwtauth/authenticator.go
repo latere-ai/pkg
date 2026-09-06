@@ -51,20 +51,14 @@ func (a *Authenticator) Authenticate(r *http.Request) (authkit.Identity, error) 
 	if err != nil {
 		return authkit.Identity{}, err
 	}
-	// Claims surfaces the originating OAuth client (client_id, azp fallback)
-	// from the signature-verified token; no second decode needed.
-	return authkit.Identity{
-		Sub:           claims.Sub,
-		OrgID:         claims.OrgID,
-		Email:         claims.Email,
-		PrincipalType: claims.PrincipalType,
-		IsSuperadmin:  claims.IsSuperadmin,
-		Scopes:        claims.Scopes,
-		Roles:         claims.Roles,
-		ClientID:      claims.ClientID,
-		TokenID:       claims.Sub,
-		Kind:          claims.Kind,
-		ActorID:       claims.ActorID,
-		AuthMethod:    authkit.MethodBearer,
-	}, nil
+	return claims.authenticated(), nil
+}
+
+// authenticated is the Identity a bearer JWT resolves to: the verified
+// principal stamped with the resolution fields that are not claims.
+func (c *Claims) authenticated() authkit.Identity {
+	id := c.Identity
+	id.TokenID = c.Sub
+	id.AuthMethod = authkit.MethodBearer
+	return id
 }

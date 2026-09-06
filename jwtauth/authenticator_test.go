@@ -71,8 +71,7 @@ func TestJWTAuthenticateLocalToken(t *testing.T) {
 		Email:         "a@b.com",
 		PrincipalType: PrincipalUser,
 		IsSuperadmin:  false,
-		Scopes:        []string{"read:projects"},
-	}
+		Scopes:        []string{"read:projects"}}
 	j := newJWTWithFakeValidator(&fakeValidator{claims: claims}, nil)
 	// Encode a payload with no client_id claim.
 	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"u-1"}`))
@@ -100,8 +99,7 @@ func TestJWTAuthenticateLocalTokenWithClientID(t *testing.T) {
 	claims := &Claims{
 		Sub:           "u-1",
 		PrincipalType: PrincipalUser,
-		ClientID:      "cli-abc",
-	}
+		ClientID:      "cli-abc"}
 	j := newJWTWithFakeValidator(&fakeValidator{claims: claims}, nil)
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("Authorization", "Bearer hdr.payload.sig")
@@ -119,8 +117,7 @@ func TestJWTAuthenticateCarriesActorClaims(t *testing.T) {
 		OrgID:         "org-1",
 		PrincipalType: PrincipalUser,
 		Kind:          "sandbox",
-		ActorID:       "sb-abc123",
-	}
+		ActorID:       "sb-abc123"}
 	j := newJWTWithFakeValidator(&fakeValidator{claims: claims}, nil)
 	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"u-1"}`))
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -146,8 +143,7 @@ func TestJWTAuthenticateCarriesRoles(t *testing.T) {
 		Sub:           "u-1",
 		OrgID:         "org-1",
 		PrincipalType: PrincipalUser,
-		Roles:         []string{"admin"},
-	}
+		Roles:         []string{"admin"}}
 	j := newJWTWithFakeValidator(&fakeValidator{claims: claims}, nil)
 	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"u-1"}`))
 	r := httptest.NewRequest(http.MethodGet, "/", nil)

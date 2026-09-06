@@ -106,27 +106,19 @@ const (
 
 // ── Claims ──────────────────────────────────────────────────────────────────
 
-// Claims holds verified JWT claims across all principal types.
+// Claims is a verified token: the principal it names, as an
+// authkit.Identity, plus the token envelope. Principal fields are promoted,
+// so claims.Sub and claims.Identity.Sub are the same field. ClientID is the
+// originating OAuth client ("client_id", "azp" fallback); Scopes come from
+// the "scp" claim; Kind and ActorID from "kind" and "actor_id".
+//
+// Identity.TokenID and Identity.AuthMethod are not claims and are left zero
+// here; Authenticator sets them.
 type Claims struct {
-	Sub           string
-	Iss           string
-	Aud           []string
-	Exp           time.Time
-	PrincipalType PrincipalType
-	OrgID         string
-	Email         string // populated for users
-	ClientID      string // originating OAuth client ("client_id", "azp" fallback)
-	IsSuperadmin  bool
-	Scopes        []string
-	Roles         []string
-
-	// Kind and ActorID describe a non-principal actor the token is bound
-	// to (e.g. Kind=="sandbox", ActorID=<sandbox id>). Generic and
-	// domain-agnostic — consumers interpret ActorID according to Kind.
-	// Empty for ordinary user/service/agent tokens. Distinct from Act,
-	// which is the RFC 8693 delegation actor (a principal sub).
-	Kind    string
-	ActorID string
+	authkit.Identity
+	Iss string
+	Aud []string
+	Exp time.Time
 }
 
 // ── Errors ──────────────────────────────────────────────────────────────────
@@ -282,11 +274,8 @@ func claimsFromRawPayload(raw rawPayload) *Claims {
 	if clientID == "" {
 		clientID = raw.AuthorizedParty
 	}
-	claims := &Claims{
+	return &Claims{
 		Sub:           raw.Sub,
-		Iss:           raw.Iss,
-		Aud:           []string(raw.Aud),
-		Exp:           time.Unix(int64(raw.Exp), 0),
 		PrincipalType: PrincipalType(raw.PrincipalType),
 		OrgID:         raw.OrgID,
 		Email:         raw.Email,
@@ -296,8 +285,10 @@ func claimsFromRawPayload(raw rawPayload) *Claims {
 		Roles:         raw.Roles,
 		Kind:          raw.Kind,
 		ActorID:       raw.ActorID,
+		Iss:           raw.Iss,
+		Aud:           []string(raw.Aud),
+		Exp:           time.Unix(int64(raw.Exp), 0),
 	}
-	return claims
 }
 
 // ParseUnverified decodes a JWT's payload into Claims WITHOUT
@@ -353,6 +344,9 @@ const ctxKeyClaims ctxKey = iota
 
 // Middleware returns HTTP middleware that validates the JWT from the
 // Authorization: Bearer header and injects Claims into the request context.
+// The principal is also stored as an authkit.Identity, so a handler written
+// against authkit.IdentityFromContext works behind this middleware and
+// behind authkit.Middleware alike.
 func (v *Validator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token, ok := bearer.FromRequest(r)
@@ -368,6 +362,7 @@ func (v *Validator) Middleware(next http.Handler) http.Handler {
 		}
 
 		ctx := context.WithValue(r.Context(), ctxKeyClaims, claims)
+		ctx = authkit.WithIdentity(ctx, claims.authenticated())
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

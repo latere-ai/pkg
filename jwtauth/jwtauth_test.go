@@ -19,6 +19,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"latere.ai/x/pkg/authkit"
 )
 
 // ── Test helpers ────────────────────────────────────────────────────────────
@@ -770,8 +772,10 @@ func TestMiddlewareSuccess(t *testing.T) {
 	token := signToken(t, key, defaultHeader(key), defaultPayload())
 
 	var got *Claims
+	var gotID authkit.Identity
 	handler := v.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got = ClaimsFromContext(r.Context())
+		gotID = authkit.IdentityFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -785,6 +789,11 @@ func TestMiddlewareSuccess(t *testing.T) {
 	}
 	if got == nil || got.Sub != "user-123" {
 		t.Errorf("claims = %v", got)
+	}
+	// The same principal is readable through authkit's accessor, stamped as
+	// a bearer resolution, so handlers need not know which middleware ran.
+	if gotID.Sub != "user-123" || gotID.TokenID != "user-123" || gotID.AuthMethod != authkit.MethodBearer {
+		t.Errorf("identity from context = %+v", gotID)
 	}
 }
 
