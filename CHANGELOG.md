@@ -12,6 +12,15 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Added
 
+- `health`, the probe surface every service serves on its internal
+  listener: `/livez`, `/readyz`, `/version`, and `/metrics` where the
+  service has some. `Handler(Options{Ready, Timeout, Metrics, Version,
+  Commit, BuildTime, LegacyHealthz})`; `Checks` folds named readiness
+  checks and `/readyz` names each failing one in its body, while `/livez`
+  and `/version` never carry an error text. `LegacyHealthz` serves
+  `/healthz` as an alias of `/livez` for the release in which a manifest
+  moves. The decision, and why one `healthz` is wrong under Kubernetes,
+  is `docs/health.md`.
 - `httpjson.Error`, `httpjson.ErrorEnvelope`, and `httpjson.WriteError`:
   the error envelope every Latere API answers with, rendered as
   `{"error": {"code", "message", "details"}}` through `Write`. `message`
