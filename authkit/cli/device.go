@@ -119,12 +119,16 @@ func (d *DeviceCodeClient) Login(ctx context.Context) error {
 // t.Cleanup.
 var execCommand = exec.Command
 
+// goos is runtime.GOOS behind a variable so the per-platform launcher table
+// can be tested on one host.
+var goos = runtime.GOOS
+
 func openBrowser(url string) error {
 	if url == "" {
 		return errors.New("authkit/cli: empty URL")
 	}
 	var cmd *exec.Cmd
-	switch runtime.GOOS {
+	switch goos {
 	case "darwin":
 		cmd = execCommand("open", url)
 	case "windows":

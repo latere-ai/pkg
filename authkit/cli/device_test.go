@@ -269,3 +269,36 @@ func (m *memoryStore) WithExpiry(d time.Duration) *memoryStore {
 	}
 	return m
 }
+
+func TestOpenBrowser_PerPlatformLauncher(t *testing.T) {
+	oldExec, oldGOOS := execCommand, goos
+	t.Cleanup(func() { execCommand, goos = oldExec, oldGOOS })
+
+	var gotName string
+	var gotArgs []string
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		gotName, gotArgs = name, args
+		return exec.Command("true")
+	}
+	cases := map[string]struct {
+		name string
+		args []string
+	}{
+		"darwin":  {"open", []string{"https://x.example/"}},
+		"windows": {"rundll32", []string{"url.dll,FileProtocolHandler", "https://x.example/"}},
+		"linux":   {"xdg-open", []string{"https://x.example/"}},
+		"freebsd": {"xdg-open", []string{"https://x.example/"}},
+	}
+	for os, want := range cases {
+		goos = os
+		if err := openBrowser("https://x.example/"); err != nil {
+			t.Fatalf("%s: %v", os, err)
+		}
+		if gotName != want.name || strings.Join(gotArgs, " ") != strings.Join(want.args, " ") {
+			t.Fatalf("%s: launched %s %v, want %s %v", os, gotName, gotArgs, want.name, want.args)
+		}
+	}
+	if err := openBrowser(""); err == nil {
+		t.Fatal("empty URL must be an error")
+	}
+}

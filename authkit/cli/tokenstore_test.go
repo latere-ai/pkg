@@ -205,3 +205,56 @@ func TestFileTokenStore_SaveDirCreateFails(t *testing.T) {
 		t.Fatal("expected MkdirAll error")
 	}
 }
+
+func TestFileTokenStore_SaveRenameFails(t *testing.T) {
+	// The target path is a non-empty directory, so the atomic rename of the
+	// temp file onto it fails and the temp file is cleaned up.
+	tmp := t.TempDir()
+	target := filepath.Join(tmp, "token.json")
+	if err := os.MkdirAll(filepath.Join(target, "child"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := NewFileTokenStore(target)
+	if err := s.Save(&oauth2.Token{AccessToken: "x"}); err == nil {
+		t.Fatal("expected rename error")
+	}
+	entries, err := os.ReadDir(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".token-") {
+			t.Fatalf("temp file %s left behind", e.Name())
+		}
+	}
+}
+
+func TestFileTokenStore_SaveTempCreateFails(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "ro")
+	if err := os.Mkdir(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	s, _ := NewFileTokenStore(filepath.Join(dir, "token.json"))
+	if err := s.Save(&oauth2.Token{AccessToken: "x"}); err == nil {
+		t.Fatal("expected temp-file creation error in a read-only dir")
+	}
+}
+
+func TestFileTokenStore_ClearRemoveFails(t *testing.T) {
+	// A non-empty directory at the token path cannot be removed with
+	// os.Remove, and that is not a not-exist condition.
+	tmp := t.TempDir()
+	target := filepath.Join(tmp, "token.json")
+	if err := os.MkdirAll(filepath.Join(target, "child"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := NewFileTokenStore(target)
+	if err := s.Clear(); err == nil {
+		t.Fatal("expected remove error")
+	}
+}
