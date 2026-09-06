@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.55.0 - 2026-09-06
+
 `dag` gains the two operations its one consumer was hand-rolling beside it,
 and the one-function `registry` package folds into `uniq`.
 
