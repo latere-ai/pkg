@@ -89,18 +89,19 @@ import (
 
 	"latere.ai/x/pkg/otel"
 
+	"latere.ai/x/pkg/authkit"
 	"latere.ai/x/pkg/bearer"
-	"latere.ai/x/pkg/httpjson"
 )
 
 // ── Principal & Validation Types ────────────────────────────────────────────
 
-// PrincipalType is the type of the token subject.
-type PrincipalType string
+// PrincipalType is the type of the token subject. It is authkit's type;
+// the aliases keep existing references compiling.
+type PrincipalType = authkit.PrincipalType
 
 const (
-	PrincipalUser    PrincipalType = "user"
-	PrincipalService PrincipalType = "service"
+	PrincipalUser    = authkit.PrincipalUser
+	PrincipalService = authkit.PrincipalService
 )
 
 // ── Claims ──────────────────────────────────────────────────────────────────
@@ -356,13 +357,13 @@ func (v *Validator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token, ok := bearer.FromRequest(r)
 		if !ok {
-			WriteUnauthorized(w, ErrNoToken.Error())
+			authkit.WriteUnauthorized(w, ErrNoToken.Error())
 			return
 		}
 
 		claims, err := v.Validate(token)
 		if err != nil {
-			WriteUnauthorized(w, err.Error())
+			authkit.WriteUnauthorized(w, err.Error())
 			return
 		}
 
@@ -619,12 +620,4 @@ func audMatch(tokenAud jsonAud, expected []string) bool {
 	return slices.ContainsFunc(tokenAud, func(a string) bool {
 		return slices.Contains(expected, a)
 	})
-}
-
-// WriteUnauthorized writes the standard 401 JSON envelope
-// ({"error":"unauthorized","message":<msg>}) used across Latere auth
-// middleware. Centralised here so the client-facing wire contract has a single
-// owner and cannot silently drift between packages.
-func WriteUnauthorized(w http.ResponseWriter, msg string) {
-	httpjson.Write(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized", "message": msg})
 }

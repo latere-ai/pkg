@@ -4,10 +4,14 @@
 package authkit
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -146,5 +150,79 @@ func TestChainSingleSuccess(t *testing.T) {
 	}
 	if got.Sub != "only" {
 		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestWriteUnauthorized(t *testing.T) {
+	rr := httptest.NewRecorder()
+	WriteUnauthorized(rr, "test message")
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q", ct)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("WriteUnauthorized must emit JSON: %v", err)
+	}
+	if body["error"] != "unauthorized" || body["message"] != "test message" {
+		t.Errorf("body = %v", body)
+	}
+}
+
+// TestAuthkitIsLeaf pins the dependency direction of the auth tree: this
+// package is imported by jwtauth, oidc, and cli, so it must not import any
+// of them, or anything else in pkg that does.
+func TestAuthkitIsLeaf(t *testing.T) {
+	out, err := exec.Command("go", "list", "-f", "{{join .Imports \"\\n\"}}", ".").Output()
+	if err != nil {
+		t.Fatalf("go list: %v", err)
+	}
+	allowed := map[string]bool{
+		"latere.ai/x/pkg/bearer":   true,
+		"latere.ai/x/pkg/envutil":  true,
+		"latere.ai/x/pkg/httpjson": true,
+	}
+	for imp := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+		if strings.HasPrefix(imp, "latere.ai/x/pkg/") && !allowed[imp] {
+			t.Errorf("authkit imports %s; the root of the auth tree must stay a leaf", imp)
+		}
+	}
+}
+
+// failingResponseWriter fails every body write, which is what a client that
+// hangs up between the status line and the body looks like to a handler.
+type failingResponseWriter struct {
+	hdr    http.Header
+	status int
+}
+
+func (f *failingResponseWriter) Header() http.Header { return f.hdr }
+
+func (f *failingResponseWriter) Write([]byte) (int, error) {
+	return 0, errors.New("connection reset by peer")
+}
+
+func (f *failingResponseWriter) WriteHeader(status int) { f.status = status }
+
+// TestWriteUnauthorized_BodyWriteFails asserts that a 401 whose body never
+// reached the client is recorded rather than discarded: without it a dropped
+// response is indistinguishable from a delivered one in the logs.
+func TestWriteUnauthorized_BodyWriteFails(t *testing.T) {
+	var logged bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	w := &failingResponseWriter{hdr: make(http.Header)}
+	WriteUnauthorized(w, "test message")
+
+	if w.status != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", w.status)
+	}
+	if !strings.Contains(logged.String(), "write json") {
+		t.Errorf("write failure was not logged: %q", logged.String())
 	}
 }

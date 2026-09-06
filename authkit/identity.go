@@ -6,11 +6,18 @@
 // Authenticator interface so independent services share one
 // implementation instead of maintaining drifting copies.
 //
+// This package is the leaf of the auth tree. It imports no other auth
+// package; the packages that produce an Identity import it:
+//
+//	authkit          Identity, Authenticator, Middleware, CSRF, dev and static authenticators
+//	jwtauth          offline RS256 verification; Authenticator for bearer JWTs
+//	oidc             OIDC relying party; SessionAuthenticator for cookie sessions
+//	authkit/cli      token store and device-code login for command-line clients
+//
 // Typical usage:
 //
 //	v := jwtauth.New(jwtauth.Config{JWKSURL: ..., Issuer: ...})
-//	ti := authkit.NewTokenInfoClient(authURL + "/tokeninfo")
-//	auth := authkit.NewJWT(v, ti)
+//	auth := jwtauth.NewAuthenticator(v, nil)
 //
 //	mux.Handle("GET /api/resource", authkit.Middleware(handler, auth))
 //
@@ -26,7 +33,19 @@ import (
 	"log/slog"
 	"net/http"
 
-	"latere.ai/x/pkg/jwtauth"
+	"latere.ai/x/pkg/httpjson"
+)
+
+// PrincipalType is the kind of subject an Identity describes. It is the
+// token's "principal_type" claim for a JWT and implied by the authenticator
+// for a cookie session or a dev bypass.
+type PrincipalType string
+
+const (
+	PrincipalUser    PrincipalType = "user"
+	PrincipalService PrincipalType = "service"
+	PrincipalAgent   PrincipalType = "agent"
+	PrincipalDev     PrincipalType = "dev"
 )
 
 // Identity is what handlers see after authentication. Sub is the canonical
@@ -36,7 +55,7 @@ type Identity struct {
 	Sub           string
 	OrgID         string
 	Email         string
-	PrincipalType string // "user" | "service" | "agent" | "dev"
+	PrincipalType PrincipalType
 	IsSuperadmin  bool
 	Scopes        []string
 	// Roles are the caller's role names in the token's active org (e.g.
@@ -130,11 +149,19 @@ func Middleware(next http.Handler, a Authenticator) http.Handler {
 			// authenticator errors can wrap internal detail (tokeninfo HTTP
 			// responses, backend topology) we must not disclose to clients.
 			slog.DebugContext(r.Context(), "authkit: authentication failed", "error", err)
-			jwtauth.WriteUnauthorized(w, "unauthorized")
+			WriteUnauthorized(w, "unauthorized")
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(WithIdentity(r.Context(), id)))
 	})
+}
+
+// WriteUnauthorized writes the standard 401 JSON envelope
+// ({"error":"unauthorized","message":<msg>}) used across Latere auth
+// middleware. Centralised here so the client-facing wire contract has a
+// single owner and cannot drift between packages.
+func WriteUnauthorized(w http.ResponseWriter, msg string) {
+	httpjson.Write(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized", "message": msg})
 }
 
 // ── Chain ────────────────────────────────────────────────────────────────────

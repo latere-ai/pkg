@@ -111,7 +111,7 @@ func TestDevAuthenticatorFromEnv_LoopbackFromRedirect(t *testing.T) {
 }
 
 func TestDevAuthenticatorFromEnv_DedupesScopes(t *testing.T) {
-	// AUTH_DEV_SCOPES is parsed by the shared oidc.SplitScopes, which (unlike
+	// AUTH_DEV_SCOPES is parsed by the shared SplitScopes, which (unlike
 	// the old local splitList) drops duplicate scopes order-preservingly.
 	t.Setenv("AUTH_DEV_BYPASS", "true")
 	t.Setenv("AUTH_REDIRECT_URL", "http://localhost:3000/callback")

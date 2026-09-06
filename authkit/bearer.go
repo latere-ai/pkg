@@ -28,7 +28,7 @@ func NewBearerToken(token, devSub string) *BearerToken {
 		token: token,
 		id: Identity{
 			Sub:           devSub,
-			PrincipalType: "dev",
+			PrincipalType: PrincipalDev,
 			IsSuperadmin:  true, // dev token bypasses ownership scoping
 			TokenID:       "dev",
 			AuthMethod:    MethodBearer,

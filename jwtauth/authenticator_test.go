@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: Apache-2.0
 
-package authkit
+package jwtauth
 
 import (
 	"encoding/base64"
@@ -10,35 +10,35 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"latere.ai/x/pkg/jwtauth"
+	"latere.ai/x/pkg/authkit"
 )
 
 // ── JWT.Authenticate (via fake validator) ────────────────────────────────────
 
 // fakeValidator implements the validator interface.
 type fakeValidator struct {
-	claims *jwtauth.Claims
+	claims *Claims
 	err    error
 }
 
-func (f *fakeValidator) Validate(string) (*jwtauth.Claims, error) {
+func (f *fakeValidator) Validate(string) (*Claims, error) {
 	return f.claims, f.err
 }
 
-func newJWTWithFakeValidator(v validator, ti TokenInfoLookup) *JWT {
-	return &JWT{V: v, TokenInfo: ti}
+func newJWTWithFakeValidator(v validator, ti TokenInfoLookup) *Authenticator {
+	return &Authenticator{V: v, TokenInfo: ti}
 }
 
 func TestNewJWT(t *testing.T) {
-	// NewJWT accepts a *jwtauth.Validator and *TokenInfoClient.
+	// NewAuthenticator accepts a *Validator and *TokenInfoClient.
 	// We use a nil validator to verify the constructor doesn't panic and
-	// returns a non-nil *JWT with fields wired correctly.
+	// returns a non-nil *Authenticator with fields wired correctly.
 	ti := NewTokenInfoClient("https://auth.test/tokeninfo")
-	j := NewJWT(nil, ti)
+	j := NewAuthenticator(nil, ti)
 	if j == nil {
-		t.Fatal("NewJWT returned nil")
+		t.Fatal("NewAuthenticator returned nil")
 	}
-	// V field is assigned (even if nil *jwtauth.Validator, interface holds it).
+	// V field is assigned (even if nil *Validator, interface holds it).
 	if j.TokenInfo != ti {
 		t.Fatal("TokenInfo not wired")
 	}
@@ -48,8 +48,8 @@ func TestJWTAuthenticateMissingHeader(t *testing.T) {
 	j := newJWTWithFakeValidator(&fakeValidator{}, nil)
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	_, err := j.Authenticate(r)
-	if !errors.Is(err, ErrUnauthenticated) {
-		t.Fatalf("got %v, want ErrUnauthenticated", err)
+	if !errors.Is(err, authkit.ErrUnauthenticated) {
+		t.Fatalf("got %v, want authkit.ErrUnauthenticated", err)
 	}
 }
 
@@ -65,11 +65,11 @@ func TestJWTAuthenticateValidateError(t *testing.T) {
 }
 
 func TestJWTAuthenticateLocalToken(t *testing.T) {
-	claims := &jwtauth.Claims{
+	claims := &Claims{
 		Sub:           "u-1",
 		OrgID:         "org-1",
 		Email:         "a@b.com",
-		PrincipalType: jwtauth.PrincipalUser,
+		PrincipalType: PrincipalUser,
 		IsSuperadmin:  false,
 		Scopes:        []string{"read:projects"},
 	}
@@ -89,17 +89,17 @@ func TestJWTAuthenticateLocalToken(t *testing.T) {
 	if id.TokenID != "u-1" {
 		t.Fatalf("TokenID = %q, want u-1", id.TokenID)
 	}
-	if id.AuthMethod != MethodBearer {
-		t.Fatalf("AuthMethod = %q, want %q", id.AuthMethod, MethodBearer)
+	if id.AuthMethod != authkit.MethodBearer {
+		t.Fatalf("authkit.AuthMethod = %q, want %q", id.AuthMethod, authkit.MethodBearer)
 	}
 }
 
 func TestJWTAuthenticateLocalTokenWithClientID(t *testing.T) {
-	// jwtauth.Validator populates Claims.ClientID from the verified token; the
+	// Validator populates Claims.ClientID from the verified token; the
 	// authenticator reads it directly (no second decode).
-	claims := &jwtauth.Claims{
+	claims := &Claims{
 		Sub:           "u-1",
-		PrincipalType: jwtauth.PrincipalUser,
+		PrincipalType: PrincipalUser,
 		ClientID:      "cli-abc",
 	}
 	j := newJWTWithFakeValidator(&fakeValidator{claims: claims}, nil)
@@ -114,10 +114,10 @@ func TestJWTAuthenticateLocalTokenWithClientID(t *testing.T) {
 	}
 }
 func TestJWTAuthenticateCarriesActorClaims(t *testing.T) {
-	claims := &jwtauth.Claims{
+	claims := &Claims{
 		Sub:           "u-1",
 		OrgID:         "org-1",
-		PrincipalType: jwtauth.PrincipalUser,
+		PrincipalType: PrincipalUser,
 		Kind:          "sandbox",
 		ActorID:       "sb-abc123",
 	}
@@ -139,13 +139,13 @@ func TestJWTAuthenticateCarriesActorClaims(t *testing.T) {
 }
 
 func TestJWTAuthenticateCarriesRoles(t *testing.T) {
-	// The org-scoped "roles" claim flows onto Identity.Roles so a consumer
+	// The org-scoped "roles" claim flows onto authkit.Identity.Roles so a consumer
 	// can derive org authority (e.g. an org admin holds "owner"/"admin")
 	// without a product-specific scope.
-	claims := &jwtauth.Claims{
+	claims := &Claims{
 		Sub:           "u-1",
 		OrgID:         "org-1",
-		PrincipalType: jwtauth.PrincipalUser,
+		PrincipalType: PrincipalUser,
 		Roles:         []string{"admin"},
 	}
 	j := newJWTWithFakeValidator(&fakeValidator{claims: claims}, nil)

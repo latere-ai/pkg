@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"latere.ai/x/pkg/envutil"
-	"latere.ai/x/pkg/oidc"
 )
 
 // MethodDev marks an Identity synthesized by the dev-bypass authenticator.
@@ -80,7 +79,7 @@ func NewDevAuthenticator(cfg DevConfig) (*DevAuthenticator, error) {
 		Sub:           sub,
 		OrgID:         cfg.Org,
 		Email:         cfg.Email,
-		PrincipalType: "dev",
+		PrincipalType: PrincipalDev,
 		IsSuperadmin:  cfg.IsSuperadmin,
 		Scopes:        cfg.Scopes,
 		ClientID:      "",
@@ -120,7 +119,7 @@ func DevAuthenticatorFromEnv() (*DevAuthenticator, error) {
 		Subject:      os.Getenv("AUTH_DEV_SUBJECT"),
 		Email:        os.Getenv("AUTH_DEV_EMAIL"),
 		Org:          os.Getenv("AUTH_DEV_ORG"),
-		Scopes:       oidc.SplitScopes(os.Getenv("AUTH_DEV_SCOPES")),
+		Scopes:       SplitScopes(os.Getenv("AUTH_DEV_SCOPES")),
 		IsSuperadmin: envutil.IsTruthy(os.Getenv("AUTH_DEV_SUPERADMIN")),
 		PostureHost:  postureHostFromEnv(),
 		Insecure:     envutil.IsTruthy(os.Getenv("AUTH_DEV_BYPASS_INSECURE")),

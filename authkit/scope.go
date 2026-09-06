@@ -3,7 +3,10 @@
 
 package authkit
 
-import "slices"
+import (
+	"slices"
+	"strings"
+)
 
 // HasScope returns true if the identity is permitted for the given scope.
 // The admin parameter is the product-specific admin scope that implies all
@@ -23,4 +26,24 @@ func HasScope(id Identity, want, admin string) bool {
 	return slices.ContainsFunc(id.Scopes, func(s string) bool {
 		return s == want || s == admin
 	})
+}
+
+// SplitScopes splits a space or comma delimited scope string into a deduped,
+// order-preserving slice. It is the one parser for the AUTH_SCOPES and
+// AUTH_DEV_SCOPES environment formats and for the "scope" claim.
+func SplitScopes(s string) []string {
+	parts := strings.Fields(strings.ReplaceAll(s, ",", " "))
+	out := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, p := range parts {
+		if _, dup := seen[p]; dup {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

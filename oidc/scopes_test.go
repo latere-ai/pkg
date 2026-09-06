@@ -33,26 +33,6 @@ func TestScopesFromJWT(t *testing.T) {
 	}
 }
 
-func TestSplitScopes(t *testing.T) {
-	tests := []struct {
-		in   string
-		want []string
-	}{
-		{"", nil},
-		{"   ", nil},
-		{"a b c", []string{"a", "b", "c"}},
-		{"a,b,c", []string{"a", "b", "c"}},
-		{"a b a c b", []string{"a", "b", "c"}}, // dedup, order-preserving
-	}
-	for _, tt := range tests {
-		t.Run(tt.in, func(t *testing.T) {
-			if got := SplitScopes(tt.in); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("SplitScopes(%q) = %v, want %v", tt.in, got, tt.want)
-			}
-		})
-	}
-}
-
 // TestSessionFromTokenScopesArray exercises the scopes-array branch end-to-end.
 func TestSessionFromTokenScopesArray(t *testing.T) {
 	jwt := makeRichJWT(map[string]any{"sub": "u1", "scopes": []string{"openid", "cella:admin"}})

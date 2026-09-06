@@ -50,6 +50,7 @@ import (
 
 	"golang.org/x/oauth2"
 
+	"latere.ai/x/pkg/authkit"
 	"latere.ai/x/pkg/envutil"
 )
 
@@ -188,7 +189,7 @@ func LoadConfigWithPrefix(prefix string) Config {
 		RedirectURL:     env("AUTH_REDIRECT_URL"),
 		CookieKey:       env("AUTH_COOKIE_KEY"),
 		Audience:        env("AUTH_AUDIENCE"),
-		Scopes:          SplitScopes(env("AUTH_SCOPES")),
+		Scopes:          authkit.SplitScopes(env("AUTH_SCOPES")),
 		InsecureCookies: envutil.IsTruthy(env("AUTH_INSECURE_COOKIES")),
 	}
 }

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: Apache-2.0
 
-package authkit
+package oidc
 
 import (
 	"errors"
@@ -10,15 +10,15 @@ import (
 	"testing"
 	"time"
 
-	"latere.ai/x/pkg/oidc"
+	"latere.ai/x/pkg/authkit"
 )
 
-// newSessionTestClient returns an *oidc.Client wired to a real cookie key so
+// newSessionTestClient returns an *Client wired to a real cookie key so
 // SetSession/GetSession round-trips work. The client never makes outbound
 // network calls in these tests.
-func newSessionTestClient(t *testing.T) *oidc.Client {
+func newSessionTestClient(t *testing.T) *Client {
 	t.Helper()
-	c := oidc.New(oidc.Config{
+	c := New(Config{
 		AuthURL:         "https://auth.example.test",
 		ClientID:        "test",
 		ClientSecret:    "test-secret",
@@ -28,7 +28,7 @@ func newSessionTestClient(t *testing.T) *oidc.Client {
 		CookieName:      "test-session",
 	})
 	if c == nil {
-		t.Fatal("oidc.New returned nil")
+		t.Fatal("New returned nil")
 	}
 	return c
 }
@@ -36,14 +36,14 @@ func newSessionTestClient(t *testing.T) *oidc.Client {
 func TestSessionAuthenticator_NilClient(t *testing.T) {
 	var a *SessionAuthenticator
 	_, err := a.Authenticate(httptest.NewRequest(http.MethodGet, "/", nil))
-	if !errors.Is(err, ErrUnauthenticated) {
-		t.Fatalf("nil receiver: got %v, want ErrUnauthenticated", err)
+	if !errors.Is(err, authkit.ErrUnauthenticated) {
+		t.Fatalf("nil receiver: got %v, want authkit.ErrUnauthenticated", err)
 	}
 
 	a = NewSessionAuthenticator(nil)
 	_, err = a.Authenticate(httptest.NewRequest(http.MethodGet, "/", nil))
-	if !errors.Is(err, ErrUnauthenticated) {
-		t.Fatalf("nil client: got %v, want ErrUnauthenticated", err)
+	if !errors.Is(err, authkit.ErrUnauthenticated) {
+		t.Fatalf("nil client: got %v, want authkit.ErrUnauthenticated", err)
 	}
 }
 
@@ -51,8 +51,8 @@ func TestSessionAuthenticator_NoCookie(t *testing.T) {
 	c := newSessionTestClient(t)
 	a := NewSessionAuthenticator(c)
 	_, err := a.Authenticate(httptest.NewRequest(http.MethodGet, "/", nil))
-	if !errors.Is(err, ErrUnauthenticated) {
-		t.Fatalf("no cookie: got %v, want ErrUnauthenticated", err)
+	if !errors.Is(err, authkit.ErrUnauthenticated) {
+		t.Fatalf("no cookie: got %v, want authkit.ErrUnauthenticated", err)
 	}
 }
 
@@ -62,10 +62,10 @@ func TestSessionAuthenticator_HappyPath(t *testing.T) {
 	// Write a session cookie via the real SetSession path so we exercise the
 	// same encryption that GetSession will read.
 	rec := httptest.NewRecorder()
-	sess := &oidc.Session{
+	sess := &Session{
 		AccessToken: "at-1",
 		Expiry:      time.Now().Add(1 * time.Hour),
-		User: oidc.User{
+		User: User{
 			Sub:          "u-1",
 			Email:        "u@example.test",
 			OrgID:        "org-1",
@@ -100,8 +100,8 @@ func TestSessionAuthenticator_HappyPath(t *testing.T) {
 	if id.TokenID != "u-1" {
 		t.Fatalf("TokenID = %q", id.TokenID)
 	}
-	if id.AuthMethod != MethodCookie {
-		t.Fatalf("AuthMethod = %q, want %q", id.AuthMethod, MethodCookie)
+	if id.AuthMethod != authkit.MethodCookie {
+		t.Fatalf("authkit.AuthMethod = %q, want %q", id.AuthMethod, authkit.MethodCookie)
 	}
 	if len(id.Roles) != 1 || id.Roles[0] != "admin" {
 		t.Fatalf("Roles = %v, want [admin]", id.Roles)
@@ -114,8 +114,8 @@ func TestSessionAuthenticator_TamperedCookie(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: "test-session", Value: "not-base64-or-garbage"})
 	a := NewSessionAuthenticator(c)
 	_, err := a.Authenticate(req)
-	if !errors.Is(err, ErrUnauthenticated) {
-		t.Fatalf("tampered cookie: got %v, want ErrUnauthenticated", err)
+	if !errors.Is(err, authkit.ErrUnauthenticated) {
+		t.Fatalf("tampered cookie: got %v, want authkit.ErrUnauthenticated", err)
 	}
 }
 
@@ -123,26 +123,26 @@ func TestSessionAuthenticator_RejectsInvalidLifecycle(t *testing.T) {
 	now := time.Now()
 	tests := []struct {
 		name string
-		sess oidc.Session
+		sess Session
 	}{
 		{
 			name: "empty subject",
-			sess: oidc.Session{Expiry: now.Add(time.Hour)},
+			sess: Session{Expiry: now.Add(time.Hour)},
 		},
 		{
 			name: "missing access token expiry",
-			sess: oidc.Session{User: oidc.User{Sub: "u-1"}},
+			sess: Session{User: User{Sub: "u-1"}},
 		},
 		{
 			name: "expired access token",
-			sess: oidc.Session{Expiry: now.Add(-time.Minute), User: oidc.User{Sub: "u-1"}},
+			sess: Session{Expiry: now.Add(-time.Minute), User: User{Sub: "u-1"}},
 		},
 		{
 			name: "expired session window",
-			sess: oidc.Session{
+			sess: Session{
 				Expiry:        now.Add(time.Hour),
 				SessionExpiry: now.Add(-time.Minute),
-				User:          oidc.User{Sub: "u-1"},
+				User:          User{Sub: "u-1"},
 			},
 		},
 	}
@@ -156,8 +156,8 @@ func TestSessionAuthenticator_RejectsInvalidLifecycle(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			req.AddCookie(rec.Result().Cookies()[0])
 			_, err := NewSessionAuthenticator(c).Authenticate(req)
-			if !errors.Is(err, ErrUnauthenticated) {
-				t.Fatalf("Authenticate error = %v, want ErrUnauthenticated", err)
+			if !errors.Is(err, authkit.ErrUnauthenticated) {
+				t.Fatalf("Authenticate error = %v, want authkit.ErrUnauthenticated", err)
 			}
 		})
 	}
