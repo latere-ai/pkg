@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.56.0 - 2026-09-06
+
 ### Changed
 
 The module is licensed under Apache-2.0. The root `LICENSE` said MIT while
