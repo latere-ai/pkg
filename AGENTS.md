@@ -28,6 +28,18 @@ Every package in this repo must meet these requirements:
 - Do not add test-only dependencies — use `net/http/httptest`, `errors`, etc. from stdlib.
 - When adding a new direct dependency, justify it.
 
+## Before writing a package
+
+Check this module first. A generic package with a plausible second
+consumer is written here first, at this module's bar, and consumed from
+here; a product's `internal/` holds only what is specific to that
+product. Extraction happens when the second consumer appears, not later:
+the third copy is the one that drifts. What "generic" means in practice:
+an S3 client, a metrics registry, an error envelope, a probe surface, a
+retry loop, a host allow-list, a cancellable sleep. What stays in a
+product: its error codes, its contract header, its store interface, its
+configuration.
+
 ## Writing
 
 Every sentence is written for one reader, and the register follows the
