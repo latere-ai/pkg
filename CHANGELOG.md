@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.53.0 - 2026-09-06
+
 The three auth packages are now one tree under `authkit`, with one
 principal type. Update imports, then the handful of renamed symbols below.
 Every browser session logs in again once after the relying party deploys.
