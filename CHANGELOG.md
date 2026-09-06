@@ -27,6 +27,14 @@ edits.
   held in `Secret`. `Map.SubstituteValueContext` runs resolvers and returns
   their error with the value unchanged; the context-free `SubstituteValue`
   skips such entries and leaves their placeholders as they are.
+- `egress.OAuthClientCredentials`: the built-in resolver, the RFC 6749
+  client_credentials grant from a token URL, client id and secret, and an
+  optional scope and audience. It caches the token per entry, refreshes
+  `Skew` (default 30 s) ahead of expiry, shares one in-flight mint between
+  concurrent callers, serves a still-valid token when a refresh fails, and
+  returns `ErrNoValidToken` when nothing valid is cached. `HTTPClient`,
+  `Now`, and `MintTimeout` are injectable. The resolved value is the bare
+  token: the request already carries the "Bearer " around the placeholder.
 - `egress.NewMapStrict`: `NewMap` that also returns the entries it dropped as
   `DroppedEntry` values wrapping `ErrEmptyPlaceholder`, `ErrNoAllowedHosts`,
   or `ErrSecretLineBreak`.
