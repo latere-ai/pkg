@@ -232,11 +232,17 @@ func (g *Gateway) mitm(ctx context.Context, client net.Conn, hostport string, m 
 // forward substitutes placeholders in req (scoped to host) and round-trips it to
 // the real upstream over the shared transport. The HTTP/1.1 loop and each HTTP/2
 // stream both call it, so the substitution core is identical across framings.
+// A substitution error (a resolver that could not produce a secret) fails the
+// request before it leaves, so a placeholder meant to be replaced is never
+// sent upstream.
 func (g *Gateway) forward(host, hostport string, req *http.Request, m *Map) (*http.Response, error) {
 	req.URL.Scheme = "https"
 	req.URL.Host = hostport
 	req.RequestURI = ""
-	SubstituteHTTPRequest(host, req, m)
+	if _, err := SubstituteHTTPRequestContext(req.Context(), host, req, m); err != nil {
+		g.log().WarnContext(req.Context(), "egress substitute", "host", host, "err", err)
+		return nil, err
+	}
 	return g.tr().RoundTrip(req)
 }
 

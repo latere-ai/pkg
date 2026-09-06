@@ -57,6 +57,9 @@ edits.
   rewrite Content-Length, Transfer-Encoding, TE, Trailer, Connection,
   Keep-Alive, Upgrade, Proxy-Connection, Proxy-Authorization, or any
   X-Forwarded-* header.
+- `egress.Gateway` substitutes through `SubstituteHTTPRequestContext`, so a
+  resolver that cannot produce a secret answers 502 instead of forwarding
+  the placeholder.
 
 ## v0.55.0 - 2026-09-06
 
