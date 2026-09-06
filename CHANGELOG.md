@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.57.0 - 2026-09-06
+
 The egress ingest wire format carries the v0.56.0 features, so a control
 plane that pushes maps over HTTP can use dynamic credentials and body
 substitution. Every existing body decodes exactly as before.
