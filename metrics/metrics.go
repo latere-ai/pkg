@@ -179,6 +179,19 @@ func (c *Counter) Add(labels map[string]string, delta uint64) {
 	c.mu.Unlock()
 }
 
+// Value reports the counter for the given label set, zero when it has
+// never been incremented. A test reads a counter through it rather than
+// by parsing the exposition.
+func (c *Counter) Value(labels map[string]string) uint64 {
+	key := canonicalLabelKey(labels)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if cell, ok := c.obs[key]; ok {
+		return cell.value
+	}
+	return 0
+}
+
 // writeTo writes the counter family (HELP, TYPE, and all series) to w.
 func (c *Counter) writeTo(w io.Writer) {
 	_, _ = fmt.Fprintf(w, "# HELP %s %s\n", c.name, c.help)
@@ -262,6 +275,18 @@ func (h *Histogram) Observe(labels map[string]string, value float64) {
 	cell.sum += value
 	cell.count++
 	h.mu.Unlock()
+}
+
+// Count reports the number of observations for the given label set, zero
+// when there has been none.
+func (h *Histogram) Count(labels map[string]string) uint64 {
+	key := canonicalLabelKey(labels)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if cell, ok := h.obs[key]; ok {
+		return cell.count
+	}
+	return 0
 }
 
 // writeTo writes the histogram family (HELP, TYPE, buckets, sum, count) to w.

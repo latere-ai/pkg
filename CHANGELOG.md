@@ -12,6 +12,9 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Added
 
+- `metrics.Counter.Value` and `metrics.Histogram.Count` read a series
+  back by label set, so a test asserts on a counter without parsing the
+  exposition.
 - `health`, the probe surface every service serves on its internal
   listener: `/livez`, `/readyz`, `/version`, and `/metrics` where the
   service has some. `Handler(Options{Ready, Timeout, Metrics, Version,

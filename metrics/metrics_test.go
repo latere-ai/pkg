@@ -551,3 +551,26 @@ func TestRegistry_ScrapeConcurrentWithWrites(_ *testing.T) {
 	}()
 	wg.Wait()
 }
+
+func TestValueAndCountReadBackWhatWasRecorded(t *testing.T) {
+	reg := NewRegistry()
+	c := reg.Counter("pushes_total", "pushes")
+	if c.Value(nil) != 0 || c.Value(map[string]string{"k": "v"}) != 0 {
+		t.Fatal("a fresh counter is not zero")
+	}
+	c.Inc(nil)
+	c.Add(map[string]string{"k": "v"}, 2)
+	if c.Value(nil) != 1 || c.Value(map[string]string{"k": "v"}) != 2 || c.Value(map[string]string{"k": "w"}) != 0 {
+		t.Fatalf("values %d %d", c.Value(nil), c.Value(map[string]string{"k": "v"}))
+	}
+	h := reg.Histogram("latency_seconds", "latency", []float64{1})
+	if h.Count(nil) != 0 {
+		t.Fatal("a fresh histogram has observations")
+	}
+	h.Observe(nil, 0.5)
+	h.Observe(nil, 2)
+	h.Observe(map[string]string{"k": "v"}, 3)
+	if h.Count(nil) != 2 || h.Count(map[string]string{"k": "v"}) != 1 {
+		t.Fatalf("counts %d %d", h.Count(nil), h.Count(map[string]string{"k": "v"}))
+	}
+}
