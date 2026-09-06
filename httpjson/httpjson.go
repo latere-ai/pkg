@@ -3,6 +3,14 @@
 
 // Package httpjson provides helpers for decoding JSON request bodies and
 // writing JSON responses in HTTP handlers.
+//
+// The bodies this package writes on its own (a 400 for a malformed request,
+// a 413 for an oversized one, a 500 for a value that does not marshal) are
+// read by whoever called the API. A service that renders its own error
+// envelope through [Write] keeps the user sentence in message, fixed per
+// code, and the developer detail in a separate field: see
+// docs/writing/registers.md at the module root for the rule and the
+// review checklist.
 package httpjson
 
 import (
