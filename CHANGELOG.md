@@ -17,6 +17,26 @@ a release tag without a section through `lateregate prepush`, and the
 release workflow publishes through `notes-release.yml` in latere-ai/ci.
 The two shell scripts under `.github/scripts` are gone.
 
+`egress` gains dynamic credentials, opt-in body substitution, and a stricter
+header rule. Every change is additive: a consumer on v0.55.0 upgrades without
+edits.
+
+### Added
+
+- `egress.Entry.Resolve`: a secret produced at substitution time instead of
+  held in `Secret`. `Map.SubstituteValueContext` runs resolvers and returns
+  their error with the value unchanged; the context-free `SubstituteValue`
+  skips such entries and leaves their placeholders as they are.
+- `egress.NewMapStrict`: `NewMap` that also returns the entries it dropped as
+  `DroppedEntry` values wrapping `ErrEmptyPlaceholder`, `ErrNoAllowedHosts`,
+  or `ErrSecretLineBreak`.
+
+### Changed
+
+- `egress.NewMap` drops a static secret containing CR or LF, and a resolved
+  secret with a line break fails the substitution with `ErrSecretLineBreak`:
+  a line break in a header value is a header injection.
+
 ## v0.55.0 - 2026-09-06
 
 `dag` gains the two operations its one consumer was hand-rolling beside it,
