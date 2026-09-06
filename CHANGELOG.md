@@ -10,6 +10,26 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+`dag` gains the two operations its one consumer was hand-rolling beside it,
+and the one-function `registry` package folds into `uniq`.
+
+### Added
+
+- `dag.TopoSort` and `dag.TopoSortFunc`: Kahn topological sort with a
+  deterministic tie-break, so the order depends on the input alone. On a
+  cycle the result holds the nodes that could still be ordered and the
+  error is `dag.ErrCycle`.
+- `dag.LongestPath`: the number of nodes on the longest path from a start
+  node, memoised, for critical-path scoring.
+- `uniq.Merge`: base followed by extra with every key unique, or an error
+  wrapping `uniq.ErrDuplicate` that names the repeated key.
+
+### Removed
+
+- `registry`. Replace `registry.MergeUnique(kind, builtins, user, slugOf, mark)`
+  with `uniq.Merge(builtins, user, slugOf)`. Apply `mark` to a clone of
+  `builtins` before the call and wrap the error with `kind` at the call site.
+
 ## v0.54.0 - 2026-09-06
 
 The egress credential-substitution engine is now a shared package, so a

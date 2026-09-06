@@ -99,7 +99,7 @@ second service needed the same thing.
 | [`cache`](cache/) | Generic TTL cache with a bounded LRU cap over every entry and an injectable clock |
 | [`circuitbreaker`](circuitbreaker/) | Trip-on-failure gate that stops hammering a dependency that is already down |
 | [`cmdexec`](cmdexec/) | Fluent subprocess builder and a transactional sequencer that rolls back completed steps when a later one fails |
-| [`dag`](dag/) | Topological ordering with cycle detection |
+| [`dag`](dag/) | Adjacency-list graph operations: deterministic topological sort, cycle detection, reachability, longest path, edge reversal |
 | [`dircp`](dircp/) | Recursive directory copy |
 | [`envutil`](envutil/) | Typed environment reads with defaults: integers, bounded integers, durations, and the conventional boolean spellings |
 | [`gitutil`](gitutil/) | The git CLI behind structured results and typed errors: worktrees, rebase with conflict recovery, stashes, branch discovery |
@@ -109,7 +109,6 @@ second service needed the same thing.
 | [`ndjson`](ndjson/) | NDJSON file reading and appending, plus the terminal-result scan agent output parsers need |
 | [`pagination`](pagination/) | Cursor pagination helpers |
 | [`pubsub`](pubsub/) | In-process topic fanout with per-subscriber buffering |
-| [`registry`](registry/) | Generic slug-keyed registry |
 | [`relpath`](relpath/) | Traversal-safe relative paths: validate, join under a base, and symlink-aware containment |
 | [`retry`](retry/) | Bounded exponential backoff with jitter and a driver that runs a function under it |
 | [`routine`](routine/) | Periodic fire-and-forget callbacks keyed by UUID, one timer each, with an injectable clock |
@@ -118,7 +117,7 @@ second service needed the same thing.
 | [`syncmap`](syncmap/) | Type-safe `sync.Map`, with `LoadOrStore` for the per-key mutex idiom |
 | [`trackedwg`](trackedwg/) | Wait group that reports what is still outstanding |
 | [`tree`](tree/) | Generic tree construction and rendering |
-| [`uniq`](uniq/) | Order-preserving deduplication, with a trim-and-drop-empties form for string lists |
+| [`uniq`](uniq/) | Order-preserving deduplication, with a trim-and-drop-empties form for string lists, and a catalog merge that rejects a repeated key instead of dropping it |
 | [`wait`](wait/) | Cancellable sleep, ticker loop, and poll; `wait/waittest` polls a condition in a test until it holds |
 | [`watcher`](watcher/) | Filesystem change notification with debouncing |
 
