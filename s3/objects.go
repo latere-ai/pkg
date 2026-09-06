@@ -21,6 +21,10 @@ type Object struct {
 	// ETag as the provider sent it, quotes included where it sends them.
 	ETag         string
 	LastModified time.Time
+	// ContentType is what the provider answered on GET or HEAD: the one
+	// the upload carried, or the provider's default. A listing does not
+	// carry it.
+	ContentType string
 }
 
 // ListOptions selects one page of keys.
@@ -99,7 +103,7 @@ func (c *Client) HeadObject(ctx context.Context, key string) (Object, error) {
 }
 
 func objectFrom(key string, resp *http.Response) Object {
-	o := Object{Key: key, ETag: resp.Header.Get("ETag")}
+	o := Object{Key: key, ETag: resp.Header.Get("ETag"), ContentType: resp.Header.Get("Content-Type")}
 	if n, err := strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64); err == nil {
 		o.Size = n
 	}

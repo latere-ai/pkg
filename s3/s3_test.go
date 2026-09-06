@@ -97,6 +97,35 @@ func runPrimitives(t *testing.T, newClient func(t *testing.T) *s3.Client) {
 		}
 	})
 
+	t.Run("content type is sent on put and create and answered on get and head", func(t *testing.T) {
+		c := newClient(t)
+		typed := s3.BytesBody([]byte("{}"))
+		typed.ContentType = "application/json"
+		if _, err := c.PutObject(ctx, "put", typed); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c.CreateObject(ctx, "create", typed); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c.PutObject(ctx, "plain", s3.BytesBody([]byte("{}"))); err != nil {
+			t.Fatal(err)
+		}
+		for key, want := range map[string]string{"put": "application/json", "create": "application/json", "plain": s3test.DefaultContentType} {
+			h, err := c.HeadObject(ctx, key)
+			if err != nil || h.ContentType != want {
+				t.Errorf("head %s: %q, %v, want %q", key, h.ContentType, err, want)
+			}
+			rc, o, err := c.GetObject(ctx, key, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = rc.Close()
+			if o.ContentType != want {
+				t.Errorf("get %s: %q, want %q", key, o.ContentType, want)
+			}
+		}
+	})
+
 	t.Run("conditional get answers 304 for the current etag and 200 for a stale one", func(t *testing.T) {
 		c := newClient(t)
 		etag, err := c.CreateObject(ctx, "k", s3.BytesBody([]byte("body")))
@@ -458,3 +487,80 @@ func TestPresignedPutIsBoundToItsContentLength(t *testing.T) {
 		t.Fatalf("presigned put of another length: %d, %d reports", resp.StatusCode, rec.errors)
 	}
 }
+
+// A Content-Type of any shape either reaches the store and comes back on
+// HEAD as sent, or is refused by the transport before it is sent. Go's
+// transport refuses a value with a control byte, and the server side
+// trims the spaces and tabs around a value, so those are the two
+// departures from identity the fuzz allows.
+func FuzzContentTypeRoundTrip(f *testing.F) {
+	f.Add("text/plain")
+	f.Add("  application/json; charset=utf-8\t")
+	f.Add("")
+	f.Add(" ")
+	f.Add("a\nb")
+	f.Add("\xc2\x85x")
+	tb := &fuzzTB{TB: f}
+	c := s3test.New(tb, "b").Client(true)
+	f.Fuzz(func(t *testing.T, ct string) {
+		tb.enter(t)
+		defer tb.leave()
+		body := s3.BytesBody([]byte("v"))
+		body.ContentType = ct
+		_, err := c.PutObject(context.Background(), "k", body)
+		if !validHeaderValue(ct) {
+			if err == nil {
+				t.Fatalf("Content-Type %q with a control byte was sent", ct)
+			}
+			return
+		}
+		if err != nil {
+			t.Fatalf("put with Content-Type %q: %v", ct, err)
+		}
+		want := strings.Trim(ct, " \t")
+		if want == "" {
+			want = s3test.DefaultContentType
+		}
+		h, err := c.HeadObject(context.Background(), "k")
+		if err != nil || h.ContentType != want {
+			t.Fatalf("head after Content-Type %q: %q, %v, want %q", ct, h.ContentType, err, want)
+		}
+	})
+}
+
+// validHeaderValue is the transport's rule: any byte but a control
+// character other than tab.
+func validHeaderValue(v string) bool {
+	for i := range len(v) {
+		if b := v[i]; b < ' ' && b != '\t' || b == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+// fuzzTB is one server for a whole fuzz function: a listener per input
+// exhausts the ephemeral ports. Setup runs on the F; a report from
+// inside the fuzz target reaches the input's own T, since an F refuses
+// to fail from there.
+type fuzzTB struct {
+	testing.TB
+	mu  sync.Mutex
+	cur testing.TB
+}
+
+func (w *fuzzTB) enter(t testing.TB) { w.mu.Lock(); w.cur = t; w.mu.Unlock() }
+func (w *fuzzTB) leave()             { w.mu.Lock(); w.cur = nil; w.mu.Unlock() }
+
+func (w *fuzzTB) target() testing.TB {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.cur != nil {
+		return w.cur
+	}
+	return w.TB
+}
+
+func (w *fuzzTB) Helper()                        {}
+func (w *fuzzTB) Errorf(format string, a ...any) { w.target().Errorf(format, a...) }
+func (w *fuzzTB) Fatal(a ...any)                 { w.target().Fatal(a...) }

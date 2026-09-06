@@ -10,6 +10,17 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `s3.Body.ContentType` is sent as `Content-Type` on `PutObject` and
+  `CreateObject` and signed with the request; `s3.Object.ContentType` is
+  what `GetObject` and `HeadObject` read back. An empty field sends no
+  header, as before, and the store answers its own default. `s3test`
+  keeps the type a PUT carried, answers it on GET and HEAD, stores
+  `s3test.DefaultContentType` (`application/octet-stream`, as MinIO does)
+  for a PUT without one, and adds `ContentType(key)` and
+  `PutWithContentType` for a consumer's assertions and seeds.
+
 ## v0.58.0 - 2026-09-06
 
 ### Added

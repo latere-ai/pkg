@@ -27,6 +27,10 @@ type Body struct {
 	// refuses a body that does not match it, so a corrupted upload fails
 	// instead of landing.
 	MD5 string
+	// ContentType is sent as Content-Type when set and signed with the
+	// request; the store keeps it and answers it on GET and HEAD. Empty
+	// sends no header, and the store records its own default.
+	ContentType string
 }
 
 // BytesBody wraps content held in memory, with both digests.

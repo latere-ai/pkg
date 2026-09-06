@@ -184,6 +184,9 @@ func (c *Client) once(ctx context.Context, r request) (*http.Response, error) {
 		if r.body.MD5 != "" {
 			req.Header.Set("Content-MD5", r.body.MD5)
 		}
+		if r.body.ContentType != "" {
+			req.Header.Set("Content-Type", r.body.ContentType)
+		}
 	}
 	for k, v := range r.headers {
 		req.Header.Set(k, v)
