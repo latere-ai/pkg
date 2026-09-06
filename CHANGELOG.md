@@ -10,6 +10,32 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+The egress credential-substitution engine is now a shared package, so a
+second front door can be built on the same core, and the host allow-list rule
+it scopes secrets by is its own package.
+
+### Added
+
+- `egress`: credential substitution at an egress boundary. A workload holds
+  an opaque placeholder (`MintPlaceholder`, `IsPlaceholder`); the engine
+  (`Map`, `NewMap`, `Map.SubstituteValue`, `Map.HostHasSecret`,
+  `SubstituteHTTPRequest`) swaps it for the real secret only toward the hosts
+  the credential is scoped to. `Registry` holds one map per principal;
+  `IngestHandler` and `DecodeIngestBody` fill it over the control-plane API,
+  and `Client` is the matching caller with per-replica fan-out
+  (`PushMapAllReplicas`, `PurgeMapAllReplicas`). `RePusher` keeps every
+  replica warm from a `PrincipalLister`, `PlaceholderReader`,
+  `SecretResolver`, and `MapPusher`. `TokenAuth` verifies the proxy JWT
+  against a JWKS with `TokenAuthOptions`: the required `Audience`, an optional
+  `Scope` and `Kind`, and `SubjectClaim`, the claim that names the principal
+  (default `sub`). `Gateway` is the TLS-terminating CONNECT proxy on top,
+  with `Realm` for its 407 challenge, and `CA` mints the per-SNI leaves
+  (`GenerateCA(commonName)`, `LoadCA`, `CA.CertPEM`). Every piece below
+  `Gateway` works without it.
+- `hostmatch`: the one host allow-list rule every egress surface shares.
+  `New(patterns, normalize)` compiles exact FQDNs and `*.`-prefixed wildcards
+  into a `Matcher`; `ValidPattern` is the grammar.
+
 ## v0.53.0 - 2026-09-06
 
 The three auth packages are now one tree under `authkit`, with one
