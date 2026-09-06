@@ -249,3 +249,55 @@ func TestListingAndConditionalReadsMatchTheProviders(t *testing.T) {
 		t.Fatalf("delete: %v, %v", err, s.Keys())
 	}
 }
+
+func TestContentTypeIsStoredAndAnswered(t *testing.T) {
+	s := New(t, "b")
+	hc := s.HTTPClient()
+	put := func(key, ct string) {
+		t.Helper()
+		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, s.URL()+"/b/"+key, strings.NewReader("v"))
+		req.ContentLength = 1
+		if ct != "" {
+			req.Header.Set("Content-Type", ct)
+		}
+		s.signer.Sign(req, "UNSIGNED-PAYLOAD", time.Now())
+		resp, err := hc.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("PUT %s: %d", key, resp.StatusCode)
+		}
+	}
+	put("typed", "image/png")
+	put("plain", "")
+	s.Put("seeded", []byte("v"))
+	s.PutWithContentType("seeded-typed", []byte("v"), "text/csv")
+	for key, want := range map[string]string{"typed": "image/png", "plain": DefaultContentType, "seeded": DefaultContentType, "seeded-typed": "text/csv"} {
+		if got, ok := s.ContentType(key); !ok || got != want {
+			t.Errorf("%s: stored %q %v, want %q", key, got, ok, want)
+		}
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			req, _ := http.NewRequestWithContext(context.Background(), method, s.URL()+"/b/"+key, nil)
+			s.signer.Sign(req, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", time.Now())
+			resp, err := hc.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = resp.Body.Close()
+			if got := resp.Header.Get("Content-Type"); got != want {
+				t.Errorf("%s %s: Content-Type %q, want %q", method, key, got, want)
+			}
+		}
+	}
+	if _, ok := s.ContentType("absent"); ok {
+		t.Error("absent key has a content type")
+	}
+	if n := len(s.Requests()); n != 10 {
+		t.Fatalf("%d requests", n)
+	}
+	if got := s.Requests()[0].Header.Get("Content-Type"); got != "image/png" {
+		t.Fatalf("recorded PUT header %q", got)
+	}
+}

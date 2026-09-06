@@ -19,6 +19,10 @@
 // presigned URL is refused after it expires. A verification failure is
 // reported on the test and answered with the status the provider would
 // send.
+//
+// An object keeps the Content-Type its PUT carried and answers it on GET
+// and HEAD. A PUT without one stores [DefaultContentType], the way MinIO
+// does, so a consumer's test reads back what a provider would send.
 package s3test
 
 import (
@@ -49,6 +53,9 @@ const (
 	Region = "us-east-1"
 )
 
+// DefaultContentType is stored for a PUT that carries no Content-Type.
+const DefaultContentType = "application/octet-stream"
+
 // Server is one bucket behind an httptest listener.
 type Server struct {
 	t      testing.TB
@@ -65,9 +72,10 @@ type Server struct {
 }
 
 type object struct {
-	data     []byte
-	etag     string
-	modified time.Time
+	data        []byte
+	etag        string
+	contentType string
+	modified    time.Time
 }
 
 // Request is one request the server saw.
@@ -159,11 +167,17 @@ func (s *Server) Count(method string) int {
 	return n
 }
 
-// Put seeds key with data, bypassing the wire.
+// Put seeds key with data under DefaultContentType, bypassing the wire.
 func (s *Server) Put(key string, data []byte) {
+	s.PutWithContentType(key, data, "")
+}
+
+// PutWithContentType seeds key with data and contentType, bypassing the
+// wire. An empty contentType stores DefaultContentType.
+func (s *Server) PutWithContentType(key string, data []byte, contentType string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.store(key, data)
+	s.store(key, data, contentType)
 }
 
 // Get reads key, bypassing the wire.
@@ -172,6 +186,15 @@ func (s *Server) Get(key string) ([]byte, bool) {
 	defer s.mu.Unlock()
 	o, ok := s.objects[key]
 	return append([]byte(nil), o.data...), ok
+}
+
+// ContentType reports the Content-Type stored for key, and whether the
+// key exists. It is what a GET or HEAD of the key answers.
+func (s *Server) ContentType(key string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	o, ok := s.objects[key]
+	return o.contentType, ok
 }
 
 // Keys reports every key in lexical order.
@@ -190,10 +213,13 @@ func (s *Server) sortedKeys() []string {
 	return keys
 }
 
-func (s *Server) store(key string, data []byte) string {
+func (s *Server) store(key string, data []byte, contentType string) string {
 	sum := md5.Sum(data) //nolint:gosec // ETag
 	etag := `"` + hex.EncodeToString(sum[:]) + `"`
-	s.objects[key] = object{data: data, etag: etag, modified: s.now()}
+	if contentType == "" {
+		contentType = DefaultContentType
+	}
+	s.objects[key] = object{data: data, etag: etag, contentType: contentType, modified: s.now()}
 	return etag
 }
 
@@ -297,7 +323,7 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, key string) {
 		s.refuse(w, http.StatusPreconditionFailed, "PreconditionFailed", "At least one of the pre-conditions you specified did not hold")
 		return
 	}
-	w.Header().Set("ETag", s.store(key, data))
+	w.Header().Set("ETag", s.store(key, data, r.Header.Get("Content-Type")))
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -316,6 +342,7 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request, key string) {
 	w.Header().Set("ETag", o.etag)
 	w.Header().Set("Last-Modified", o.modified.UTC().Format(http.TimeFormat))
 	w.Header().Set("Content-Length", strconv.Itoa(len(o.data)))
+	w.Header().Set("Content-Type", o.contentType)
 	w.WriteHeader(http.StatusOK)
 	if r.Method == http.MethodGet {
 		_, _ = io.Copy(w, bytes.NewReader(o.data))
