@@ -4,6 +4,7 @@
 package uniq
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -85,4 +86,67 @@ func FuzzStrings(f *testing.F) {
 			t.Fatalf("%q is not a subsequence of trimmed %q", out, in)
 		}
 	})
+}
+
+type catalogItem struct{ Slug string }
+
+func TestMerge(t *testing.T) {
+	slug := func(i catalogItem) string { return i.Slug }
+	tests := []struct {
+		name    string
+		base    []catalogItem
+		extra   []catalogItem
+		want    []string
+		wantDup string // key named in the error, empty for success
+	}{
+		{"both empty", nil, nil, []string{}, ""},
+		{"base only", []catalogItem{{"a"}, {"b"}}, nil, []string{"a", "b"}, ""},
+		{"extra only", nil, []catalogItem{{"c"}}, []string{"c"}, ""},
+		{"base then extra", []catalogItem{{"a"}, {"b"}}, []catalogItem{{"c"}}, []string{"a", "b", "c"}, ""},
+		{"extra shadows base", []catalogItem{{"a"}}, []catalogItem{{"a"}}, nil, "a"},
+		{"repeat within extra", []catalogItem{{"a"}}, []catalogItem{{"b"}, {"b"}}, nil, "b"},
+		{"repeat within base", []catalogItem{{"a"}, {"a"}}, nil, nil, "a"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := Merge(tc.base, tc.extra, slug)
+			if tc.wantDup != "" {
+				if !errors.Is(err, ErrDuplicate) {
+					t.Fatalf("err = %v, want ErrDuplicate", err)
+				}
+				if !strings.Contains(err.Error(), tc.wantDup) {
+					t.Errorf("err = %q, want it to name %q", err, tc.wantDup)
+				}
+				if got != nil {
+					t.Errorf("result = %v, want nil on error", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Merge: %v", err)
+			}
+			if got == nil {
+				t.Fatal("result is nil, want a non-nil slice")
+			}
+			slugs := make([]string, len(got))
+			for i, v := range got {
+				slugs[i] = v.Slug
+			}
+			if !slices.Equal(slugs, tc.want) {
+				t.Errorf("order = %v, want %v", slugs, tc.want)
+			}
+		})
+	}
+}
+
+func TestMergeDoesNotAliasInput(t *testing.T) {
+	base := []int{1, 2}
+	got, err := Merge(base, []int{3}, func(v int) int { return v })
+	if err != nil {
+		t.Fatal(err)
+	}
+	got[0] = 99
+	if base[0] != 1 {
+		t.Error("Merge result aliases base")
+	}
 }

@@ -6,7 +6,11 @@
 // duplicates only, and sorting first destroys an order the caller chose.
 package uniq
 
-import "strings"
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
 
 // Of returns the elements of s without duplicates. The first occurrence of
 // each value is kept and the order is preserved. The result is a new,
@@ -58,4 +62,29 @@ func Normalized(s []string, norm func(string) string) []string {
 		out = append(out, v)
 	}
 	return out
+}
+
+// ErrDuplicate is the error [Merge] wraps when a key repeats.
+var ErrDuplicate = errors.New("uniq: duplicate key")
+
+// Merge returns base followed by extra, in order, when every key across
+// both is unique. A repeated key, whether an element of extra shadowing one
+// of base or a repeat within either slice, is an error wrapping
+// [ErrDuplicate] and naming the key. Merge does not deduplicate: it is for a
+// catalog where a collision is a mistake the caller must surface, such as a
+// user-authored item shadowing a built-in one.
+func Merge[T any, K comparable](base, extra []T, key func(T) K) ([]T, error) {
+	seen := make(map[K]struct{}, len(base)+len(extra))
+	out := make([]T, 0, len(base)+len(extra))
+	for _, s := range [][]T{base, extra} {
+		for _, v := range s {
+			k := key(v)
+			if _, dup := seen[k]; dup {
+				return nil, fmt.Errorf("%w: %v", ErrDuplicate, k)
+			}
+			seen[k] = struct{}{}
+			out = append(out, v)
+		}
+	}
+	return out, nil
 }
