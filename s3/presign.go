@@ -17,16 +17,35 @@ func (c *Client) PresignGet(key string, expires time.Duration) (string, error) {
 	return c.presign(http.MethodGet, key, expires, nil)
 }
 
+// PresignOption binds one more header into a presigned PUT's signature.
+type PresignOption func(headers map[string]string)
+
+// WithContentType binds Content-Type into the signature the way
+// Content-Length is: the upload must carry exactly this type or the
+// store refuses it. Empty binds nothing.
+func WithContentType(contentType string) PresignOption {
+	return func(headers map[string]string) {
+		if contentType != "" {
+			headers["Content-Type"] = contentType
+		}
+	}
+}
+
 // PresignPut returns a URL that writes key without a credential for
 // expires from now, bound to a body of exactly contentLength bytes: the
 // Content-Length header is in the signature, so a PUT of another size is
 // refused by the store. That is what lets a service hand a client the
-// URL for one upload it has already accounted for.
-func (c *Client) PresignPut(key string, expires time.Duration, contentLength int64) (string, error) {
+// URL for one upload it has already accounted for. [WithContentType]
+// binds the type the same way, so the URL also pins what the object is.
+func (c *Client) PresignPut(key string, expires time.Duration, contentLength int64, opts ...PresignOption) (string, error) {
 	if contentLength < 0 {
 		return "", errors.New("s3: presign put: content length is negative")
 	}
-	return c.presign(http.MethodPut, key, expires, map[string]string{"Content-Length": strconv.FormatInt(contentLength, 10)})
+	headers := map[string]string{"Content-Length": strconv.FormatInt(contentLength, 10)}
+	for _, o := range opts {
+		o(headers)
+	}
+	return c.presign(http.MethodPut, key, expires, headers)
 }
 
 func (c *Client) presign(method, key string, expires time.Duration, headers map[string]string) (string, error) {

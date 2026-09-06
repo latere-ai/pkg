@@ -20,6 +20,10 @@ under **Removed** or **Changed** with what to do about it.
   `s3test.DefaultContentType` (`application/octet-stream`, as MinIO does)
   for a PUT without one, and adds `ContentType(key)` and
   `PutWithContentType` for a consumer's assertions and seeds.
+- `s3.WithContentType` on `PresignPut` binds `Content-Type` into the
+  signature the way `Content-Length` is, so a presigned upload is refused
+  unless it carries that type. `PresignPut` takes the option variadically;
+  every existing call is unchanged.
 
 ## v0.58.0 - 2026-09-06
 

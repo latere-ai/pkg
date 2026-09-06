@@ -488,6 +488,55 @@ func TestPresignedPutIsBoundToItsContentLength(t *testing.T) {
 	}
 }
 
+func TestPresignedPutWithContentTypeIsBoundToIt(t *testing.T) {
+	rec := &recorder{TB: t}
+	f := s3test.New(rec, "b")
+	c := f.Client(true)
+	put, err := c.PresignPut("k", time.Minute, 5, s3.WithContentType("image/png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(put, "X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost") {
+		t.Fatalf("signed headers: %s", put)
+	}
+	hc := &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()}
+	send := func(ct string) int {
+		t.Helper()
+		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, put, strings.NewReader("hello"))
+		req.ContentLength = 5
+		if ct != "" {
+			req.Header.Set("Content-Type", ct)
+		}
+		resp, err := hc.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+	if code := send("image/jpeg"); code != 403 {
+		t.Fatalf("another type: %d", code)
+	}
+	if code := send(""); code != 403 {
+		t.Fatalf("no type: %d", code)
+	}
+	if rec.errors != 2 {
+		t.Fatalf("%d reports, want 2", rec.errors)
+	}
+	if code := send("image/png"); code != 200 {
+		t.Fatalf("the bound type: %d", code)
+	}
+	if ct, ok := f.ContentType("k"); !ok || ct != "image/png" {
+		t.Fatalf("stored %q %v", ct, ok)
+	}
+	// An empty option binds nothing: the URL is the one without it.
+	plain, _ := c.PresignPut("k", time.Minute, 5)
+	unbound, _ := c.PresignPut("k", time.Minute, 5, s3.WithContentType(""))
+	if plain != unbound || strings.Contains(plain, "content-type") {
+		t.Fatalf("empty type changed the URL:\n%s\n%s", plain, unbound)
+	}
+}
+
 // A Content-Type of any shape either reaches the store and comes back on
 // HEAD as sent, or is refused by the transport before it is sent. Go's
 // transport refuses a value with a control byte, and the server side
