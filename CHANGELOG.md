@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.59.0 - 2026-09-06
+
 ### Added
 
 - `s3.Body.ContentType` is sent as `Content-Type` on `PutObject` and
