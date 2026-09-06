@@ -10,6 +10,14 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `docs/writing/registers.md`, the platform-wide writing rule: every
+  sentence is written for one of three readers (user, contributor,
+  developer), and an error has one code, one fixed user sentence, and one
+  developer detail in a separate field. Every Latere repository's
+  `CONTRIBUTING.md` points here.
+
 ## v0.57.0 - 2026-09-06
 
 The egress ingest wire format carries the v0.56.0 features, so a control

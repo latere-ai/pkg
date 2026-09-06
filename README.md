@@ -207,6 +207,13 @@ Install the formatting hook once per clone:
 make hooks
 ```
 
+Every sentence a package emits or carries is written for one reader, and
+the register follows the reader: a user of the product, a contributor
+changing it, or a developer debugging a running system. The rule, the
+surfaces per register, and the shape of an error (one code, one user
+sentence, one developer detail) are in
+[docs/writing/registers.md](docs/writing/registers.md).
+
 ## License
 
 [Apache 2.0](LICENSE)

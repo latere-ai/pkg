@@ -28,6 +28,15 @@ Every package in this repo must meet these requirements:
 - Do not add test-only dependencies — use `net/http/httptest`, `errors`, etc. from stdlib.
 - When adding a new direct dependency, justify it.
 
+## Writing
+
+Every sentence is written for one reader, and the register follows the
+reader: user, contributor, or developer. An error has one code, one fixed
+user sentence in `message`, and one developer detail in a separate field.
+The rule and the review checklist are in
+[docs/writing/registers.md](docs/writing/registers.md); it is the canonical
+statement for every Latere repository.
+
 ## Commands
 
 ```
