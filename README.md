@@ -105,7 +105,7 @@ second service needed the same thing.
 | [`envutil`](envutil/) | Typed environment reads with defaults: integers, bounded integers, durations, and the conventional boolean spellings |
 | [`gitutil`](gitutil/) | The git CLI behind structured results and typed errors: worktrees, rebase with conflict recovery, stashes, branch discovery |
 | [`hostmatch`](hostmatch/) | One host allow-list rule for every egress surface: exact FQDNs and `*.`-prefixed wildcards that match any sub-label depth but never the apex |
-| [`httpjson`](httpjson/) | Strict JSON request decoding (unknown fields and trailing content rejected) and response writing |
+| [`httpjson`](httpjson/) | Strict JSON request decoding (unknown fields and trailing content rejected), response writing, and the `{"error": {code, message, details}}` envelope every Latere API answers with |
 | [`metrics`](metrics/) | Prometheus text-exposition registry with labeled counters, histograms, and scrape-time gauges, with no client-library dependency |
 | [`ndjson`](ndjson/) | NDJSON file reading and appending, plus the terminal-result scan agent output parsers need |
 | [`pagination`](pagination/) | Cursor pagination helpers |

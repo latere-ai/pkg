@@ -12,6 +12,13 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Added
 
+- `httpjson.Error`, `httpjson.ErrorEnvelope`, and `httpjson.WriteError`:
+  the error envelope every Latere API answers with, rendered as
+  `{"error": {"code", "message", "details"}}` through `Write`. `message`
+  is the user sentence fixed per code and `details` the developer detail,
+  per `docs/writing/registers.md`. Every existing function is unchanged;
+  a service that carried its own envelope type decodes into
+  `ErrorEnvelope` instead.
 - `s3`, a client for the S3 REST API in the standard library, signed with
   Signature Version 4 and checked against the signing documentation's
   published vectors. It carries the primitives Latere services use and
