@@ -52,33 +52,34 @@ const (
 // owner key; OrgID is the tenant key. Resources created by a principal are
 // labeled with both so lists and deletes can scope to them.
 type Identity struct {
-	Sub           string
-	OrgID         string
-	Email         string
-	PrincipalType PrincipalType
-	IsSuperadmin  bool
-	Scopes        []string
+	Sub           string        `json:"sub"`
+	OrgID         string        `json:"org_id,omitempty"`
+	Email         string        `json:"email,omitempty"`
+	PrincipalType PrincipalType `json:"principal_type,omitempty"`
+	IsSuperadmin  bool          `json:"is_superadmin,omitempty"`
+	Scopes        []string      `json:"scopes,omitempty"`
 	// Roles are the caller's role names in the token's active org (e.g.
 	// "owner", "admin", "member"), from the token's "roles" claim. They are
 	// org-scoped: a personal-view token (no active org) carries none. A
 	// consumer derives org authority from them (e.g. an org admin is a
 	// holder of "owner" or "admin") without minting a product-specific
 	// scope. Absent/unknown roles confer no authority (fail-safe).
-	Roles []string
+	Roles []string `json:"roles,omitempty"`
 	// ClientID is the OAuth client_id of the caller's token. Used to
 	// resolve per-client config. Empty for dev bearer tokens and for
 	// older JWTs minted before the client_id claim was added.
-	ClientID string
+	ClientID string `json:"client_id,omitempty"`
 	// TokenID is a stable, low-cardinality audit identifier. For JWT it is
-	// the principal Sub; for BearerToken it is "dev".
-	TokenID string
+	// the principal Sub; for BearerToken it is "dev". It is set at
+	// authentication time and never serialised.
+	TokenID string `json:"-"`
 	// Kind and ActorID identify a non-principal actor the token is bound
 	// to (e.g. Kind == "sandbox", ActorID == the sandbox id). Generic —
 	// consumers interpret ActorID according to Kind. Empty for ordinary
 	// identities, and they do not affect tenancy: attribution stays
 	// (OrgID, Sub).
-	Kind    string
-	ActorID string
+	Kind    string `json:"kind,omitempty"`
+	ActorID string `json:"actor_id,omitempty"`
 	// AgentID is the acting agent's id, set by whichever Authenticator
 	// resolved this Identity. It is a REPORTING and flow-gating dimension
 	// only and does NOT affect tenancy (attribution stays (OrgID, Sub)).
@@ -88,12 +89,12 @@ type Identity struct {
 	// auth service no longer issues a delegated-agent JWT claim, so the
 	// remaining producers set it from an agent-kind catalog token's own
 	// binding claim.
-	AgentID string
+	AgentID string `json:"agent_id,omitempty"`
 	// AuthMethod records which Authenticator resolved this Identity, for
 	// observability and conditional handler logic. Standard values are
 	// MethodBearer, MethodCookie, MethodStatic. Consumers may declare
 	// additional AuthMethod values. The zero value ("") means "unspecified".
-	AuthMethod AuthMethod
+	AuthMethod AuthMethod `json:"-"`
 }
 
 // AuthMethod is the discriminator stamped on Identity by an Authenticator to

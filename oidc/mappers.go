@@ -3,11 +3,15 @@
 
 package oidc
 
-import "cmp"
+import (
+	"cmp"
+
+	"latere.ai/x/pkg/authkit"
+)
 
 // Built-in ClaimsMapper adapters for the IDPs latere services deploy against.
 // Each maps an IDP's identity and (where available) role/group claims onto the
-// portable Identity. Authentication is portable; these adapters localise the
+// portable User. Authentication is portable; these adapters localise the
 // non-portable authorization shape per IDP.
 
 // KeycloakMapper maps Keycloak claims. Keycloak puts realm roles under
@@ -17,16 +21,16 @@ import "cmp"
 // config (accessClaims is nil when the access token is not a verifiable JWT).
 type KeycloakMapper struct{}
 
-func (KeycloakMapper) Map(idClaims, accessClaims map[string]any) (Identity, error) {
+func (KeycloakMapper) Map(idClaims, accessClaims map[string]any) (User, error) {
 	roles := realmRoles(idClaims)
 	if accessClaims != nil {
 		roles = unionStrings(roles, realmRoles(accessClaims))
 	}
-	return Identity{
-		Subject: stringClaim(idClaims["sub"]),
-		Email:   stringClaim(idClaims["email"]),
-		Name:    cmp.Or(stringClaim(idClaims["name"]), stringClaim(idClaims["preferred_username"])),
-		Roles:   roles,
+	return User{
+		Sub:   stringClaim(idClaims["sub"]),
+		Email: stringClaim(idClaims["email"]),
+		Roles: roles,
+		Name:  cmp.Or(stringClaim(idClaims["name"]), stringClaim(idClaims["preferred_username"])),
 	}, nil
 }
 
@@ -42,16 +46,18 @@ func realmRoles(claims map[string]any) []string {
 // GoogleMapper maps Google ID-token claims. Google is identity-only: it issues
 // no roles, and its access tokens are opaque (so accessClaims is always nil).
 // Roles is therefore empty — a service that needs authorization derives it from
-// its own store. The hosted-domain claim (hd) is left in Identity.Raw for
+// its own store. The hosted-domain claim (hd) is left in User.Raw for
 // domain gating.
 type GoogleMapper struct{}
 
-func (GoogleMapper) Map(idClaims, _ map[string]any) (Identity, error) {
-	return Identity{
-		Subject: stringClaim(idClaims["sub"]),
-		Email:   stringClaim(idClaims["email"]),
-		Name:    stringClaim(idClaims["name"]),
-		// Roles intentionally nil — Google provides identity only.
+func (GoogleMapper) Map(idClaims, _ map[string]any) (User, error) {
+	return User{
+		Identity: authkit.Identity{
+			Sub:   stringClaim(idClaims["sub"]),
+			Email: stringClaim(idClaims["email"]),
+			// Roles intentionally nil: Google provides identity only.
+		},
+		Name: stringClaim(idClaims["name"]),
 	}, nil
 }
 
@@ -60,15 +66,15 @@ func (GoogleMapper) Map(idClaims, _ map[string]any) (Identity, error) {
 // cognito:username.
 type CognitoMapper struct{}
 
-func (CognitoMapper) Map(idClaims, accessClaims map[string]any) (Identity, error) {
+func (CognitoMapper) Map(idClaims, accessClaims map[string]any) (User, error) {
 	roles := stringsClaim(idClaims["cognito:groups"])
 	if accessClaims != nil {
 		roles = unionStrings(roles, stringsClaim(accessClaims["cognito:groups"]))
 	}
-	return Identity{
-		Subject: stringClaim(idClaims["sub"]),
-		Email:   stringClaim(idClaims["email"]),
-		Name:    cmp.Or(stringClaim(idClaims["name"]), stringClaim(idClaims["cognito:username"])),
-		Roles:   roles,
+	return User{
+		Sub:   stringClaim(idClaims["sub"]),
+		Email: stringClaim(idClaims["email"]),
+		Roles: roles,
+		Name:  cmp.Or(stringClaim(idClaims["name"]), stringClaim(idClaims["cognito:username"])),
 	}, nil
 }

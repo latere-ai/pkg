@@ -57,8 +57,8 @@ func TestInsecureCookies_DropHostPrefix(t *testing.T) {
 		t.Fatalf("SetSession: %v", err)
 	}
 	sess := ws.Result().Cookies()[0]
-	if sess.Name != "latere-session" {
-		t.Errorf("session cookie name = %q, want latere-session", sess.Name)
+	if sess.Name != "latere-session-v2" {
+		t.Errorf("session cookie name = %q, want latere-session-v2", sess.Name)
 	}
 	if sess.Secure {
 		t.Error("session cookie must not be Secure under InsecureCookies")
@@ -77,7 +77,7 @@ func TestInsecureCookies_DropHostPrefix(t *testing.T) {
 	wc := httptest.NewRecorder()
 	c.ClearSession(wc)
 	clr := wc.Result().Cookies()[0]
-	if clr.Name != "latere-session" || clr.Secure || clr.MaxAge != -1 {
-		t.Errorf("clear cookie = %+v, want name=latere-session secure=false maxAge=-1", clr)
+	if clr.Name != "latere-session-v2" || clr.Secure || clr.MaxAge != -1 {
+		t.Errorf("clear cookie = %+v, want name=latere-session-v2 secure=false maxAge=-1", clr)
 	}
 }

@@ -71,7 +71,7 @@ func TestSessionAuthenticator_HappyPath(t *testing.T) {
 			OrgID:        "org-1",
 			ClientID:     "cli-x",
 			Scopes:       []string{"read:projects"},
-			OrgRoles:     []string{"admin"},
+			Roles:        []string{"admin"},
 			IsSuperadmin: false,
 		},
 	}
@@ -160,5 +160,39 @@ func TestSessionAuthenticator_RejectsInvalidLifecycle(t *testing.T) {
 				t.Fatalf("Authenticate error = %v, want authkit.ErrUnauthenticated", err)
 			}
 		})
+	}
+}
+
+// TestSessionAuthenticator_IgnoresPreV2Cookie pins the cookie-name bump that
+// came with User embedding authkit.Identity: a session written under the
+// previous cookie name carried "org_roles", which the new shape would decode
+// as no roles at all. Rather than let a signed-in org admin silently lose
+// authority, the old cookie is not a session and the user logs in again.
+func TestSessionAuthenticator_IgnoresPreV2Cookie(t *testing.T) {
+	c := newSessionTestClient(t)
+	rec := httptest.NewRecorder()
+	sess := &Session{
+		AccessToken: "at-1",
+		Expiry:      time.Now().Add(time.Hour),
+		User:        User{Sub: "u-1", Roles: []string{"admin"}},
+	}
+	if err := c.SetSession(rec, sess); err != nil {
+		t.Fatalf("SetSession: %v", err)
+	}
+	fresh := rec.Result().Cookies()[0]
+	if fresh.Name != "test-session" {
+		t.Fatalf("cookie name = %q", fresh.Name)
+	}
+
+	// The same ciphertext under the pre-bump default name is not read.
+	old := *fresh
+	old.Name = "__Host-latere-session"
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.AddCookie(&old)
+	if _, err := NewSessionAuthenticator(c).Authenticate(r); !errors.Is(err, authkit.ErrUnauthenticated) {
+		t.Fatalf("pre-v2 cookie authenticated: err = %v", err)
+	}
+	if SessionCookieName != "__Host-latere-session-v2" {
+		t.Fatalf("SessionCookieName = %q; the User shape changed, so the name must not be the pre-embedding one", SessionCookieName)
 	}
 }

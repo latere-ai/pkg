@@ -98,17 +98,19 @@ func SessionFromToken(token *oauth2.Token, ttl time.Duration) *Session {
 		RefreshToken: token.RefreshToken,
 		Expiry:       exp.UTC(),
 		User: User{
-			Sub:          claims.Sub,
-			Email:        claims.Email,
-			Name:         claims.Name,
-			Picture:      claims.Picture,
-			AvatarURL:    cmp.Or(claims.AvatarURL, claims.Picture),
-			OrgID:        claims.OrgID,
-			DisplayName:  cmp.Or(claims.DisplayName, claims.Name),
-			OrgRoles:     claims.Roles,
-			ClientID:     cmp.Or(claims.ClientID, claims.AuthorizedParty),
-			Scopes:       scopesFromJWT(claims),
-			IsSuperadmin: claims.IsSuperadmin,
+			Identity: authkit.Identity{
+				Sub:           claims.Sub,
+				Email:         claims.Email,
+				OrgID:         claims.OrgID,
+				PrincipalType: authkit.PrincipalUser,
+				Roles:         claims.Roles,
+				ClientID:      cmp.Or(claims.ClientID, claims.AuthorizedParty),
+				Scopes:        scopesFromJWT(claims),
+				IsSuperadmin:  claims.IsSuperadmin,
+			},
+			Name:        claims.Name,
+			Picture:     cmp.Or(claims.Picture, claims.AvatarURL),
+			DisplayName: cmp.Or(claims.DisplayName, claims.Name),
 		},
 	}
 	// IssuedAt/SessionExpiry exist for the dashboard-session-lifetime feature
@@ -372,7 +374,6 @@ func (c *Client) UserFromRequest(w http.ResponseWriter, r *http.Request) *User {
 		}
 		u.Name = info.Name
 		u.Picture = info.Picture
-		u.AvatarURL = info.AvatarURL
 		// auth's /userinfo refreshes org_id from the active SSO
 		// session, so prefer it over the JWT copy when present.
 		if info.OrgID != "" {
@@ -474,17 +475,14 @@ func (c *Client) SessionFromRequest(w http.ResponseWriter, r *http.Request) (*Se
 	if len(refreshed.User.Scopes) == 0 {
 		refreshed.User.Scopes = sess.User.Scopes
 	}
-	if len(refreshed.User.OrgRoles) == 0 {
-		refreshed.User.OrgRoles = sess.User.OrgRoles
+	if len(refreshed.User.Roles) == 0 {
+		refreshed.User.Roles = sess.User.Roles
 	}
 	// Profile fields aren't in the access token; keep the prior values rather
-	// than blanking the header on refresh. Name/Picture are carried forward
-	// alongside their DisplayName/AvatarURL aliases so a caller keying off
-	// either name stays consistent across a silent refresh.
+	// than blanking the header on refresh.
 	refreshed.User.Name = cmp.Or(refreshed.User.Name, sess.User.Name)
 	refreshed.User.Picture = cmp.Or(refreshed.User.Picture, sess.User.Picture)
 	refreshed.User.DisplayName = cmp.Or(refreshed.User.DisplayName, sess.User.DisplayName)
-	refreshed.User.AvatarURL = cmp.Or(refreshed.User.AvatarURL, sess.User.AvatarURL)
 	refreshed.User.Email = cmp.Or(refreshed.User.Email, sess.User.Email)
 
 	if err := c.SetSession(w, refreshed); err != nil {

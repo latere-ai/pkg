@@ -5,6 +5,7 @@ package oidc
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -25,8 +26,8 @@ func TestKeycloakMapper(t *testing.T) {
 		},
 		map[string]any{"realm_access": map[string]any{"roles": []any{"offline_access", "dashboard-admin"}}},
 	)
-	if id.Subject != "kc-1" {
-		t.Errorf("subject = %q", id.Subject)
+	if id.Sub != "kc-1" {
+		t.Errorf("sub = %q", id.Sub)
 	}
 	if id.Name != "kuser" {
 		t.Errorf("name fallback to preferred_username failed: %q", id.Name)
@@ -48,7 +49,7 @@ func TestGoogleMapper_IdentityOnly(t *testing.T) {
 	id, _ := GoogleMapper{}.Map(map[string]any{
 		"sub": "g-1", "email": "g@example.com", "name": "G User", "hd": "example.com",
 	}, nil)
-	if id.Subject != "g-1" || id.Email != "g@example.com" || id.Name != "G User" {
+	if id.Sub != "g-1" || id.Email != "g@example.com" || id.Name != "G User" {
 		t.Errorf("identity = %+v", id)
 	}
 	if len(id.Roles) != 0 {
@@ -88,4 +89,30 @@ func TestProviderEndToEnd_Keycloak(t *testing.T) {
 	if len(id.Roles) != 1 || id.Roles[0] != "dashboard-admin" {
 		t.Errorf("roles = %v, want [dashboard-admin]", id.Roles)
 	}
+}
+
+// FuzzMappers feeds arbitrary claim shapes to every built-in mapper: none may
+// panic, and VerifyIDToken's contract that a mapped user without a subject
+// is rejected is pinned on the mapper output.
+func FuzzMappers(f *testing.F) {
+	f.Add(`{"sub":"u1","email":"a@b","name":"A","realm_access":{"roles":["r"]},"cognito:groups":["g"]}`, `{"roles":["x"]}`)
+	f.Add(`{"sub":1,"realm_access":"nope","cognito:groups":"g"}`, `null`)
+	f.Add(`[]`, `{}`)
+	f.Fuzz(func(t *testing.T, idJSON, atJSON string) {
+		var id, at map[string]any
+		_ = json.Unmarshal([]byte(idJSON), &id)
+		_ = json.Unmarshal([]byte(atJSON), &at)
+		if id == nil {
+			id = map[string]any{}
+		}
+		for _, m := range []ClaimsMapper{LatereMapper{}, KeycloakMapper{}, GoogleMapper{}, CognitoMapper{}} {
+			u, err := m.Map(id, at)
+			if err != nil {
+				continue
+			}
+			if want, _ := id["sub"].(string); u.Sub != want {
+				t.Fatalf("%T: Sub = %q, want %q", m, u.Sub, want)
+			}
+		}
+	})
 }

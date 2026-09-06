@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 
+	"latere.ai/x/pkg/authkit"
 	"latere.ai/x/pkg/otel"
 
 	"golang.org/x/oauth2"
@@ -17,26 +18,16 @@ import (
 	"latere.ai/x/pkg/jwtauth"
 )
 
-// Identity is the lowest-common-denominator result of a successful login. Roles
-// is populated only for IDPs that expose roles/groups (empty for identity-only
-// providers like Google); consumers needing authorization for those providers
-// derive it from their own store. Raw carries the verified ID-token claims for
-// providers that need a claim this struct does not name.
-type Identity struct {
-	Subject string
-	Email   string
-	Name    string
-	Roles   []string
-	Raw     map[string]any
-}
-
-// ClaimsMapper turns verified token claims into an Identity. idClaims is the
+// ClaimsMapper turns verified token claims into a User. Roles is populated
+// only for IDPs that expose roles/groups (empty for identity-only providers
+// like Google); consumers needing authorization for those providers derive
+// it from their own store. idClaims is the
 // verified ID-token payload (never nil). accessClaims is the verified
 // access-token payload when the access token is a verifiable JWT from the same
 // issuer, or nil when it is absent or opaque (e.g. Google) — a mapper must treat
 // nil as "no roles available", never as an error.
 type ClaimsMapper interface {
-	Map(idClaims, accessClaims map[string]any) (Identity, error)
+	Map(idClaims, accessClaims map[string]any) (User, error)
 }
 
 // ProviderConfig configures a [Provider] built by [NewProvider].
@@ -59,7 +50,7 @@ type ProviderConfig struct {
 }
 
 // Provider is one issuer: its endpoints, its keys, and the mapper that turns
-// its claims into an [Identity]. [NewProvider] discovers the endpoints from
+// its claims into a [User]. [NewProvider] discovers the endpoints from
 // the issuer; the Latere [Client] builds one from the auth service's fixed
 // layout. Safe for concurrent use.
 type Provider struct {
@@ -184,27 +175,27 @@ func (a *Provider) Exchange(ctx context.Context, code, verifier string) (*oauth2
 }
 
 // VerifyIDToken verifies the ID token from an exchanged token and maps its
-// claims to an Identity. It fails closed if id_token is missing, fails
+// claims to a User. It fails closed if id_token is missing, fails
 // verification (signature/aud/exp/alg via jwtauth — RS256 pinned, so alg=none /
 // HS256-confusion is rejected), its issuer does not match, or its nonce does not
 // match the nonce bound at AuthCodeURL time.
-func (a *Provider) VerifyIDToken(_ context.Context, tok *oauth2.Token, nonce string) (Identity, error) {
+func (a *Provider) VerifyIDToken(_ context.Context, tok *oauth2.Token, nonce string) (User, error) {
 	raw, _ := tok.Extra("id_token").(string)
 	if raw == "" {
-		return Identity{}, fmt.Errorf("oidc: token response missing id_token")
+		return User{}, fmt.Errorf("oidc: token response missing id_token")
 	}
 	if _, err := a.idVerifier.Validate(raw); err != nil {
-		return Identity{}, fmt.Errorf("oidc: verify id_token: %w", err)
+		return User{}, fmt.Errorf("oidc: verify id_token: %w", err)
 	}
 	idClaims, err := decodeJWTPayload(raw)
 	if err != nil {
-		return Identity{}, fmt.Errorf("oidc: decode id_token: %w", err)
+		return User{}, fmt.Errorf("oidc: decode id_token: %w", err)
 	}
 	if !issuerOK(stringClaim(idClaims["iss"]), a.issuer) {
-		return Identity{}, fmt.Errorf("oidc: id_token issuer mismatch")
+		return User{}, fmt.Errorf("oidc: id_token issuer mismatch")
 	}
 	if stringClaim(idClaims["nonce"]) != nonce {
-		return Identity{}, fmt.Errorf("oidc: id_token nonce mismatch")
+		return User{}, fmt.Errorf("oidc: id_token nonce mismatch")
 	}
 
 	// Best-effort: read roles from the access token only if it is a JWT we can
@@ -222,8 +213,12 @@ func (a *Provider) VerifyIDToken(_ context.Context, tok *oauth2.Token, nonce str
 
 	id, err := a.mapper.Map(idClaims, accessClaims)
 	if err != nil {
-		return Identity{}, err
+		return User{}, err
 	}
+	if id.Sub == "" {
+		return User{}, fmt.Errorf("oidc: id_token has no subject")
+	}
+	id.PrincipalType = authkit.PrincipalUser
 	id.Raw = idClaims
 	return id, nil
 }
@@ -329,16 +324,16 @@ func mapperForKind(kind string) (ClaimsMapper, error) {
 // ID token and roles on the access token (and/or a "roles" claim); read both.
 type LatereMapper struct{}
 
-func (LatereMapper) Map(idClaims, accessClaims map[string]any) (Identity, error) {
+func (LatereMapper) Map(idClaims, accessClaims map[string]any) (User, error) {
 	roles := stringsClaim(idClaims["roles"])
 	if accessClaims != nil {
 		roles = unionStrings(roles, stringsClaim(accessClaims["roles"]))
 	}
-	return Identity{
-		Subject: stringClaim(idClaims["sub"]),
-		Email:   stringClaim(idClaims["email"]),
-		Name:    stringClaim(idClaims["name"]),
-		Roles:   roles,
+	return User{
+		Sub:   stringClaim(idClaims["sub"]),
+		Email: stringClaim(idClaims["email"]),
+		Roles: roles,
+		Name:  stringClaim(idClaims["name"]),
 	}, nil
 }
 

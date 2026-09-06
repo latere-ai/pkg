@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"latere.ai/x/pkg/authkit"
 )
 
 // TestNew_AudienceDefaultsToAuthURL pins the "every RP that calls the
@@ -178,13 +180,11 @@ func TestFetchUserInfo_PopulatesOrgIDAndAvatar(t *testing.T) {
 	if u.OrgID != "org-1" {
 		t.Errorf("OrgID = %q, want org-1", u.OrgID)
 	}
-	// AvatarURL should mirror Picture so callers keyed on either name
-	// see the same value.
 	if u.Picture != "https://pic.test/a" {
 		t.Errorf("Picture = %q", u.Picture)
 	}
-	if u.AvatarURL != "https://pic.test/a" {
-		t.Errorf("AvatarURL = %q, want mirror of Picture", u.AvatarURL)
+	if u.PrincipalType != authkit.PrincipalUser {
+		t.Errorf("PrincipalType = %q, want user", u.PrincipalType)
 	}
 }
 

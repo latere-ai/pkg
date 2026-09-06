@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"golang.org/x/oauth2"
+	"latere.ai/x/pkg/authkit"
 )
 
 // fakeIDP is an httptest OIDC issuer: it serves a discovery document, a JWKS,
@@ -176,7 +177,7 @@ func TestVerifyIDToken_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
-	if id.Subject != "user-123" || id.Email != "u@example.com" || id.Name != "Test User" {
+	if id.Sub != "user-123" || id.Email != "u@example.com" || id.Name != "Test User" {
 		t.Errorf("identity = %+v", id)
 	}
 	if id.Raw["sub"] != "user-123" {
@@ -190,6 +191,28 @@ func TestVerifyIDToken_UsesConfiguredHTTPClientForJWKS(t *testing.T) {
 	idToken := idp.signRS256(t, baseIDClaims(idp, "client-1", "nonce-1"))
 	if _, err := a.VerifyIDToken(context.Background(), tokenWithID(idToken, ""), "nonce-1"); err != nil {
 		t.Fatalf("VerifyIDToken through configured TLS client: %v", err)
+	}
+}
+
+func TestVerifyIDToken_NoSubjectRejected(t *testing.T) {
+	// A verified ID token whose mapper yields no subject is not a login:
+	// every session and every ownership key hangs off Sub.
+	idp := newFakeIDP(t)
+	a := newAuth(t, idp, "client-1", "latere")
+	claims := baseIDClaims(idp, "client-1", "nonce-1")
+	delete(claims, "sub")
+	idToken := idp.signRS256(t, claims)
+	if _, err := a.VerifyIDToken(context.Background(), tokenWithID(idToken, ""), "nonce-1"); err == nil {
+		t.Fatal("id_token without sub must be rejected")
+	}
+	// The happy path stamps the principal type so a User from any issuer
+	// carries the same discriminator as one from a Latere session.
+	id, err := a.VerifyIDToken(context.Background(), tokenWithID(idp.signRS256(t, baseIDClaims(idp, "client-1", "nonce-1")), ""), "nonce-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id.PrincipalType != authkit.PrincipalUser {
+		t.Errorf("PrincipalType = %q, want user", id.PrincipalType)
 	}
 }
 
@@ -352,8 +375,8 @@ func TestExchangeAndVerify(t *testing.T) {
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
-	if id.Subject != "user-123" {
-		t.Errorf("subject = %q", id.Subject)
+	if id.Sub != "user-123" {
+		t.Errorf("sub = %q", id.Sub)
 	}
 }
 

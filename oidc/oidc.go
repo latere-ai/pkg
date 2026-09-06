@@ -4,7 +4,7 @@
 // Package oidc is the OAuth 2.0 / OIDC relying party for Latere services.
 //
 // [Provider] is one issuer: endpoints, keys, and a [ClaimsMapper] that turns
-// verified claims into an [Identity]. [NewProvider] discovers a standard
+// verified claims into a [User]. [NewProvider] discovers a standard
 // issuer (Latere auth, Keycloak, Google, Cognito) and drives the
 // Authorization Code + PKCE flow against it with ID-token verification.
 // Authentication is portable; authorization is not, so role mapping is the
@@ -55,30 +55,26 @@ import (
 )
 
 const (
-	SessionCookieName = "__Host-latere-session"
+	SessionCookieName = "__Host-latere-session-v2"
 	FlowCookieName    = "__Host-latere-flow"
 	SessionMaxAge     = 86400 // 24 hours
 	FlowMaxAge        = 600   // 10 minutes
 )
 
-// User holds authenticated user info from the /userinfo endpoint.
+// User is a signed-in principal plus the profile a page renders: the
+// authkit.Identity (Sub, Email, OrgID, Roles in the active org, Scopes,
+// ClientID, IsSuperadmin) with the OIDC "name" and "picture" claims. It is
+// what /userinfo decodes into, what the session cookie stores, and what a
+// ClaimsMapper returns for a non-Latere issuer.
 //
-// Picture and AvatarURL are aliases — auth's /userinfo emits the OIDC
-// standard "picture" claim, but downstream callers historically referred
-// to the URL as avatar_url. Populated together by FetchUserInfo so a
-// caller can pick whichever name fits its template.
+// Raw carries the verified ID-token claims for a provider that needs a claim
+// this struct does not name. It is never stored in the cookie.
 type User struct {
-	Sub          string   `json:"sub"`
-	Email        string   `json:"email"`
-	Name         string   `json:"name"`
-	Picture      string   `json:"picture"`
-	OrgID        string   `json:"org_id,omitempty"`        // active org for this session, "" for personal view
-	AvatarURL    string   `json:"avatar_url,omitempty"`    // alias of Picture
-	DisplayName  string   `json:"display_name,omitempty"`  // preferred render name, falls back to Name
-	OrgRoles     []string `json:"org_roles,omitempty"`     // roles in the active org (owner/admin/member/viewer)
-	ClientID     string   `json:"client_id,omitempty"`     // oauth client the token was issued to (client_id or azp)
-	Scopes       []string `json:"scopes,omitempty"`        // granted scopes parsed from the access token
-	IsSuperadmin bool     `json:"is_superadmin,omitempty"` // mirrored from the JWT at login
+	authkit.Identity
+	Name        string         `json:"name"`
+	Picture     string         `json:"picture"`
+	DisplayName string         `json:"display_name,omitempty"` // preferred render name, falls back to Name
+	Raw         map[string]any `json:"-"`
 }
 
 // Session holds tokens and user info stored in the encrypted session cookie.
@@ -377,10 +373,6 @@ func (c *Client) ExchangeContext(ctx context.Context, code, verifier string) (*o
 }
 
 // FetchUserInfo calls the auth service /userinfo endpoint.
-//
-// Auth emits the OIDC-standard "picture" claim; mirror it onto
-// User.AvatarURL so callers that key off avatar_url don't have to
-// reach for the Picture field.
 func (c *Client) FetchUserInfo(r *http.Request, accessToken string) (*User, error) {
 	return c.FetchUserInfoContext(r.Context(), accessToken)
 }
@@ -408,9 +400,7 @@ func (c *Client) FetchUserInfoContext(ctx context.Context, accessToken string) (
 	if err := json.NewDecoder(resp.Body).Decode(&u); err != nil {
 		return nil, fmt.Errorf("decode userinfo: %w", err)
 	}
-	if u.AvatarURL == "" {
-		u.AvatarURL = u.Picture
-	}
+	u.PrincipalType = authkit.PrincipalUser
 	return &u, nil
 }
 

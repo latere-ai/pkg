@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"golang.org/x/oauth2"
+	"latere.ai/x/pkg/authkit"
 )
 
 // makeRichJWT builds an unsigned JWT whose payload is the given claims, allowing
@@ -66,8 +67,11 @@ func TestSessionFromToken(t *testing.T) {
 	if u.DisplayName != "Ali" {
 		t.Errorf("DisplayName = %q, want Ali", u.DisplayName)
 	}
-	if u.Picture != "https://p/x" || u.AvatarURL != "https://p/y" {
-		t.Errorf("picture/avatar = %q/%q", u.Picture, u.AvatarURL)
+	if u.Picture != "https://p/x" {
+		t.Errorf("picture = %q, want the picture claim over avatar_url", u.Picture)
+	}
+	if u.PrincipalType != authkit.PrincipalUser {
+		t.Errorf("PrincipalType = %q, want user", u.PrincipalType)
 	}
 	if u.ClientID != "client-xyz" {
 		t.Errorf("ClientID = %q, want client-xyz (from azp)", u.ClientID)
@@ -75,8 +79,8 @@ func TestSessionFromToken(t *testing.T) {
 	if len(u.Scopes) != 2 || u.Scopes[1] != "cella:run" {
 		t.Errorf("Scopes = %v", u.Scopes)
 	}
-	if !u.IsSuperadmin || len(u.OrgRoles) != 1 || u.OrgRoles[0] != "owner" {
-		t.Errorf("superadmin/roles = %v/%v", u.IsSuperadmin, u.OrgRoles)
+	if !u.IsSuperadmin || len(u.Roles) != 1 || u.Roles[0] != "owner" {
+		t.Errorf("superadmin/roles = %v/%v", u.IsSuperadmin, u.Roles)
 	}
 	if !sess.Expiry.Equal(exp) {
 		t.Errorf("Expiry = %v, want %v", sess.Expiry, exp)
@@ -118,14 +122,15 @@ func TestSessionFromTokenNoTTLNoSessionExpiry(t *testing.T) {
 }
 
 func TestSessionFromTokenFallbacks(t *testing.T) {
-	// Only name + picture present: DisplayName falls back to name, AvatarURL to picture.
-	jwt := makeRichJWT(map[string]any{"sub": "u1", "name": "Bob", "picture": "https://p/b"})
+	// Only name + avatar_url present: DisplayName falls back to name, Picture
+	// to the legacy avatar_url claim.
+	jwt := makeRichJWT(map[string]any{"sub": "u1", "name": "Bob", "avatar_url": "https://p/b"})
 	u := SessionFromToken(&oauth2.Token{AccessToken: jwt}, 0).User
 	if u.DisplayName != "Bob" {
 		t.Errorf("DisplayName = %q, want Bob (fallback to name)", u.DisplayName)
 	}
-	if u.AvatarURL != "https://p/b" {
-		t.Errorf("AvatarURL = %q, want picture fallback", u.AvatarURL)
+	if u.Picture != "https://p/b" {
+		t.Errorf("Picture = %q, want avatar_url fallback", u.Picture)
 	}
 }
 
@@ -183,8 +188,8 @@ func TestHandleCallbackPopulatesSupersetFields(t *testing.T) {
 	if sess.User.ClientID != "cella-dashboard" || !sess.User.IsSuperadmin {
 		t.Errorf("superset fields not populated: %+v", sess.User)
 	}
-	if len(sess.User.Scopes) != 2 || len(sess.User.OrgRoles) != 1 {
-		t.Errorf("scopes/roles = %v / %v", sess.User.Scopes, sess.User.OrgRoles)
+	if len(sess.User.Scopes) != 2 || len(sess.User.Roles) != 1 {
+		t.Errorf("scopes/roles = %v / %v", sess.User.Scopes, sess.User.Roles)
 	}
 	// Default-config client (ttl=0) must not stamp SessionExpiry.
 	if !sess.SessionExpiry.IsZero() {

@@ -70,7 +70,7 @@ func TestSessionFromRequestProactiveRefresh(t *testing.T) {
 		RefreshToken:  "rt-1",
 		Expiry:        time.Now().UTC().Add(-time.Minute), // expired → refresh
 		SessionExpiry: keepExpiry,
-		User:          User{Sub: "u1", DisplayName: "Ali", AvatarURL: "https://p/y", ClientID: "cella", Scopes: []string{"openid"}},
+		User:          User{Sub: "u1", DisplayName: "Ali", Picture: "https://p/y", ClientID: "cella", Scopes: []string{"openid"}},
 	})
 
 	// /userinfo must not be called; make it explode if it is.
@@ -92,7 +92,7 @@ func TestSessionFromRequestProactiveRefresh(t *testing.T) {
 	if !got.SessionExpiry.Equal(keepExpiry) {
 		t.Errorf("SessionExpiry = %v, want preserved %v", got.SessionExpiry, keepExpiry)
 	}
-	if got.User.DisplayName != "Ali" || got.User.AvatarURL != "https://p/y" {
+	if got.User.DisplayName != "Ali" || got.User.Picture != "https://p/y" {
 		t.Errorf("profile not preserved: %+v", got.User)
 	}
 	if got.User.ClientID != "cella" || len(got.User.Scopes) != 1 {
@@ -105,9 +105,8 @@ func TestSessionFromRequestProactiveRefresh(t *testing.T) {
 }
 
 // TestSessionFromRequestRefreshPreservesNamePicture: the refreshed JWT omits
-// the profile claims, so User.Name and User.Picture must be carried forward
-// just like their DisplayName/AvatarURL aliases — otherwise a caller reading
-// User.Picture (vs AvatarURL) loses the avatar after the first silent refresh.
+// the profile claims, so User.Name and User.Picture must be carried forward,
+// otherwise a caller loses the avatar after the first silent refresh.
 func TestSessionFromRequestRefreshPreservesNamePicture(t *testing.T) {
 	newJWT := makeRichJWT(map[string]any{"sub": "u1", "email": "a@b.com"})
 	c := refreshClient(t, newJWT)

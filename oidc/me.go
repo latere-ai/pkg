@@ -108,11 +108,7 @@ func (c *Client) BuildMeFromToken(ctx context.Context, accessToken string) (*Me,
 			me.Email = info.Email
 		}
 		me.Name = info.Name
-		if info.AvatarURL != "" {
-			me.AvatarURL = info.AvatarURL
-		} else {
-			me.AvatarURL = info.Picture
-		}
+		me.AvatarURL = info.Picture
 		if info.OrgID != "" {
 			me.OrgID = info.OrgID
 		}

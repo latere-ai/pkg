@@ -41,16 +41,9 @@ func (s *SessionAuthenticator) Authenticate(r *http.Request) (authkit.Identity, 
 		(!sess.SessionExpiry.IsZero() && !sess.SessionExpiry.After(now)) {
 		return authkit.Identity{}, authkit.ErrUnauthenticated
 	}
-	return authkit.Identity{
-		Sub:           sess.User.Sub,
-		OrgID:         sess.User.OrgID,
-		Email:         sess.User.Email,
-		PrincipalType: authkit.PrincipalUser,
-		IsSuperadmin:  sess.User.IsSuperadmin,
-		Scopes:        sess.User.Scopes,
-		Roles:         sess.User.OrgRoles,
-		ClientID:      sess.User.ClientID,
-		TokenID:       sess.User.Sub,
-		AuthMethod:    authkit.MethodCookie,
-	}, nil
+	id := sess.User.Identity
+	id.PrincipalType = authkit.PrincipalUser
+	id.TokenID = id.Sub
+	id.AuthMethod = authkit.MethodCookie
+	return id, nil
 }
