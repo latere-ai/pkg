@@ -9,7 +9,7 @@ own, keeps its dependency surface small, and carries its own tests.
 [![CI](https://github.com/latere-ai/pkg/actions/workflows/ci.yml/badge.svg)](https://github.com/latere-ai/pkg/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/latere.ai/x/pkg.svg)](https://pkg.go.dev/latere.ai/x/pkg)
 [![Go version](https://img.shields.io/github/go-mod/go-version/latere-ai/pkg)](go.mod)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 ## Install
 
@@ -209,4 +209,4 @@ make hooks
 
 ## License
 
-[MIT](LICENSE)
+[Apache 2.0](LICENSE)

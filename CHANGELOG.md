@@ -10,6 +10,12 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Changed
+
+The module is licensed under Apache-2.0. The root `LICENSE` said MIT while
+every source file already carried the `Apache-2.0` SPDX notice that the
+gate enforces; the root file now matches the notices.
+
 The changelog rule this file describes now lives in `lateregate`, shared by
 every latere.ai repository: `make release` and `make release-notes` call
 `go tool lateregate release` and `release-notes`, the pre-push hook refuses
