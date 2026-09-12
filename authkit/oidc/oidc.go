@@ -126,9 +126,8 @@ type Config struct {
 	Scopes []string
 
 	// CookieName overrides the session cookie name. Defaults to
-	// SessionCookieName ("__Host-latere-session"). Set this only when a
-	// relying party needs a non-default name; note the "__Host-" prefix
-	// requires Secure cookies.
+	// [SessionCookieName]. Set this only when a relying party needs a
+	// non-default name; note the "__Host-" prefix requires Secure cookies.
 	CookieName string
 
 	// SessionTTL sets the dashboard session lifetime. When zero (the
