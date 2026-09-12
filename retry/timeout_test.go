@@ -56,7 +56,7 @@ func TestAttemptPermanentErrorReleasesContext(t *testing.T) {
 	var child context.Context
 	sentinel := errors.New("permanent")
 	err := Do(t.Context(), Policy{Timeout: time.Hour}, func(ctx context.Context) error { child = ctx; return Stop(sentinel) })
-	if err != sentinel || child.Err() != context.Canceled {
+	if !errors.Is(err, sentinel) || child.Err() != context.Canceled {
 		t.Fatal("permanent error or cancellation lost")
 	}
 }
@@ -65,7 +65,7 @@ func TestCanceledParentStartsNoAttempt(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	err := Do(ctx, Policy{}, func(context.Context) error { t.Fatal("called after cancellation"); return nil })
-	if err != context.Canceled {
+	if !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
 }

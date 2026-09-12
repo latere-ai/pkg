@@ -149,7 +149,7 @@ func (c *Client) ListObjects(ctx context.Context, opts ListOptions) (ListResult,
 		}
 		result, err = parseListing(raw)
 		return retry.Stop(err)
-	}}, http.StatusOK)
+	}}, http.StatusOK) //nolint:bodyclose // consume runs inside attempt, which closes the response before returning
 	return result, err
 }
 

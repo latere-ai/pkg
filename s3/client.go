@@ -141,7 +141,7 @@ func (c *Client) do(ctx context.Context, r request, accept ...int) (*http.Respon
 	err := retry.Do(ctx, policy, func(ctx context.Context) error {
 		attempts++
 		var err error
-		resp, err = c.attempt(ctx, r, accept)
+		resp, err = c.attempt(ctx, r, accept) //nolint:bodyclose // accepted body transfers to the caller; attempt closes failures
 		return err
 	})
 	if err == nil {

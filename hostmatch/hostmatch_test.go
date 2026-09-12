@@ -155,7 +155,7 @@ func FuzzSingleLabel(f *testing.F) {
 			t.Fatalf("invalid single label %q", s)
 		}
 		for _, r := range s {
-			if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-') {
+			if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '-' {
 				t.Fatalf("invalid character in %q", s)
 			}
 		}
