@@ -143,3 +143,15 @@ not billed for.
 The budget is per process, so the fleet-wide ceiling is the value times the
 number of replicas mounting a relay. Size it against one replica's share, not
 the total.
+
+## Child spans
+
+Use `ctx, end := otel.Start(ctx, "storage.read", attrs...)`, then call
+`end(err)` once when the operation finishes (`nil` on success). Attributes
+are `attribute.KeyValue` values from the OpenTelemetry API. The child inherits
+the parent trace; errors add an exception event and error status. For a
+consumer-specific instrumentation scope, use
+`otel.StartScoped(ctx, "example.org/service/storage", "read", attrs...)`.
+`otel.SetAttributes(ctx, attrs...)` adds fields learned after the span started.
+The provider configured by `Bootstrap` or `Setup` owns export and sampling;
+without a provider these calls are no-ops.

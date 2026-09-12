@@ -12,6 +12,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Added
 
+- `otel.Start` and `otel.StartScoped` open child spans on the configured provider and return an end function that records an optional error. `otel.SetAttributes` adds attributes to the current span. `StartScoped` preserves a consumer-specific instrumentation scope; attributes use the OpenTelemetry API types, with no SDK setup needed in callers.
+
 - `hostmatch.ValidPattern` accepts `hostmatch.WithSingleLabel()` to opt into exact hosts such as `localhost` and bare service names. Default validation and wildcard rules remain unchanged.
 
 - `metrics.Histogram.Init(labels)` exposes zero-valued series before the first observation, so dashboards can discover a fixed label vocabulary at startup. Repeated initialization preserves counts and sums.
