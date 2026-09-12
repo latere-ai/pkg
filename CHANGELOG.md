@@ -12,6 +12,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Added
 
+- `retry.Policy.Timeout` bounds each attempt independently while the parent context bounds the entire retry loop. Callbacks must honor cancellation; zero preserves the unbounded-attempt default. `s3.WithRetry` applies the bound to request headers and response processing, including listing and error bodies. Successful `GetObject` downloads retain parent cancellation but stop the attempt timer at headers, so large objects remain readable; close the returned reader to release resources.
+
 - `otel.Start` and `otel.StartScoped` open child spans on the configured provider and return an end function that records an optional error. `otel.SetAttributes` adds attributes to the current span. `StartScoped` preserves a consumer-specific instrumentation scope; attributes use the OpenTelemetry API types, with no SDK setup needed in callers.
 
 - `hostmatch.ValidPattern` accepts `hostmatch.WithSingleLabel()` to opt into exact hosts such as `localhost` and bare service names. Default validation and wildcard rules remain unchanged.

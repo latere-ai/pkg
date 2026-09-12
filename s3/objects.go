@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"strconv"
 	"time"
+
+	"latere.ai/x/pkg/retry"
 )
 
 // Object is one listed or headed key.
@@ -139,16 +141,16 @@ func (c *Client) ListObjects(ctx context.Context, opts ListOptions) (ListResult,
 	if opts.Delimiter != "" {
 		q.Set("delimiter", opts.Delimiter)
 	}
-	resp, err := c.do(ctx, request{method: http.MethodGet, query: q}, http.StatusOK)
-	if err != nil {
-		return ListResult{}, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
-	if err != nil {
-		return ListResult{}, fmt.Errorf("s3: list: %w", err)
-	}
-	return parseListing(raw)
+	var result ListResult
+	_, err := c.do(ctx, request{method: http.MethodGet, query: q, consume: func(resp *http.Response) error {
+		raw, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+		if err != nil {
+			return fmt.Errorf("s3: list: %w", err)
+		}
+		result, err = parseListing(raw)
+		return retry.Stop(err)
+	}}, http.StatusOK)
+	return result, err
 }
 
 // listBucketResult is the ListObjectsV2 response document. The fake in

@@ -48,6 +48,8 @@ func WithHTTPClient(hc *http.Client) Option {
 
 // WithRetry sets the policy for a 5xx, a 429, or a transport failure.
 // The default is three attempts from 50ms.
+// Timeout bounds each attempt through headers and response processing. For a
+// successful GetObject it ends at headers; the caller context bounds body reads.
 func WithRetry(p retry.Policy) Option {
 	return func(c *Client) { c.policy = p }
 }
@@ -123,6 +125,7 @@ type request struct {
 	query   url.Values
 	headers map[string]string
 	body    *Body
+	consume func(*http.Response) error
 }
 
 // do sends the request under the retry policy. The response is returned
@@ -132,22 +135,14 @@ type request struct {
 func (c *Client) do(ctx context.Context, r request, accept ...int) (*http.Response, error) {
 	var resp *http.Response
 	attempts := 0
-	err := retry.Do(ctx, c.policy, func(ctx context.Context) error {
+	// S3 owns the attempt context because accepted GET bodies outlive headers.
+	policy := c.policy
+	policy.Timeout = 0
+	err := retry.Do(ctx, policy, func(ctx context.Context) error {
 		attempts++
 		var err error
-		resp, err = c.once(ctx, r) //nolint:bodyclose // an accepted response is returned open for the caller; a refused one is closed below
-		if err != nil {
-			return err
-		}
-		if slices.Contains(accept, resp.StatusCode) {
-			return nil
-		}
-		rerr := responseError(resp)
-		_ = resp.Body.Close()
-		if resp.StatusCode < 500 && resp.StatusCode != http.StatusTooManyRequests {
-			return retry.Stop(rerr)
-		}
-		return rerr
+		resp, err = c.attempt(ctx, r, accept)
+		return err
 	})
 	if err == nil {
 		return resp, nil
@@ -156,6 +151,51 @@ func (c *Client) do(ctx context.Context, r request, accept ...int) (*http.Respon
 		return nil, fmt.Errorf("s3: %s %s failed after %d attempts: %w", r.method, r.key, attempts, err)
 	}
 	return nil, err
+}
+
+// attempt bounds headers and response processing, transferring ownership of an
+// accepted streaming response to its body after stopping the attempt timer.
+func (c *Client) attempt(parent context.Context, r request, accept []int) (*http.Response, error) {
+	ctx, finish, cancel := attemptContext(parent, c.policy.Timeout)
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			cancel()
+		}
+	}()
+	resp, err := c.once(ctx, r) //nolint:bodyclose // body closes on failure or transfers to the caller
+	if err != nil {
+		if cause := finish(); cause != nil {
+			return nil, cause
+		}
+		return nil, err
+	}
+	if !slices.Contains(accept, resp.StatusCode) {
+		rerr := responseError(resp)
+		_ = resp.Body.Close()
+		if cause := finish(); cause != nil {
+			return nil, cause
+		}
+		if resp.StatusCode < 500 && resp.StatusCode != http.StatusTooManyRequests {
+			return nil, retry.Stop(rerr)
+		}
+		return nil, rerr
+	}
+	if r.consume != nil {
+		err := r.consume(resp)
+		_ = resp.Body.Close()
+		if cause := finish(); cause != nil {
+			return nil, cause
+		}
+		return resp, err
+	}
+	if cause := finish(); cause != nil {
+		_ = resp.Body.Close()
+		return nil, cause
+	}
+	resp.Body = &ownedBody{ReadCloser: resp.Body, cancel: cancel}
+	handedOff = true
+	return resp, nil
 }
 
 func (c *Client) once(ctx context.Context, r request) (*http.Response, error) {

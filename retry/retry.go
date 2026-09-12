@@ -34,6 +34,10 @@ const (
 // defaults above, so a caller that sets nothing still retries a finite
 // number of times with a randomised delay.
 type Policy struct {
+	// Timeout bounds each attempt independently. Zero or less adds no bound.
+	// The callback must honor its context; Do never abandons work in a goroutine.
+	// The parent context still bounds the complete call, including backoff.
+	Timeout time.Duration
 	// MaxAttempts is the total attempts, the first included. Zero or less
 	// means DefaultMaxAttempts.
 	MaxAttempts int
@@ -122,7 +126,10 @@ func (p Policy) delay(attempt int, random func() float64) time.Duration {
 func Do(ctx context.Context, p Policy, fn func(context.Context) error) error {
 	budget := p.Attempts()
 	for attempt := 1; ; attempt++ {
-		err := fn(ctx)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		err := p.call(ctx, fn)
 		if err == nil {
 			return nil
 		}
@@ -136,6 +143,20 @@ func Do(ctx context.Context, p Policy, fn func(context.Context) error) error {
 			return err
 		}
 	}
+}
+
+// call owns the attempt context until the callback returns, including on panic.
+func (p Policy) call(ctx context.Context, fn func(context.Context) error) error {
+	if p.Timeout <= 0 {
+		return fn(ctx)
+	}
+	attempt, cancel := context.WithTimeout(ctx, p.Timeout)
+	defer cancel()
+	err := fn(attempt)
+	if err == nil {
+		return attempt.Err()
+	}
+	return err
 }
 
 // Stop marks err as permanent, so [Do] returns err without another attempt.
