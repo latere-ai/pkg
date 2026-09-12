@@ -118,3 +118,46 @@ func FuzzValidPattern(f *testing.F) {
 		}
 	})
 }
+
+func TestSingleLabelOptIn(t *testing.T) {
+	for _, name := range []string{"localhost", "postgres", "a", "service-1", strings.Repeat("a", 63)} {
+		if ValidPattern(name) {
+			t.Fatalf("default grammar widened for %q", name)
+		}
+		if !ValidPattern(name, WithSingleLabel()) {
+			t.Fatalf("single label %q rejected", name)
+		}
+		matcher := New([]string{name}, lower)
+		if !matcher.Matches(name) || matcher.Matches("sub."+name) {
+			t.Fatal("single label is not exact")
+		}
+	}
+	for _, name := range []string{"", "*", "*.localhost", "-bad", "bad-", "a_b", "a b", "localhost:80", ".a", "a.", strings.Repeat("a", 64)} {
+		if ValidPattern(name, WithSingleLabel()) {
+			t.Fatalf("malformed or wildcard label %q accepted", name)
+		}
+	}
+	for _, name := range []string{"example.com", "*.example.com", "127.0.0.1"} {
+		if !ValidPattern(name, WithSingleLabel()) {
+			t.Fatalf("existing pattern %q rejected", name)
+		}
+	}
+}
+
+func FuzzSingleLabel(f *testing.F) {
+	f.Add("localhost")
+	f.Add("*.localhost")
+	f.Fuzz(func(t *testing.T, s string) {
+		if !ValidPattern(s, WithSingleLabel()) || ValidPattern(s) {
+			return
+		}
+		if len(s) == 0 || len(s) > 63 || strings.ContainsAny(s, ".* :/_\t\r\n") || s[0] == '-' || s[len(s)-1] == '-' {
+			t.Fatalf("invalid single label %q", s)
+		}
+		for _, r := range s {
+			if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-') {
+				t.Fatalf("invalid character in %q", s)
+			}
+		}
+	})
+}

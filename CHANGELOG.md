@@ -12,6 +12,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Added
 
+- `hostmatch.ValidPattern` accepts `hostmatch.WithSingleLabel()` to opt into exact hosts such as `localhost` and bare service names. Default validation and wildcard rules remain unchanged.
+
 - `metrics.Histogram.Init(labels)` exposes zero-valued series before the first observation, so dashboards can discover a fixed label vocabulary at startup. Repeated initialization preserves counts and sums.
 
 - `circuitbreaker.WithClock` lets callers advance cooldowns without sleeping in tests. Existing constructors keep the wall clock; a nil clock option leaves that default intact.

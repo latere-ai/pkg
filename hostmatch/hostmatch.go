@@ -23,10 +23,27 @@ import (
 // so a change to what counts as a valid host pattern lands in one place.
 var patternRE = regexp.MustCompile(`^(\*\.)?[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$`)
 
+var singleLabelRE = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
+
+// Option configures host-pattern validation.
+type Option func(*patternOptions)
+
+type patternOptions struct{ singleLabel bool }
+
+// WithSingleLabel admits exact single-label hosts such as localhost and bare
+// service names. It does not admit single-label wildcards such as *.localhost.
+func WithSingleLabel() Option {
+	return func(o *patternOptions) { o.singleLabel = true }
+}
+
 // ValidPattern reports whether s is an exact FQDN or a "*."-wildcard pattern.
 // Callers normalize (trim, lower-case, trailing-dot) before validating.
-func ValidPattern(s string) bool {
-	return patternRE.MatchString(s)
+func ValidPattern(s string, opts ...Option) bool {
+	var o patternOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+	return patternRE.MatchString(s) || o.singleLabel && singleLabelRE.MatchString(s)
 }
 
 // Matcher matches normalized hosts against exact FQDNs and "*." wildcard
