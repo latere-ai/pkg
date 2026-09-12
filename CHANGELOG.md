@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.60.0 - 2026-09-12
+
 - `drive` shares the workspace HTTP client across mount consumers: attach, materialize, writeback, lease renewal, create/get, and complete paginated lists. Tokens are resolved per request; typed errors preserve writer-holder details.
 
 ### Added
