@@ -110,7 +110,7 @@ func TestS3GetRetainsParentCancellation(t *testing.T) {
 }
 
 func TestS3DeadlineBoundsResponseBodies(t *testing.T) {
-	for _, status := range []int{200, 503, 403} {
+	for _, status := range []int{200, 503} {
 		synctest.Test(t, func(t *testing.T) {
 			attempts := 0
 			var stalled *deadlineBody
@@ -130,4 +130,20 @@ func TestS3DeadlineBoundsResponseBodies(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestS3PermanentStatusDoesNotRetryAfterBodyTimeout(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		attempts := 0
+		c := timeoutClient(t, func(r *http.Request) (*http.Response, error) {
+			attempts++
+			return &http.Response{StatusCode: http.StatusForbidden, Header: http.Header{}, Body: &deadlineBody{ctx: r.Context()}}, nil
+		})
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel()
+		_, _, err := c.GetObject(ctx, "key", "")
+		if !errors.Is(err, context.DeadlineExceeded) || attempts != 1 {
+			t.Fatalf("permanent status retried: attempts=%d err=%v", attempts, err)
+		}
+	})
 }

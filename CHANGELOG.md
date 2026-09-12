@@ -18,7 +18,7 @@ under **Removed** or **Changed** with what to do about it.
 
 - `semaphore.New` bounds concurrent work with `Acquire(ctx, wait)`, which returns an idempotent, concurrency-safe release function. Nonpositive waits try once; nonpositive capacity is uncapped. Canceled callers are refused, and `Size`/`Held` expose capacity and occupancy.
 
-- `retry.Policy.Timeout` bounds each attempt independently while the parent context bounds the entire retry loop. Callbacks must honor cancellation; zero preserves the unbounded-attempt default. `s3.WithRetry` applies the bound to request headers and response processing, including listing and error bodies. Successful `GetObject` downloads retain parent cancellation but stop the attempt timer at headers, so large objects remain readable; close the returned reader to release resources.
+- `retry.Policy.Timeout` bounds each attempt independently while the parent context bounds the entire retry loop. Callbacks must honor cancellation; zero preserves the unbounded-attempt default. `s3.WithRetry` applies the bound to request headers and response processing, including listing and error bodies. Successful `GetObject` downloads retain parent cancellation but stop the attempt timer at headers, so large objects remain readable; close the returned reader to release resources. Permanent HTTP refusals remain non-retryable even if reading their error body times out.
 
 - `otel.Start` and `otel.StartScoped` open child spans on the configured provider and return an end function that records an optional error. `otel.SetAttributes` adds attributes to the current span. `StartScoped` preserves a consumer-specific instrumentation scope; attributes use the OpenTelemetry API types, with no SDK setup needed in callers.
 

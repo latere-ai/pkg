@@ -171,15 +171,15 @@ func (c *Client) attempt(parent context.Context, r request, accept []int) (*http
 		return nil, err
 	}
 	if !slices.Contains(accept, resp.StatusCode) {
-		rerr := responseError(resp)
+		var responseErr error = responseError(resp)
 		_ = resp.Body.Close()
 		if cause := finish(); cause != nil {
-			return nil, cause
+			responseErr = cause
 		}
 		if resp.StatusCode < 500 && resp.StatusCode != http.StatusTooManyRequests {
-			return nil, retry.Stop(rerr)
+			return nil, retry.Stop(responseErr)
 		}
-		return nil, rerr
+		return nil, responseErr
 	}
 	if r.consume != nil {
 		err := r.consume(resp)
