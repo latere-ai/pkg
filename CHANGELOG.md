@@ -10,6 +10,12 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Fixed
+
+- `hostsandbox`'s own test suite no longer assumes the macOS dependency set,
+  so it passes on Linux, where srt also needs bubblewrap and socat. Nothing a
+  consumer imports changed.
+
 ## v0.60.0 - 2026-09-12
 
 - `drive` shares the workspace HTTP client across mount consumers: attach, materialize, writeback, lease renewal, create/get, and complete paginated lists. Tokens are resolved per request; typed errors preserve writer-holder details.

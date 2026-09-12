@@ -489,7 +489,12 @@ func TestOutputReadsTheStageLogFromAnOffset(t *testing.T) {
 // starts: no command, no log path, an unready machine, and no PATH.
 func TestLaunchRefusesWhatItCannotRun(t *testing.T) {
 	dir := t.TempDir()
-	driver := New(Config{Home: t.TempDir(), Look: found("srt", "rg"), Lookup: os.LookupEnv})
+	// Every dependency of every platform resolves, because these cases are
+	// about what Launch refuses before it starts a process, not about
+	// readiness, and Launch runs Preflight first. A driver that named only
+	// the macOS dependencies would be refused on Linux for a missing
+	// bubblewrap before it read the stage at all.
+	driver := New(Config{Home: t.TempDir(), Look: found("srt", "rg", "bubblewrap", "socat"), Lookup: os.LookupEnv})
 	spec := stage(t, dir)
 	if _, err := driver.Launch(context.Background(), spec); err == nil || !strings.Contains(err.Error(), "argv") {
 		t.Fatalf("a stage with no command was launched: %v", err)
@@ -506,7 +511,7 @@ func TestLaunchRefusesWhatItCannotRun(t *testing.T) {
 	// A stage with no PATH resolves nothing, not even srt, whose shebang
 	// needs node. It used to fail with exit code 127 and an empty log.
 	for _, lookup := range []func(string) (string, bool){nil, func(name string) (string, bool) { return "/x", name == "HOME" }} {
-		noPath := New(Config{Home: t.TempDir(), Look: found("srt", "rg"), Lookup: lookup})
+		noPath := New(Config{Home: t.TempDir(), Look: found("srt", "rg", "bubblewrap", "socat"), Lookup: lookup})
 		_, err := noPath.Launch(context.Background(), stage(t, dir, "/bin/sh"))
 		if !errors.Is(err, ErrNotReady) || !strings.Contains(err.Error(), "PATH") {
 			t.Fatalf("Launch with no PATH = %v", err)
