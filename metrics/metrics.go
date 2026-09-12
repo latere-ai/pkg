@@ -249,10 +249,17 @@ func newHistogram(name, help string, buckets []float64) *Histogram {
 	}
 }
 
-// Observe records a single observation with the given value and label set.
-func (h *Histogram) Observe(labels map[string]string, value float64) {
+// Init exposes a label set with zero buckets, sum, and count without recording
+// an observation. Repeated calls preserve existing observations. Labels are copied.
+func (h *Histogram) Init(labels map[string]string) {
 	key := canonicalLabelKey(labels)
 	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.cell(key, labels)
+}
+
+// cell returns the series while h.mu is held.
+func (h *Histogram) cell(key string, labels map[string]string) *histogramCell {
 	cell, ok := h.obs[key]
 	if !ok {
 		cp := make(map[string]string, len(labels))
@@ -263,6 +270,14 @@ func (h *Histogram) Observe(labels map[string]string, value float64) {
 		}
 		h.obs[key] = cell
 	}
+	return cell
+}
+
+// Observe records a single observation with the given value and label set.
+func (h *Histogram) Observe(labels map[string]string, value float64) {
+	key := canonicalLabelKey(labels)
+	h.mu.Lock()
+	cell := h.cell(key, labels)
 	// Prometheus histograms use cumulative buckets: each bucket counts all
 	// observations <= its upper bound. We increment every bucket whose bound
 	// is >= the observed value, plus the implicit +Inf bucket (always incremented).
