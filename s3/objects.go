@@ -142,6 +142,7 @@ func (c *Client) ListObjects(ctx context.Context, opts ListOptions) (ListResult,
 		q.Set("delimiter", opts.Delimiter)
 	}
 	var result ListResult
+	//nolint:bodyclose // attempt consumes and closes this response before returning
 	_, err := c.do(ctx, request{method: http.MethodGet, query: q, consume: func(resp *http.Response) error {
 		raw, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 		if err != nil {
@@ -149,7 +150,7 @@ func (c *Client) ListObjects(ctx context.Context, opts ListOptions) (ListResult,
 		}
 		result, err = parseListing(raw)
 		return retry.Stop(err)
-	}}, http.StatusOK) //nolint:bodyclose // consume runs inside attempt, which closes the response before returning
+	}}, http.StatusOK)
 	return result, err
 }
 
