@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+- `drive` shares the workspace HTTP client across mount consumers: attach, materialize, writeback, lease renewal, create/get, and complete paginated lists. Tokens are resolved per request; typed errors preserve writer-holder details.
+
 ### Added
 
 - `circuitbreaker.Admits` inspects readiness without consuming the half-open probe, and `RetryAfter` reports the remaining cooldown. Pollers and retry headers can use the shared breaker without maintaining duplicate state; protocol-specific rounding remains with the consumer.
