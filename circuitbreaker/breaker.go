@@ -41,16 +41,35 @@ type Breaker struct {
 	failures     atomic.Int32
 	threshold    int           // consecutive failures required to open circuit
 	openDuration time.Duration // how long to stay open before probing (half-open)
-	openAt       atomic.Int64  // unix nanoseconds when circuit was last opened
+	now          func() time.Time
+	openAt       atomic.Int64 // unix nanoseconds when circuit was last opened
+}
+
+// Option configures a Breaker at construction.
+type Option func(*Breaker)
+
+// WithClock supplies the clock used for cooldowns. Nil keeps time.Now.
+// The clock must be safe for concurrent calls and must not move backward.
+func WithClock(now func() time.Time) Option {
+	return func(b *Breaker) {
+		if now != nil {
+			b.now = now
+		}
+	}
 }
 
 // New creates a Breaker that opens after threshold consecutive failures and
 // stays open for openDuration before probing.
-func New(threshold int, openDuration time.Duration) *Breaker {
-	return &Breaker{
+func New(threshold int, openDuration time.Duration, opts ...Option) *Breaker {
+	b := &Breaker{
+		now:          time.Now,
 		threshold:    threshold,
 		openDuration: openDuration,
 	}
+	for _, opt := range opts {
+		opt(b)
+	}
+	return b
 }
 
 // Allow reports whether an operation should be permitted.
@@ -67,7 +86,7 @@ func (b *Breaker) Allow() bool {
 		return true
 
 	case Open:
-		elapsed := time.Now().UnixNano() - b.openAt.Load()
+		elapsed := b.now().UnixNano() - b.openAt.Load()
 		if elapsed < b.openDuration.Nanoseconds() {
 			return false
 		}
@@ -107,13 +126,13 @@ func (b *Breaker) RecordFailure() {
 	case Closed:
 		if f >= b.threshold {
 			if b.state.CompareAndSwap(int32(Closed), int32(Open)) {
-				b.openAt.Store(time.Now().UnixNano())
+				b.openAt.Store(b.now().UnixNano())
 			}
 		}
 
 	case HalfOpen:
 		if b.state.CompareAndSwap(int32(HalfOpen), int32(Open)) {
-			b.openAt.Store(time.Now().UnixNano())
+			b.openAt.Store(b.now().UnixNano())
 		}
 	}
 }
