@@ -16,6 +16,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -118,20 +119,45 @@ func Run(t *testing.T, newSubject func(t *testing.T) *Subject) {
 }
 
 // spec builds a stage whose log is in a directory the stage is not granted.
+// The log file is created before the launch, because it is the consumer's
+// file: a driver that writes the stage's output appends to it, and a driver
+// that streams the output from elsewhere leaves it alone. Either way it must
+// survive Discard.
 func (s *Subject) spec(t *testing.T, argv []string) hostsandbox.StageSpec {
 	t.Helper()
 	logDir := filepath.Join(s.Dir, "log")
 	must(t, os.MkdirAll(logDir, 0o700), "mkdir log")
 	workspace := filepath.Join(s.Dir, "workspace")
 	must(t, os.MkdirAll(workspace, 0o700), "mkdir workspace")
+	name := stageName(t)
+	logPath := filepath.Join(logDir, name+".log")
+	must(t, os.WriteFile(logPath, nil, 0o600), "create the stage log")
 	return hostsandbox.StageSpec{
-		Name:    "worker-0",
+		Name:    name,
 		Argv:    argv,
 		Workdir: workspace,
 		Paths:   []hostsandbox.Path{{Host: workspace, Guest: "/workspace", Access: hostsandbox.ReadWrite}},
 		Network: hostsandbox.Network{Mode: hostsandbox.NetworkNone},
-		LogPath: filepath.Join(logDir, "worker-0.log"),
+		LogPath: logPath,
 	}
+}
+
+// stageName is a stage name unique to the case that asked for it, so that a
+// driver which names what it creates after the stage, as a container driver
+// does, does not collide with the stage the previous case launched.
+func stageName(t *testing.T) string {
+	t.Helper()
+	safe := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			return r
+		case r >= 'A' && r <= 'Z':
+			return r + 32
+		default:
+			return '-'
+		}
+	}, t.Name())
+	return "stage-" + strings.Trim(safe, "-")
 }
 
 func (s *Subject) launch(t *testing.T, argv []string) hostsandbox.StageHandle {
