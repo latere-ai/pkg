@@ -12,6 +12,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Added
 
+- `ratelimit.New` provides per-key token buckets with configurable refill, burst, idle eviction, clock injection, and rate overrides. Admission reports remaining tokens and retry delay. Idle cleanup retains depleted buckets until replenished, preventing expiry from resetting quota; it runs on activity or explicit `Sweep` without a background goroutine.
+
 - `semaphore.New` bounds concurrent work with `Acquire(ctx, wait)`, which returns an idempotent, concurrency-safe release function. Nonpositive waits try once; nonpositive capacity is uncapped. Canceled callers are refused, and `Size`/`Held` expose capacity and occupancy.
 
 - `retry.Policy.Timeout` bounds each attempt independently while the parent context bounds the entire retry loop. Callbacks must honor cancellation; zero preserves the unbounded-attempt default. `s3.WithRetry` applies the bound to request headers and response processing, including listing and error bodies. Successful `GetObject` downloads retain parent cancellation but stop the attempt timer at headers, so large objects remain readable; close the returned reader to release resources.
