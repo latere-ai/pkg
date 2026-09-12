@@ -12,6 +12,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Added
 
+- `circuitbreaker.Admits` inspects readiness without consuming the half-open probe, and `RetryAfter` reports the remaining cooldown. Pollers and retry headers can use the shared breaker without maintaining duplicate state; protocol-specific rounding remains with the consumer.
+
 - `ratelimit.New` provides per-key token buckets with configurable refill, burst, idle eviction, clock injection, and rate overrides. Admission reports remaining tokens and retry delay. Idle cleanup retains depleted buckets until replenished, preventing expiry from resetting quota; it runs on activity or explicit `Sweep` without a background goroutine.
 
 - `semaphore.New` bounds concurrent work with `Acquire(ctx, wait)`, which returns an idempotent, concurrency-safe release function. Nonpositive waits try once; nonpositive capacity is uncapped. Canceled callers are refused, and `Size`/`Held` expose capacity and occupancy.

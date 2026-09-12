@@ -146,3 +146,26 @@ func (b *Breaker) State() State {
 func (b *Breaker) Failures() int {
 	return int(b.failures.Load())
 }
+
+// Admits reports whether Allow could admit work without taking the probe slot.
+// The answer is a snapshot; callers must still use Allow before starting work.
+func (b *Breaker) Admits() bool {
+	switch b.State() {
+	case Closed:
+		return true
+	case Open:
+		return b.RetryAfter() == 0
+	default:
+		return false
+	}
+}
+
+// RetryAfter reports the cooldown remaining, zero when closed or elapsed.
+// A half-open probe can still be active when this reaches zero; consult Allow
+// for admission. Protocol-specific rounding belongs to the caller.
+func (b *Breaker) RetryAfter() time.Duration {
+	if b.State() == Closed {
+		return 0
+	}
+	return max(b.openDuration-time.Duration(b.now().UnixNano()-b.openAt.Load()), 0)
+}

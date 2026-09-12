@@ -41,3 +41,26 @@ func TestNilClockUsesWallTime(t *testing.T) {
 		t.Fatal("nil clock did not retain wall clock")
 	}
 }
+
+func TestCooldownObservationDoesNotTakeProbe(t *testing.T) {
+	now := time.Unix(100, 0)
+	b := New(1, time.Minute, WithClock(func() time.Time { return now }))
+	if !b.Admits() || b.RetryAfter() != 0 {
+		t.Fatal("closed observation")
+	}
+	b.RecordFailure()
+	if b.Admits() || b.RetryAfter() != time.Minute {
+		t.Fatal("open observation")
+	}
+	now = now.Add(time.Minute)
+	if !b.Admits() || b.RetryAfter() != 0 || !b.Allow() {
+		t.Fatal("observation took probe")
+	}
+	if b.Admits() {
+		t.Fatal("active probe admitted")
+	}
+	b.state.Store(99)
+	if b.Admits() {
+		t.Fatal("invalid state admitted")
+	}
+}
