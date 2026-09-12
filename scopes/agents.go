@@ -3,8 +3,10 @@
 
 package scopes
 
-// Agent-API scopes gate the topos agent surface: sessions, attach, and the
-// RFC 8693 exchange to an agent principal.
+// Agent-API scopes gate the topos agent surface: listing and inspecting
+// agents, changing them, starting a session and attaching to it, and
+// administering them across principals. They are scopes on a product's API,
+// not a principal type: auth mints no agent principal.
 var (
 	AgentsRead  = Scope{Name: "read:agents", Description: "List and inspect agents and their runs.", Category: "Agents"}
 	AgentsWrite = Scope{Name: "write:agents", Description: "Create, update, and delete agents.", Category: "Agents"}
