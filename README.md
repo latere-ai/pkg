@@ -96,7 +96,7 @@ configuration.
 | [`llmjson`](llmjson/) | Repairs the JSON a model meant to send: strips a markdown fence and escapes the raw newlines and tabs left inside string values, so a correct answer in the wrong encoding still decodes |
 | [`luxsdk`](luxsdk/) | First-party Go client for the Lux gateway's native dialect: typed generate, streaming, and token counting |
 | [`md`](md/) | YAML frontmatter parsing and GFM-to-HTML rendering |
-| [`otel`](otel/) | One-call OpenTelemetry bootstrap for traces, metrics, and structured logs, plus HTTP server and client instrumentation |
+| [`otel`](otel/) | One-call OpenTelemetry bootstrap for traces, metrics, and structured logs, plus HTTP server/client instrumentation and scoped child spans with error recording |
 | [`s3`](s3/) | S3 REST client in the standard library: put, create-if-absent, conditional get, head, delete, prefixed listing, and presigned GET and PUT, with a Content-Type sent on upload, read back on get and head, and bound into a presigned PUT, signed with Signature Version 4 and retried under `retry`; `s3/s3test` is an in-process endpoint for tests that verifies signatures and digests like a provider |
 | [`pgxmigrate`](pgxmigrate/) | Applies embedded golang-migrate migrations and reliably closes migrate's own connection pool afterward |
 | [`scopes`](scopes/) | Typed registry of the OAuth/RBAC scopes the Latere auth service issues, for call-site gating and OIDC discovery |
@@ -111,22 +111,24 @@ second service needed the same thing.
 | [`atomicfile`](atomicfile/) | Write-then-rename file replacement, so a reader never observes a half-written file |
 | [`bearer`](bearer/) | Token extraction from `Authorization: Bearer` with the RFC 7235 case-insensitive scheme, and constant-time comparison |
 | [`cache`](cache/) | Generic TTL cache with a bounded LRU cap over every entry and an injectable clock |
-| [`circuitbreaker`](circuitbreaker/) | Trip-on-failure gate that stops hammering a dependency that is already down |
+| [`circuitbreaker`](circuitbreaker/) | Trip-on-failure gate with injectable clocks, non-consuming readiness checks, and cooldown observation |
 | [`cmdexec`](cmdexec/) | Fluent subprocess builder and a transactional sequencer that rolls back completed steps when a later one fails |
 | [`dag`](dag/) | Adjacency-list graph operations: deterministic topological sort, cycle detection, reachability, longest path, edge reversal |
 | [`dircp`](dircp/) | Recursive directory copy |
 | [`envutil`](envutil/) | Typed environment reads with defaults: integers, bounded integers, durations, and the conventional boolean spellings |
 | [`gitutil`](gitutil/) | The git CLI behind structured results and typed errors: worktrees, rebase with conflict recovery, stashes, branch discovery |
-| [`hostmatch`](hostmatch/) | One host allow-list rule for every egress surface: exact FQDNs and `*.`-prefixed wildcards that match any sub-label depth but never the apex |
+| [`hostmatch`](hostmatch/) | One host allow-list rule for every egress surface: exact FQDNs and `*.`-prefixed wildcards that match any sub-label depth but never the apex; explicit opt-in for exact single-label hosts |
 | [`httpjson`](httpjson/) | Strict JSON request decoding (unknown fields and trailing content rejected), response writing, and the `{"error": {code, message, details}}` envelope every Latere API answers with |
-| [`metrics`](metrics/) | Prometheus text-exposition registry with labeled counters, histograms, and scrape-time gauges, with no client-library dependency |
+| [`metrics`](metrics/) | Prometheus text-exposition registry with labeled counters, histograms, and scrape-time gauges, with no client-library dependency; initialize histogram series at zero without an observation |
 | [`ndjson`](ndjson/) | NDJSON file reading and appending, plus the terminal-result scan agent output parsers need |
 | [`pagination`](pagination/) | Cursor pagination helpers |
 | [`pubsub`](pubsub/) | In-process topic fanout with per-subscriber buffering |
+| [`ratelimit`](ratelimit/) | Keyed token buckets with refill, burst, rate overrides, retry delay, and safe idle eviction |
 | [`relpath`](relpath/) | Traversal-safe relative paths: validate, join under a base, and symlink-aware containment |
-| [`retry`](retry/) | Bounded exponential backoff with jitter and a driver that runs a function under it |
+| [`retry`](retry/) | Bounded exponential backoff with jitter and optional per-attempt deadlines under the caller's total budget |
 | [`routine`](routine/) | Periodic fire-and-forget callbacks keyed by UUID, one timer each, with an injectable clock |
 | [`sanitize`](sanitize/) | Rune-safe display truncation, byte-budget truncation that never splits a rune, slug generation, and slug validation |
+| [`semaphore`](semaphore/) | Cancellable concurrent-work admission with a wait deadline and an idempotent release function |
 | [`statemachine`](statemachine/) | Declarative transition table with guarded moves |
 | [`syncmap`](syncmap/) | Type-safe `sync.Map`, with `LoadOrStore` for the per-key mutex idiom |
 | [`trackedwg`](trackedwg/) | Wait group that reports what is still outstanding |
