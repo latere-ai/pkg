@@ -16,9 +16,11 @@ hermetic:
   # found them rather than letting them inherit whatever a developer's PATH
   # happened to hold.
   #
-  #   cmdexec  runs true, echo, printf, sh and bash -- exercising real command
-  #            execution is the package's entire purpose
-  #   gitutil  runs git, for the same reason
+  #   cmdexec      runs true, echo, printf, sh and bash -- exercising real
+  #                command execution is the package's entire purpose
+  #   gitutil      runs git, for the same reason
+  #   hostsandbox  runs sh, echo, env and ps around a stand-in for srt; the
+  #                one test that needs a real srt skips when PATH has none
   #
   # Anything a test needs beyond these two directories has to be added here,
   # which is a decision someone makes rather than an accident.

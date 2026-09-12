@@ -92,6 +92,7 @@ configuration.
 | [`drive`](drive/) | Drive workspace client with per-request bearer sources, typed mount errors, snapshot materialization, writeback, and opaque-cursor pagination |
 | [`egress`](egress/) | Credential substitution at an egress boundary: a workload holds an opaque placeholder, the gateway swaps it for the real secret only toward the hosts the credential is scoped to. The pure engine (`Map`, `Registry`, `SubstituteHTTPRequest`, `SubstituteHTTPRequestContext`) with static secrets or resolvers minted at substitution time (`OAuthClientCredentials`), opt-in bounded body substitution, the ingest API and its client carrying static and OAuth client-credentials entries, JWT proxy authentication with a configurable subject claim, and a TLS-terminating CONNECT `Gateway` with a leaf-minting `CA` on top |
 | [`health`](health/) | The probe surface every service serves on its internal listener: `/livez`, `/readyz` with named checks, `/version`, and `/metrics`; the decision and the move from `healthz` are in [`docs/health.md`](docs/health.md) |
+| [`hostsandbox`](hostsandbox/) | Runs a process on the operator's own machine inside an `srt` sandbox (Seatbelt on macOS, bubblewrap on Linux), detached, with its output written where the process cannot reach: the stage vocabulary, the settings renderer with the credential deny table, a handle that survives a restart and detects a reused pid, and a preflight whose refusal carries the install commands for the platform; `hostsandbox/hostsandboxtest` holds the contract every driver of the same seam is held to |
 | [`email`](email/) | Transactional mail transport (Mailgun, SMTP, or a log-only fallback) that refuses header injection; subjects and bodies stay with the calling service |
 | [`llmdialect`](llmdialect/) | Translation between LLM inference wire dialects (Anthropic Messages, OpenAI Chat Completions, OpenAI Responses, lux-native) through a neutral intermediate representation, with an explicit loss report instead of silent drops. Carries provider-executed tools (web search, web fetch) alongside the caller-implemented kind |
 | [`llmjson`](llmjson/) | Repairs the JSON a model meant to send: strips a markdown fence and escapes the raw newlines and tabs left inside string values, so a correct answer in the wrong encoding still decodes |
@@ -197,8 +198,9 @@ while `pgxmigrate` sat at 82.1%, invisible behind it. All 48 packages clear
 **`make test-hermetic` runs the suite with `PATH` stripped** to the Go
 toolchain and the directories `.lateregate.yaml` names. A test that depends on
 what happens to be installed passes on a laptop and fails on a runner, which
-is the worst order to find out. Two packages here legitimately drive real
-binaries — `cmdexec` and `gitutil` — and the config says so.
+is the worst order to find out. Three packages here legitimately drive real
+binaries, `cmdexec`, `gitutil` and `hostsandbox`, and the config says so; the
+`hostsandbox` test that needs a real `srt` skips where none is installed.
 
 **`make validate`** is `no-tracked-specs`, `deps`, `cgo-free`, `vuln` and
 `fuzz`: no internal specs in this public module, `llmdialect` staying

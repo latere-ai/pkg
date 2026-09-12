@@ -14,6 +14,23 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Added
 
+- `hostsandbox`, the srt host sandbox extracted from replichai: `StageSpec`,
+  `StageHandle`, `StageStatus`, `Capabilities` and the `Sandbox` interface
+  any isolation driver satisfies; `New(Config)` for the srt `Driver`, which
+  launches a stage detached under `setsid`, records its exit status beside
+  the log, and answers `Observe` from that file and from the pid and start
+  time in the `pid:<pid>@<start>:<log>` handle, so a reused pid is never
+  mistaken for the stage; `Render`, `Profile`, `Settings` and
+  `AlwaysDenyRead` for srt's settings file, with the home directory denied,
+  the named paths allowed back, TLS termination declared whenever a domain
+  is allowed, and no open mode because srt refuses a wildcard;
+  `AllowedEnvironment` and `Environment` for what a stage inherits;
+  `ShellQuote` and `ShellJoin`; `Preflight`, `Remedies`, `DefaultRemedies`
+  and `NotReadyError`, whose remediation names the install commands for the
+  platform and whose `Alternative` is the consumer's own text.
+  `hostsandbox/hostsandboxtest.Run` is the contract suite every driver of
+  the seam is held to.
+
 - `circuitbreaker.Admits` inspects readiness without consuming the half-open probe, and `RetryAfter` reports the remaining cooldown. Pollers and retry headers can use the shared breaker without maintaining duplicate state; protocol-specific rounding remains with the consumer.
 
 - `ratelimit.New` provides per-key token buckets with configurable refill, burst, idle eviction, clock injection, and rate overrides. Admission reports remaining tokens and retry delay. Idle cleanup retains depleted buckets until replenished, preventing expiry from resetting quota; it runs on activity or explicit `Sweep` without a background goroutine.
