@@ -10,12 +10,12 @@ import (
 	"time"
 )
 
-// CachedTokenInfo wraps a TokenInfoClient with a short positive-verdict
-// cache for read-tier revalidation (dr-21). Only successful lookups are
-// cached — a revoked/error verdict always came from the auth service this
-// request. The contract this buys: a revoked strict delegation can keep
-// passing cached lookups for at most TTL; callers gating MUTATIONS must use
-// the direct TokenInfoClient instead.
+// CachedTokenInfo wraps a [TokenInfoClient] with a short positive-verdict
+// cache for a read tier. Only successful lookups are cached: a revoked or
+// error verdict always came from the auth service this request. The contract
+// this buys is that a token revoked at the auth service keeps passing cached
+// lookups for at most TTL, so a caller gating a mutation uses the direct
+// TokenInfoClient instead.
 //
 // Entries are keyed by SHA-256 of the raw token (the token itself is never
 // retained) and the map is bounded: when full, expired entries are swept,
@@ -117,9 +117,10 @@ func (c *CachedTokenInfo) Lookup(ctx context.Context, rawToken string) (*TokenIn
 
 // cloneTokenInfo returns a deep-enough copy of ti that a caller mutating the
 // result cannot reach the original: the struct is copied by value and the
-// Scopes/Roles slices and the Act pointer are reallocated. Every value that
-// crosses the cache boundary passes through here, so a caller holding a
-// verdict never shares memory with the cached entry.
+// Scopes and Roles slices, the only reference fields it has, are
+// reallocated. Every value that crosses the cache boundary passes through
+// here, so a caller holding a verdict never shares memory with the cached
+// entry.
 func cloneTokenInfo(ti *TokenInfo) *TokenInfo {
 	if ti == nil {
 		return nil

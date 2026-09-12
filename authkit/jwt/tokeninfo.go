@@ -15,10 +15,9 @@ import (
 	"latere.ai/x/pkg/otel"
 )
 
-// TokenInfo is the subset of the auth service's GET /tokeninfo response that
-// we consult when a consumer explicitly wants online revalidation. Field names
-// match the issuing service's handler, which no longer reports any
-// delegation fields.
+// TokenInfo is the subset of the auth service's GET /tokeninfo response read
+// when a consumer explicitly wants online revalidation. Field names match the
+// issuing service's handler.
 type TokenInfo struct {
 	Sub           string   `json:"sub"`
 	PrincipalType string   `json:"principal_type"`
@@ -44,17 +43,17 @@ var (
 
 // TokenInfoClient calls GET {URL} with Authorization: Bearer <token>. It is
 // stateless: every Lookup is an online call and the auth service is
-// authoritative per request. Mutating requests MUST use this direct client.
-// Read-tier consumers may wrap it in CachedTokenInfo (dr-21), which reuses a
-// positive verdict for a short TTL — the documented trade being that a
-// revoked delegation can keep READING for at most that window.
+// authoritative per request. A consumer gating a mutation uses this direct
+// client. A read tier may wrap it in [CachedTokenInfo], which reuses a
+// positive verdict for a short TTL, the trade being that a token revoked at
+// the auth service keeps reading for at most that window.
 type TokenInfoClient struct {
 	URL    string
 	Client *http.Client
 }
 
-// NewTokenInfoClient creates a TokenInfoClient that calls url to validate
-// strict agent tokens. Uses a 3-second HTTP timeout.
+// NewTokenInfoClient creates a TokenInfoClient that calls url. Uses a
+// 3-second HTTP timeout.
 func NewTokenInfoClient(url string) *TokenInfoClient {
 	return &TokenInfoClient{
 		URL:    url,

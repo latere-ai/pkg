@@ -1,66 +1,58 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: Apache-2.0
 
-// Package jwt provides JWKS-based RS256 JWT validation for services
-// that accept tokens issued by the Latere auth service.
+// Package jwt verifies the RS256 JWTs the Latere auth service issues, using
+// the keys it publishes at its JWKS endpoint. Verification is offline: no
+// request path calls the auth service.
 //
-// # Design
+// # What a token names
 //
-// The auth service issues RS256 JWTs with claims that vary by principal type.
-// Downstream services validate these tokens locally using the
-// public keys published at the auth service's JWKS endpoint, without any
-// round-trip to the auth service.
+// A principal is a user or a service, and the "principal_type" claim says
+// which. Both verify the same way, so the type is a fact a handler may read,
+// not a branch in this package. A verified token becomes a [Claims], which
+// embeds authkit.Identity: the subject and its membership, plus the token
+// envelope.
 //
-// # Principal types and validation strategies
+//	Claim            Field                  Note
+//	─────            ─────                  ────
+//	sub              Sub                    the principal id; the only claim required
+//	principal_type   PrincipalType          "user" or "service"
+//	org_id           OrgID                  the active organisation
+//	roles            Roles                  role names in that organisation
+//	scp              Scopes                 granted scopes
+//	email            Email
+//	client_id        ClientID               "azp" is the fallback
+//	is_superadmin    IsSuperadmin
+//	kind, actor_id   Kind, ActorID          a non-principal actor a token is bound to
+//	iss, aud, exp    Iss, Aud, Exp          the envelope
 //
-// Every token carries a "principal_type" claim that identifies the subject:
+// An issuer that stamps only "sub" still verifies; the Identity that results
+// carries the subject and nothing more. [Config.Issuer] and [Config.Audiences]
+// are checked when set, and a service should set both: a token minted for
+// another relying party carries the same signature, and the audience is what
+// refuses it here.
 //
-//   - "user"    — a human user authenticated via OIDC. Local JWT validation
-//     is always sufficient.
-//   - "service" — a service account using client_credentials. Local JWT
-//     validation is always sufficient.
-//   - "agent"   — an AI agent acting on behalf of a delegator (RFC 8693
-//     token exchange). Agent tokens carry a "validation" claim:
-//   - "local"  — read-only agent; local JWT validation is sufficient.
-//   - "strict" — agent with write/delete/admin scopes; the downstream
-//     service MUST call GET /tokeninfo on EVERY request to verify
-//     that the delegation has not been revoked or expired.
+// # Online revalidation is the consumer's call
 //
-// Use [Claims.NeedsTokenInfo] to determine whether a token requires online
-// validation. The /tokeninfo call itself is the caller's responsibility.
+// [TokenInfoLookup], [TokenInfoClient] and [CachedTokenInfo] call the auth
+// service's GET /tokeninfo. Nothing in this package calls them on a
+// consumer's behalf, and no claim asks it to. A token's own expiry is its
+// revocation window unless the consumer decides otherwise and writes the
+// call.
 //
 // # JWKS caching
 //
-// Public keys are fetched from the JWKS endpoint and cached for the duration
-// specified by [Config.CacheTTL] (default 5 minutes). On fetch errors the
-// validator falls back to stale cached keys, so transient auth-service
-// outages do not break validation for already-seen keys.
-//
-// # Token claims
-//
-// The [Claims] struct is a superset of all principal types. Fields that do
-// not apply to a given principal type are zero-valued:
-//
-//	Field          User   Service  Agent
-//	─────          ────   ───────  ─────
-//	Sub            ✓      ✓        ✓
-//	PrincipalType  ✓      ✓        ✓
-//	OrgID          ✓      ✓        ✓
-//	Scopes         ✓      ✓        ✓       (JWT claim key: "scp")
-//	Roles          ✓      ✓        ✓
-//	Email          ✓
-//	ClientID       ✓      ✓        ✓       (JWT claim key: "client_id", "azp" fallback)
-//	IsSuperadmin   ✓      ✓        ✓
-//	Validation                      ✓       ("local" or "strict")
-//	DelegationID                    ✓
-//	Act                             ✓       (delegator identity)
+// Public keys are fetched from the JWKS endpoint and cached for
+// [Config.CacheTTL] (default 5 minutes). On a fetch error the validator falls
+// back to stale cached keys, so a transient auth-service outage does not break
+// verification for a key already seen.
 //
 // # Usage
 //
 //	v := jwt.New(jwt.Config{
 //	    JWKSURL:   "https://auth.latere.ai/.well-known/jwks.json",
-//	    Issuer:    "https://auth.latere.ai",        // optional
-//	    Audiences: []string{"my-service-client-id"}, // optional
+//	    Issuer:    "https://auth.latere.ai",
+//	    Audiences: []string{"my-service-client-id"},
 //	})
 //
 //	// As HTTP middleware:
@@ -69,6 +61,9 @@
 //	// In a handler:
 //	claims := jwt.ClaimsFromContext(r.Context())
 //	_ = claims.Sub
+//
+//	// As an authkit.Authenticator, composable in an authkit.Chain:
+//	auth := jwt.NewAuthenticator(v, nil)
 package jwt
 
 import (

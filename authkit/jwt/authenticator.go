@@ -20,24 +20,22 @@ type validator interface {
 // The validator caches JWKS internally; its Middleware is kept out of the
 // path so callers can apply their own request-id logging before auth.
 //
-// Validation is local: the signature and claims of the presented token decide
-// the Identity. There is no longer a claim that makes this authenticator call
-// /tokeninfo on its own. That tier existed for strict agent tokens, whose
-// delegation could be revoked mid-lifetime. Agent delegation has since been
-// removed and no surviving token has that property, so a service token's own
-// short expiry is its revocation window.
+// Authentication is local: the signature and claims of the presented token
+// decide the Identity. No claim makes this authenticator reach for
+// /tokeninfo, so a token's own expiry is its revocation window.
 //
-// A consumer that still wants online revalidation calls TokenInfoClient
-// explicitly, which is the honest shape: the decision belongs to the consumer,
-// not to a claim on the token.
+// TokenInfo is a field Authenticate never reads. It is here so a consumer
+// that wants online revalidation can carry the lookup beside the
+// authenticator and call it where the decision is visible, rather than
+// having one hidden behind a claim.
 type Authenticator struct {
 	V         validator
 	TokenInfo TokenInfoLookup
 }
 
 // NewAuthenticator wires a JWT authenticator around the JWKS-backed
-// validator v. ti is retained for source compatibility and is no longer
-// consulted by Authenticate; pass nil unless you read a.TokenInfo yourself.
+// validator v. ti is stored on the returned Authenticator and never consulted
+// by Authenticate; pass nil unless you read a.TokenInfo yourself.
 func NewAuthenticator(v *Validator, ti TokenInfoLookup) *Authenticator {
 	return &Authenticator{V: v, TokenInfo: ti}
 }
