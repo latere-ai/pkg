@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.60.1 - 2026-09-12
+
 ### Fixed
 
 - `hostsandbox`'s own test suite no longer assumes the macOS dependency set,
