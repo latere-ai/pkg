@@ -63,7 +63,7 @@
 //	_ = claims.Sub
 //
 //	// As an authkit.Authenticator, composable in an authkit.Chain:
-//	auth := jwt.NewAuthenticator(v, nil)
+//	auth := jwt.NewAuthenticator(v)
 package jwt
 
 import (

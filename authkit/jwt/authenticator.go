@@ -21,23 +21,18 @@ type validator interface {
 // path so callers can apply their own request-id logging before auth.
 //
 // Authentication is local: the signature and claims of the presented token
-// decide the Identity. No claim makes this authenticator reach for
-// /tokeninfo, so a token's own expiry is its revocation window.
-//
-// TokenInfo is a field Authenticate never reads. It is here so a consumer
-// that wants online revalidation can carry the lookup beside the
-// authenticator and call it where the decision is visible, rather than
-// having one hidden behind a claim.
+// decide the Identity. Nothing here calls the issuer, so a token's own
+// expiry is its revocation window. A service that wants online
+// revalidation holds a [TokenInfoLookup] itself and calls it where the
+// decision it changes is visible.
 type Authenticator struct {
-	V         validator
-	TokenInfo TokenInfoLookup
+	V validator
 }
 
 // NewAuthenticator wires a JWT authenticator around the JWKS-backed
-// validator v. ti is stored on the returned Authenticator and never consulted
-// by Authenticate; pass nil unless you read a.TokenInfo yourself.
-func NewAuthenticator(v *Validator, ti TokenInfoLookup) *Authenticator {
-	return &Authenticator{V: v, TokenInfo: ti}
+// validator v.
+func NewAuthenticator(v *Validator) *Authenticator {
+	return &Authenticator{V: v}
 }
 
 func (a *Authenticator) Authenticate(r *http.Request) (authkit.Identity, error) {

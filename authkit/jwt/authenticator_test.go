@@ -25,27 +25,25 @@ func (f *fakeValidator) Validate(string) (*Claims, error) {
 	return f.claims, f.err
 }
 
-func newJWTWithFakeValidator(v validator, ti TokenInfoLookup) *Authenticator {
-	return &Authenticator{V: v, TokenInfo: ti}
+func newJWTWithFakeValidator(v validator) *Authenticator {
+	return &Authenticator{V: v}
 }
 
 func TestNewJWT(t *testing.T) {
-	// NewAuthenticator accepts a *Validator and *TokenInfoClient.
-	// We use a nil validator to verify the constructor doesn't panic and
-	// returns a non-nil *Authenticator with fields wired correctly.
-	ti := NewTokenInfoClient("https://auth.test/tokeninfo")
-	j := NewAuthenticator(nil, ti)
+	// NewAuthenticator takes the validator and nothing else. A nil
+	// *Validator proves the constructor neither panics nor returns nil,
+	// and that the interface field holds what it was given.
+	j := NewAuthenticator(nil)
 	if j == nil {
 		t.Fatal("NewAuthenticator returned nil")
 	}
-	// V field is assigned (even if nil *Validator, interface holds it).
-	if j.TokenInfo != ti {
-		t.Fatal("TokenInfo not wired")
+	if j.V == nil {
+		t.Fatal("V not wired")
 	}
 }
 
 func TestJWTAuthenticateMissingHeader(t *testing.T) {
-	j := newJWTWithFakeValidator(&fakeValidator{}, nil)
+	j := newJWTWithFakeValidator(&fakeValidator{})
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	_, err := j.Authenticate(r)
 	if !errors.Is(err, authkit.ErrUnauthenticated) {
@@ -55,7 +53,7 @@ func TestJWTAuthenticateMissingHeader(t *testing.T) {
 
 func TestJWTAuthenticateValidateError(t *testing.T) {
 	sentinel := errors.New("bad token")
-	j := newJWTWithFakeValidator(&fakeValidator{err: sentinel}, nil)
+	j := newJWTWithFakeValidator(&fakeValidator{err: sentinel})
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("Authorization", "Bearer sometoken")
 	_, err := j.Authenticate(r)
@@ -72,7 +70,7 @@ func TestJWTAuthenticateLocalToken(t *testing.T) {
 		PrincipalType: PrincipalUser,
 		IsSuperadmin:  false,
 		Scopes:        []string{"read:projects"}}
-	j := newJWTWithFakeValidator(&fakeValidator{claims: claims}, nil)
+	j := newJWTWithFakeValidator(&fakeValidator{claims: claims})
 	// Encode a payload with no client_id claim.
 	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"u-1"}`))
 	raw := "hdr." + payload + ".sig"
@@ -100,7 +98,7 @@ func TestJWTAuthenticateLocalTokenWithClientID(t *testing.T) {
 		Sub:           "u-1",
 		PrincipalType: PrincipalUser,
 		ClientID:      "cli-abc"}
-	j := newJWTWithFakeValidator(&fakeValidator{claims: claims}, nil)
+	j := newJWTWithFakeValidator(&fakeValidator{claims: claims})
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("Authorization", "Bearer hdr.payload.sig")
 	id, err := j.Authenticate(r)
@@ -118,7 +116,7 @@ func TestJWTAuthenticateCarriesActorClaims(t *testing.T) {
 		PrincipalType: PrincipalUser,
 		Kind:          "sandbox",
 		ActorID:       "sb-abc123"}
-	j := newJWTWithFakeValidator(&fakeValidator{claims: claims}, nil)
+	j := newJWTWithFakeValidator(&fakeValidator{claims: claims})
 	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"u-1"}`))
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("Authorization", "Bearer hdr."+payload+".sig")
@@ -144,7 +142,7 @@ func TestJWTAuthenticateCarriesRoles(t *testing.T) {
 		OrgID:         "org-1",
 		PrincipalType: PrincipalUser,
 		Roles:         []string{"admin"}}
-	j := newJWTWithFakeValidator(&fakeValidator{claims: claims}, nil)
+	j := newJWTWithFakeValidator(&fakeValidator{claims: claims})
 	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"u-1"}`))
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("Authorization", "Bearer hdr."+payload+".sig")

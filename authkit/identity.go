@@ -17,7 +17,7 @@
 // Typical usage:
 //
 //	v := jwt.New(jwt.Config{JWKSURL: ..., Issuer: ...})
-//	auth := jwt.NewAuthenticator(v, nil)
+//	auth := jwt.NewAuthenticator(v)
 //
 //	mux.Handle("GET /api/resource", authkit.Middleware(handler, auth))
 //
