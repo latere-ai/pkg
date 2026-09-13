@@ -37,7 +37,7 @@ type Scope struct {
 // All returns the union of every scope known across latere.ai
 // services, sorted by (Category, Name) for stable rendering.
 func All() []Scope {
-	s := slices.Concat(oidc(), agents(), billing(), wallfacer())
+	s := slices.Concat(oidc(), agents(), wallfacer())
 	sort.SliceStable(s, func(i, j int) bool {
 		if s[i].Category != s[j].Category {
 			return s[i].Category < s[j].Category

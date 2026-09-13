@@ -63,7 +63,6 @@ func TestKnownScopesPresent(t *testing.T) {
 	required := []string{
 		"openid", "email", "profile", "offline_access",
 		"read:agents", "write:agents", "run:agents", "admin:agents",
-		"billing:report",
 		"read:projects",
 	}
 	have := map[string]bool{}
@@ -73,6 +72,18 @@ func TestKnownScopesPresent(t *testing.T) {
 	for _, want := range required {
 		if !have[want] {
 			t.Errorf("scope %q missing from registry", want)
+		}
+	}
+}
+
+// TestBillingScopesGone holds pay-03: the meter-submission endpoint auth
+// exposed at /internal/billing/* is gone, so the two scopes that named it
+// are dead vocabulary. A registry that advertises a word no endpoint
+// answers to invites a client to ask for it.
+func TestBillingScopesGone(t *testing.T) {
+	for _, sc := range All() {
+		if sc.Name == "billing:report" || sc.Name == "billing:read" || sc.Category == "Billing" {
+			t.Errorf("scope %q still in the registry; pay-03 removed the billing vocabulary", sc.Name)
 		}
 	}
 }
