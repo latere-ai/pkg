@@ -10,6 +10,12 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Changed
+
+- `issuertest`: `POST /mint` mints any field its body carries that `Claims`
+  does not name as an extra claim, so a consumer's verification table can
+  ask for a token with a retired claim and prove its verifier refuses it.
+
 ## v0.63.0 - 2026-09-13
 
 ### Added

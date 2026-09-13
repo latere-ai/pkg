@@ -221,6 +221,17 @@ func TestControlAPIMintsAndRotates(t *testing.T) {
 	if decode(t, out["token"])["sub"] != "u9" {
 		t.Fatalf("minted sub = %v", decode(t, out["token"])["sub"])
 	}
+	// A field Claims does not name is minted as an extra claim, so a
+	// verification table can ask for a token carrying a retired one.
+	resp, err = http.Post(s.URL()+"/mint", "application/json", strings.NewReader(`{"sub":"svc","act":"alice","aud":"x"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	resp.Body.Close()
+	if m := decode(t, out["token"]); m["act"] != "alice" || m["sub"] != "svc" {
+		t.Fatalf("extra claim not minted: %v", m)
+	}
 	resp, err = http.Post(s.URL()+"/mint", "application/json", strings.NewReader("{"))
 	if err != nil {
 		t.Fatal(err)

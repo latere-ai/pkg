@@ -25,6 +25,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"maps"
 	"math/big"
 	"net/http"
@@ -360,14 +361,40 @@ func (s *Server) jwks(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, map[string]any{"keys": keys})
 }
 
+// mint is the control API's POST /mint. The body is Claims, and any field
+// the struct does not name is minted verbatim as an extra claim, so a
+// consumer's verification table can ask for a token carrying a claim the
+// family retired, such as act, and prove its verifier refuses it.
 func (s *Server) mint(w http.ResponseWriter, r *http.Request) {
-	var c Claims
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&c); err != nil {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<10))
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	var c Claims
+	if err := json.Unmarshal(body, &c); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var all map[string]any
+	if err := json.Unmarshal(body, &all); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	for k, v := range all {
+		if !slices.Contains(claimsFields, k) {
+			if c.Extra == nil {
+				c.Extra = map[string]any{}
+			}
+			c.Extra[k] = v
+		}
+	}
 	writeJSON(w, map[string]string{"token": s.Mint(c)})
 }
+
+// claimsFields are the JSON names Claims declares; anything else posted to
+// /mint is an extra claim.
+var claimsFields = []string{"sub", "aud", "exp", "nbf", "iat", "kid", "alg", "org_id", "roles", "principal_type", "email", "client_id", "extra", "omit"}
 
 // actorTokens is the issuer's POST /actor-tokens: a bearer this stub
 // minted and {"audience", "ttl_seconds"} answer a token for that one
