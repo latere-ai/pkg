@@ -5,6 +5,7 @@ package issuertest
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -12,11 +13,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
 	"latere.ai/x/pkg/authkit/jwt"
+	"latere.ai/x/pkg/authkit/oidc"
 )
 
 func decode(t *testing.T, token string) map[string]any {
@@ -336,5 +339,105 @@ func TestStringListDecodesBothShapes(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(`7`), &bad); err == nil {
 		t.Fatal("a number decoded as a string list")
+	}
+}
+
+// TestTokenEndpointMintsAServiceTokenForARegisteredClient is the
+// client_credentials grant end to end through the family's own client:
+// oidc.ClientCredentials asks, the stub answers a token addressed to the
+// issuer for the account the client stands for, and /actor-tokens narrows
+// that token only to the audiences the client's row names.
+func TestTokenEndpointMintsAServiceTokenForARegisteredClient(t *testing.T) {
+	s := New(t, WithServiceClient("topos-org1", ServiceClient{
+		Secret: "s3cret", Sub: "sa-org1", OrgID: "org1", ActorAudiences: []string{"lux.latere.ai", "drive.latere.ai"},
+	}))
+	ctx := context.Background()
+
+	tok, exp, err := oidc.ClientCredentials(ctx, s.URL(), "topos-org1", "s3cret", "", nil)
+	if err != nil {
+		t.Fatalf("client_credentials: %v", err)
+	}
+	if until := time.Until(exp); until < ServiceTokenLifetime-10*time.Second || until > ServiceTokenLifetime {
+		t.Fatalf("expiry %v from now, want about %v", until, ServiceTokenLifetime)
+	}
+	c, err := validator(s, s.URL()).Validate(tok)
+	if err != nil {
+		t.Fatalf("the service token must verify for the issuer's own audience: %v", err)
+	}
+	if c.Sub != "sa-org1" || c.OrgID != "org1" || c.PrincipalType != "service" || c.ClientID != "topos-org1" {
+		t.Fatalf("service token claims = %+v", c)
+	}
+
+	// The grant is refused for a wrong secret, an unknown client, the wrong
+	// grant type, and an audience that is not the issuer.
+	for _, tc := range []struct{ name, id, secret, aud string }{
+		{"wrong secret", "topos-org1", "nope", ""},
+		{"unknown client", "nobody", "s3cret", ""},
+		{"product audience on the grant", "topos-org1", "s3cret", "lux.latere.ai"},
+	} {
+		if _, _, err := oidc.ClientCredentials(ctx, s.URL(), tc.id, tc.secret, tc.aud, nil); err == nil {
+			t.Errorf("%s: the grant must be refused", tc.name)
+		}
+	}
+	form := url.Values{"grant_type": {"authorization_code"}}
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, s.URL()+"/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth("topos-org1", "s3cret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("another grant type = %d, want 400", resp.StatusCode)
+	}
+
+	// The registry gate: the service token narrows to a listed audience and
+	// to nothing else.
+	narrow := func(aud string) int {
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, s.URL()+"/actor-tokens", strings.NewReader(`{"audience":"`+aud+`"}`))
+		req.Header.Set("Authorization", "Bearer "+tok)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			var m map[string]any
+			_ = json.NewDecoder(resp.Body).Decode(&m)
+			ac, err := validator(s, aud).Validate(m["actor_token"].(string))
+			if err != nil || ac.Sub != "sa-org1" || ac.PrincipalType != "service" || ac.OrgID != "org1" {
+				t.Fatalf("actor token for %s: %+v, %v", aud, ac, err)
+			}
+		}
+		return resp.StatusCode
+	}
+	if got := narrow("lux.latere.ai"); got != http.StatusOK {
+		t.Fatalf("a listed audience = %d, want 200", got)
+	}
+	if got := narrow("sandboxd"); got != http.StatusBadRequest {
+		t.Fatalf("an unlisted audience = %d, want 400 invalid_target", got)
+	}
+	// A person's bearer names no client and is not gated by the registry.
+	person := s.Mint(Claims{Sub: "u1", Aud: StringList{s.URL()}, OrgID: "org1", Roles: []string{"member"}})
+	req, _ = http.NewRequestWithContext(ctx, http.MethodPost, s.URL()+"/actor-tokens", strings.NewReader(`{"audience":"sandboxd"}`))
+	req.Header.Set("Authorization", "Bearer "+person)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("a person's bearer is not registry-gated by the stub: %d", resp.StatusCode)
+	}
+}
+
+// TestTokenEndpointWithNoClientsRefusesEveryGrant: a stub that registered
+// nothing answers invalid_client, so a test that forgot WithServiceClient
+// fails loudly rather than minting for anyone.
+func TestTokenEndpointWithNoClientsRefusesEveryGrant(t *testing.T) {
+	s := New(t)
+	if _, _, err := oidc.ClientCredentials(context.Background(), s.URL(), "any", "thing", "", nil); err == nil || !strings.Contains(err.Error(), "401") {
+		t.Fatalf("want invalid_client 401, got %v", err)
 	}
 }

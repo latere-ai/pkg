@@ -122,6 +122,18 @@ func WithClock(now func() time.Time) Option {
 
 // WithDefaultAudience sets the aud a minted token carries when Claims
 // names none. Without it a token with no Aud has no aud claim.
+// WithServiceClient registers a confidential client for the
+// client_credentials grant at POST /token. A stub with no registered
+// client answers every grant with invalid_client.
+func WithServiceClient(clientID string, c ServiceClient) Option {
+	return func(s *Server) {
+		if s.clients == nil {
+			s.clients = map[string]ServiceClient{}
+		}
+		s.clients[clientID] = c
+	}
+}
+
 func WithDefaultAudience(aud string) Option {
 	return func(s *Server) { s.defaultAud = aud }
 }
@@ -139,6 +151,22 @@ type Server struct {
 	requests   []string
 	srv        *httptest.Server
 	mux        *http.ServeMux
+	// clients are the service clients the client_credentials grant knows:
+	// client id to the account the grant mints for.
+	clients map[string]ServiceClient
+}
+
+// ServiceClient is one confidential client the stub's token endpoint
+// accepts for the client_credentials grant, and the identity it mints:
+// the service account's own subject, the organisation it belongs to, and
+// the audiences its actor tokens may be narrowed to. A request for an
+// audience outside that list is refused with invalid_target, which is
+// auth's registry gate (identity rule R3).
+type ServiceClient struct {
+	Secret         string
+	Sub            string
+	OrgID          string
+	ActorAudiences []string
 }
 
 type signingKey struct {
@@ -175,6 +203,7 @@ func NewHandler(opts ...Option) *Server {
 	s.mux.HandleFunc("GET /jwks", s.jwks)
 	s.mux.HandleFunc("POST /mint", s.mint)
 	s.mux.HandleFunc("POST /actor-tokens", s.actorTokens)
+	s.mux.HandleFunc("POST /token", s.token)
 	s.mux.HandleFunc("POST /rotate", func(w http.ResponseWriter, _ *http.Request) { s.Rotate(); w.WriteHeader(http.StatusNoContent) })
 	s.mux.HandleFunc("POST /hang", func(w http.ResponseWriter, _ *http.Request) { s.Hang(); w.WriteHeader(http.StatusNoContent) })
 	s.mux.HandleFunc("POST /resume", func(w http.ResponseWriter, _ *http.Request) { s.Resume(); w.WriteHeader(http.StatusNoContent) })
@@ -401,6 +430,44 @@ var claimsFields = []string{"sub", "aud", "exp", "nbf", "iat", "kid", "alg", "or
 // audience carrying the bearer's identity and membership, as the issuer's
 // does. The stub does not hold a client registry, so it mints for any
 // audience; the registry gate is the issuer's own test.
+// ServiceTokenLifetime is how long a client_credentials token lives.
+const ServiceTokenLifetime = 15 * time.Minute
+
+// token is the client_credentials grant: HTTP Basic client credentials
+// against the registered clients, a token addressed to the issuer for the
+// account the client stands for, principal_type service. It is the shape
+// authkit/oidc.ClientCredentials asks for.
+func (s *Server) token(w http.ResponseWriter, r *http.Request) {
+	id, secret, ok := r.BasicAuth()
+	if err := r.ParseForm(); err != nil || !ok {
+		http.Error(w, `{"error":"invalid_client"}`, http.StatusUnauthorized)
+		return
+	}
+	s.mu.Lock()
+	c, known := s.clients[id]
+	now := s.now()
+	s.mu.Unlock()
+	if !known || c.Secret != secret {
+		http.Error(w, `{"error":"invalid_client"}`, http.StatusUnauthorized)
+		return
+	}
+	if r.Form.Get("grant_type") != "client_credentials" {
+		http.Error(w, `{"error":"unsupported_grant_type"}`, http.StatusBadRequest)
+		return
+	}
+	if aud := r.Form.Get("audience"); aud != "" && aud != s.issuer {
+		// A service token is addressed to the issuer alone; a product is
+		// reached through /actor-tokens (identity rule R3).
+		http.Error(w, `{"error":"invalid_target"}`, http.StatusBadRequest)
+		return
+	}
+	token := s.Mint(Claims{
+		Sub: c.Sub, Aud: StringList{s.issuer}, Iat: now.Unix(), Exp: now.Add(ServiceTokenLifetime).Unix(),
+		OrgID: c.OrgID, PrincipalType: "service", ClientID: id,
+	})
+	writeJSON(w, map[string]any{"access_token": token, "token_type": "Bearer", "expires_in": int64(ServiceTokenLifetime / time.Second)})
+}
+
 func (s *Server) actorTokens(w http.ResponseWriter, r *http.Request) {
 	bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok || bearer == "" {
@@ -424,6 +491,20 @@ func (s *Server) actorTokens(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"bad_request","message":"audience is required"}`, http.StatusBadRequest)
 		return
 	}
+	// A bearer minted for a registered service client is narrowed only to
+	// the audiences its row names, the way auth gates /actor-tokens on the
+	// registry. A person's bearer, which names no client, is not gated
+	// here: the stub stands in for the issuer, not for its registry of
+	// person-facing clients.
+	if parent.ClientID != "" {
+		s.mu.Lock()
+		c, known := s.clients[parent.ClientID]
+		s.mu.Unlock()
+		if known && !slices.Contains(c.ActorAudiences, body.Audience) {
+			http.Error(w, `{"error":"invalid_target","message":"the client's registry row does not name this audience"}`, http.StatusBadRequest)
+			return
+		}
+	}
 	ttl := time.Duration(body.TTL) * time.Second
 	if ttl <= 0 || ttl > ActorTokenLifetime {
 		ttl = ActorTokenLifetime
@@ -444,6 +525,7 @@ type payload struct {
 	Roles         []string `json:"roles"`
 	PrincipalType string   `json:"principal_type"`
 	Email         string   `json:"email"`
+	ClientID      string   `json:"client_id"`
 }
 
 func payloadOf(token string) (payload, bool) {

@@ -10,6 +10,17 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+- `authkit/issuertest` serves `POST /token`, the `client_credentials`
+  grant: a client registered with `WithServiceClient` presents HTTP Basic
+  credentials and receives a token addressed to the issuer for the account
+  it stands for, `principal_type: service`. `/actor-tokens` then narrows a
+  registered client's bearer only to the audiences its row names and
+  refuses the rest with `invalid_target`, which is the issuer's registry
+  gate (identity rule R3); a person's bearer names no client and is not
+  gated by the stub. A stub with no registered client refuses every grant.
+  Until now a repository testing an unattended run had to hand-roll the
+  endpoint (agents `cmd/toposd/unattended_e2e_test.go` did).
+
 ## v0.63.1 - 2026-09-13
 
 ### Changed
