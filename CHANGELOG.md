@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.62.0 - 2026-09-13
+
 ### Added
 
 - `authkit/issuertest`: the family's stub issuer for tests, moved from
