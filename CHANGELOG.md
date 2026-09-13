@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.63.1 - 2026-09-13
+
 ### Changed
 
 - `issuertest`: `POST /mint` mints any field its body carries that `Claims`
