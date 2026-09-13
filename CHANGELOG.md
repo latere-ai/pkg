@@ -10,6 +10,19 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `authkit/issuertest`: the family's stub issuer for tests, moved from
+  Origo's `test/stubs/issuer`. Discovery, JWKS, `POST /mint` for a token
+  with any one claim wrong, `POST /actor-tokens` as the one hop, rotate,
+  hang and resume, and a request recorder. RS256 by default, ES256 by
+  option.
+- `authkit/conformance`: rule R2 as a test a service runs with the
+  authenticator it installs in production: its own audience is admitted
+  and yields sub, org_id, roles and principal_type; the issuer's audience,
+  another service's audience and a token with no subject are refused; and
+  nothing but the key set is called while authenticating.
+
 ### Removed
 
 - `jwt.TokenInfoClient`, `jwt.CachedTokenInfo` and `jwt.TokenInfoLookup`:

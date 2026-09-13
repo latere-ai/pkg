@@ -36,8 +36,8 @@
 //
 // Nothing in this package calls the issuer while a request is served: the
 // signature, the envelope and the claims decide, and a token's own expiry
-// is its revocation window. Membership a service needs, org_id, roles and
-// teams, arrives in the token.
+// is its revocation window. The membership a service may read, org_id and
+// roles, arrives in the token; anything finer is the service's own state.
 //
 // # JWKS caching
 //
