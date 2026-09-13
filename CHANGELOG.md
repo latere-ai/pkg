@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.64.0 - 2026-09-13
+
 ### Removed
 
 - `authkit.Identity.IsSuperadmin` and `authkit.Identity.Scopes`, and
