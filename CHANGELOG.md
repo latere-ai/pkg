@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.63.0 - 2026-09-13
+
 ### Added
 
 - `oidc.ClientCredentials` and `oidc.ServiceTokenSource`: a service's own
