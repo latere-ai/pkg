@@ -10,6 +10,15 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `oidc.ClientCredentials` and `oidc.ServiceTokenSource`: a service's own
+  credential, minted with the client_credentials grant for one audience
+  and reused until 30 s before it expires. A service that acts as itself,
+  not for a person, holds one source per audience and asks it per call.
+- `issuertest.WithRS256`, the explicit form of the default, so a wrapper
+  that defaults to ES256 can be asked for RS256.
+
 ## v0.62.0 - 2026-09-13
 
 ### Added

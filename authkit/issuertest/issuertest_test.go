@@ -89,6 +89,13 @@ func TestES256SignsWithAP256KeyAndServesAnECKey(t *testing.T) {
 	}
 }
 
+func TestWithRS256UndoesES256(t *testing.T) {
+	s := New(t, WithES256(), WithRS256())
+	if _, err := validator(s, "x").Validate(s.Mint(Claims{Aud: StringList{"x"}})); err != nil {
+		t.Fatalf("the later RS256 option must win: %v", err)
+	}
+}
+
 func TestDefaultsAndOmit(t *testing.T) {
 	fixed := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
 	s := New(t, WithClock(func() time.Time { return fixed }), WithDefaultAudience("svc"))

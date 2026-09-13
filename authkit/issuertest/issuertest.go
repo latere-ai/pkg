@@ -108,6 +108,12 @@ func WithES256() Option {
 	return func(s *Server) { s.es256 = true }
 }
 
+// WithRS256 signs with RSA keys, the default; it undoes an earlier WithES256
+// so a wrapper that defaults to ES256 can be asked for RS256.
+func WithRS256() Option {
+	return func(s *Server) { s.es256 = false }
+}
+
 // WithClock replaces time.Now for iat and exp defaults.
 func WithClock(now func() time.Time) Option {
 	return func(s *Server) { s.now = now }
