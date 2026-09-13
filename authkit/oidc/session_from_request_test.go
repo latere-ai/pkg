@@ -70,7 +70,7 @@ func TestSessionFromRequestProactiveRefresh(t *testing.T) {
 		RefreshToken:  "rt-1",
 		Expiry:        time.Now().UTC().Add(-time.Minute), // expired → refresh
 		SessionExpiry: keepExpiry,
-		User:          User{Sub: "u1", DisplayName: "Ali", Picture: "https://p/y", ClientID: "cella", Scopes: []string{"openid"}},
+		User:          User{Sub: "u1", DisplayName: "Ali", Picture: "https://p/y", ClientID: "cella", Roles: []string{"member"}},
 	})
 
 	// /userinfo must not be called; make it explode if it is.
@@ -95,8 +95,8 @@ func TestSessionFromRequestProactiveRefresh(t *testing.T) {
 	if got.User.DisplayName != "Ali" || got.User.Picture != "https://p/y" {
 		t.Errorf("profile not preserved: %+v", got.User)
 	}
-	if got.User.ClientID != "cella" || len(got.User.Scopes) != 1 {
-		t.Errorf("clientID/scopes not preserved: %+v", got.User)
+	if got.User.ClientID != "cella" || len(got.User.Roles) != 1 {
+		t.Errorf("clientID/roles not preserved: %+v", got.User)
 	}
 	// The refreshed session must be written back.
 	if len(w.Result().Cookies()) != 1 {

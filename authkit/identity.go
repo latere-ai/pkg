@@ -23,7 +23,7 @@
 //
 //	func handler(w http.ResponseWriter, r *http.Request) {
 //	    id := authkit.IdentityFromContext(r.Context())
-//	    // id.Sub, id.OrgID, id.Scopes ...
+//	    // id.Sub, id.OrgID, id.Has("platform_admin") ...
 //	}
 package authkit
 
@@ -32,6 +32,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"slices"
 
 	"latere.ai/x/pkg/httpjson"
 )
@@ -51,19 +52,24 @@ const (
 // Identity is what handlers see after authentication. Sub is the canonical
 // owner key; OrgID is the tenant key. Resources created by a principal are
 // labeled with both so lists and deletes can scope to them.
+//
+// Access is decided by role and never by a flag (identity rule R9). The
+// five standard names are the whole vocabulary: RolePlatformAdmin is a
+// property of the person and travels on every token of that principal,
+// whatever the OrgID; RoleOwner, RoleAdmin and RoleMember are the person's
+// roles in OrgID; a personal token has OrgID "" and no roles, which is the
+// member of the personal tenant by definition. A service decides with its
+// own table over these names and reads no scope claim: "scp" is OAuth's
+// ceiling on what a client may request and says nothing about a person.
 type Identity struct {
 	Sub           string        `json:"sub"`
 	OrgID         string        `json:"org_id,omitempty"`
 	Email         string        `json:"email,omitempty"`
 	PrincipalType PrincipalType `json:"principal_type,omitempty"`
-	IsSuperadmin  bool          `json:"is_superadmin,omitempty"`
-	Scopes        []string      `json:"scopes,omitempty"`
-	// Roles are the caller's role names in the token's active org (e.g.
-	// "owner", "admin", "member"), from the token's "roles" claim. They are
-	// org-scoped: a personal-view token (no active org) carries none. A
-	// consumer derives org authority from them (e.g. an org admin is a
-	// holder of "owner" or "admin") without minting a product-specific
-	// scope. Absent/unknown roles confer no authority (fail-safe).
+	// Roles are the caller's role names from the token's "roles" claim:
+	// RolePlatformAdmin when the principal administers the installation,
+	// then the caller's roles in OrgID. A personal token carries none.
+	// Absent or unknown roles confer no authority (fail-safe).
 	Roles []string `json:"roles,omitempty"`
 	// ClientID is the OAuth client_id of the caller's token. Used to
 	// resolve per-client config. Empty for dev bearer tokens and for
@@ -95,6 +101,33 @@ type Identity struct {
 	// MethodBearer, MethodCookie, MethodStatic. Consumers may declare
 	// additional AuthMethod values. The zero value ("") means "unspecified".
 	AuthMethod AuthMethod `json:"-"`
+}
+
+// The standard roles, the whole vocabulary a service may decide from
+// (identity.md, "Roles, the access model"). The personal-tenant member is
+// not a name: it is a token with OrgID "" and no roles.
+const (
+	// RolePlatformAdmin administers the installation: sees everything and
+	// manages every person and every organisation. It is carried on every
+	// token of the principal, whatever the OrgID.
+	RolePlatformAdmin = "platform_admin"
+	// RoleOwner manages the organisation and sees everything in it. Owner
+	// differs from admin in three acts: transferring or deleting the
+	// organisation, changing billing, and granting owner.
+	RoleOwner = "owner"
+	// RoleAdmin administers the organisation.
+	RoleAdmin = "admin"
+	// RoleMember is scoped to the tenant and to the policy its owner and
+	// admins set.
+	RoleMember = "member"
+)
+
+// Has reports whether the identity carries the role. It is the one
+// predicate a service builds its permission table on: Has(RolePlatformAdmin)
+// is the installation's administrator, Has(RoleOwner) or Has(RoleAdmin) is
+// custody of OrgID. An unknown name is never held.
+func (id Identity) Has(role string) bool {
+	return slices.Contains(id.Roles, role)
 }
 
 // AuthMethod is the discriminator stamped on Identity by an Authenticator to

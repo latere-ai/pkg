@@ -34,8 +34,9 @@ const MethodDev AuthMethod = "dev"
 //     NewDevAuthenticator activates only when the deployment host is loopback,
 //     OR the explicit AUTH_DEV_BYPASS_INSECURE override is set. Any unknown,
 //     empty, or non-loopback host fails CLOSED.
-//   - Non-superadmin by default. The synthetic identity is a plain user unless
-//     AUTH_DEV_SUPERADMIN is explicitly set, so a leak is contained.
+//   - No role by default. The synthetic identity is a plain user unless
+//     AUTH_DEV_SUPERADMIN is explicitly set, which grants RolePlatformAdmin,
+//     so a leak is contained.
 //
 // As defence-in-depth a deployment may additionally keep this file behind a
 // build tag in release builds; the runtime gate above is the primary control.
@@ -45,11 +46,12 @@ type DevAuthenticator struct {
 
 // DevConfig configures a DevAuthenticator.
 type DevConfig struct {
-	Subject      string   // synthetic principal id (Identity.Sub)
-	Email        string   // synthetic email
-	Org          string   // synthetic org id (Identity.OrgID)
-	Scopes       []string // granted scopes
-	IsSuperadmin bool     // admin opt-in; default false keeps a leak contained
+	Subject string // synthetic principal id (Identity.Sub)
+	Email   string // synthetic email
+	Org     string // synthetic org id (Identity.OrgID)
+	// PlatformAdmin grants RolePlatformAdmin to the synthetic identity. The
+	// default false keeps a leak contained.
+	PlatformAdmin bool
 
 	// PostureHost is the host the deployment serves itself on — derived from a
 	// value the service actually holds (its redirect URL or issuer host), NOT a
@@ -80,14 +82,15 @@ func NewDevAuthenticator(cfg DevConfig) (*DevAuthenticator, error) {
 		OrgID:         cfg.Org,
 		Email:         cfg.Email,
 		PrincipalType: PrincipalDev,
-		IsSuperadmin:  cfg.IsSuperadmin,
-		Scopes:        cfg.Scopes,
 		ClientID:      "",
 		TokenID:       "dev",
 		AuthMethod:    MethodDev,
 	}
+	if cfg.PlatformAdmin {
+		id.Roles = []string{RolePlatformAdmin}
+	}
 	slog.Warn("authkit: DEV BYPASS active — every request runs as the synthetic dev identity",
-		"sub", sub, "org", cfg.Org, "superadmin", cfg.IsSuperadmin, "insecure", cfg.Insecure)
+		"sub", sub, "org", cfg.Org, "roles", id.Roles, "insecure", cfg.Insecure)
 	return &DevAuthenticator{id: id}, nil
 }
 
@@ -107,8 +110,7 @@ func NewDevAuthenticator(cfg DevConfig) (*DevAuthenticator, error) {
 //	AUTH_DEV_SUBJECT          synthetic Sub (default "dev-local")
 //	AUTH_DEV_EMAIL            synthetic email
 //	AUTH_DEV_ORG              synthetic org id
-//	AUTH_DEV_SCOPES           comma/space-separated granted scopes
-//	AUTH_DEV_SUPERADMIN       grant superadmin when "true"/"1" (default false)
+//	AUTH_DEV_SUPERADMIN       grant the platform_admin role when "true"/"1" (default false)
 //
 // The posture host is taken from AUTH_REDIRECT_URL (preferred) or AUTH_URL.
 func DevAuthenticatorFromEnv() (*DevAuthenticator, error) {
@@ -116,13 +118,12 @@ func DevAuthenticatorFromEnv() (*DevAuthenticator, error) {
 		return nil, nil
 	}
 	return NewDevAuthenticator(DevConfig{
-		Subject:      os.Getenv("AUTH_DEV_SUBJECT"),
-		Email:        os.Getenv("AUTH_DEV_EMAIL"),
-		Org:          os.Getenv("AUTH_DEV_ORG"),
-		Scopes:       SplitScopes(os.Getenv("AUTH_DEV_SCOPES")),
-		IsSuperadmin: envutil.IsTruthy(os.Getenv("AUTH_DEV_SUPERADMIN")),
-		PostureHost:  postureHostFromEnv(),
-		Insecure:     envutil.IsTruthy(os.Getenv("AUTH_DEV_BYPASS_INSECURE")),
+		Subject:       os.Getenv("AUTH_DEV_SUBJECT"),
+		Email:         os.Getenv("AUTH_DEV_EMAIL"),
+		Org:           os.Getenv("AUTH_DEV_ORG"),
+		PlatformAdmin: envutil.IsTruthy(os.Getenv("AUTH_DEV_SUPERADMIN")),
+		PostureHost:   postureHostFromEnv(),
+		Insecure:      envutil.IsTruthy(os.Getenv("AUTH_DEV_BYPASS_INSECURE")),
 	})
 }
 

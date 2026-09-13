@@ -42,9 +42,6 @@ func TestDecodeJWTClaimsSuperset(t *testing.T) {
 	if c.AuthorizedParty != "client-xyz" || c.ClientID != "" {
 		t.Errorf("azp/client_id = %q/%q", c.AuthorizedParty, c.ClientID)
 	}
-	if c.Scope != "openid email cella:run" || !c.IsSuperadmin {
-		t.Errorf("scope/superadmin = %q/%v", c.Scope, c.IsSuperadmin)
-	}
 	if len(c.Roles) != 2 || c.Roles[0] != "owner" {
 		t.Errorf("roles = %v", c.Roles)
 	}
@@ -77,11 +74,11 @@ func TestSessionFromToken(t *testing.T) {
 	if u.ClientID != "client-xyz" {
 		t.Errorf("ClientID = %q, want client-xyz (from azp)", u.ClientID)
 	}
-	if len(u.Scopes) != 2 || u.Scopes[1] != "cella:run" {
-		t.Errorf("Scopes = %v", u.Scopes)
+	if len(u.Roles) != 1 || u.Roles[0] != "owner" {
+		t.Errorf("roles = %v", u.Roles)
 	}
-	if !u.IsSuperadmin || len(u.Roles) != 1 || u.Roles[0] != "owner" {
-		t.Errorf("superadmin/roles = %v/%v", u.IsSuperadmin, u.Roles)
+	if u.Has(authkit.RolePlatformAdmin) {
+		t.Error("is_superadmin in the token must not read as the platform_admin role")
 	}
 	if !sess.Expiry.Equal(exp) {
 		t.Errorf("Expiry = %v, want %v", sess.Expiry, exp)
@@ -186,11 +183,11 @@ func TestHandleCallbackPopulatesSupersetFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetSession: %v", err)
 	}
-	if sess.User.ClientID != "cella-dashboard" || !sess.User.IsSuperadmin {
+	if sess.User.ClientID != "cella-dashboard" {
 		t.Errorf("superset fields not populated: %+v", sess.User)
 	}
-	if len(sess.User.Scopes) != 2 || len(sess.User.Roles) != 1 {
-		t.Errorf("scopes/roles = %v / %v", sess.User.Scopes, sess.User.Roles)
+	if len(sess.User.Roles) != 1 {
+		t.Errorf("roles = %v", sess.User.Roles)
 	}
 	// Default-config client (ttl=0) must not stamp SessionExpiry.
 	if !sess.SessionExpiry.IsZero() {

@@ -36,14 +36,14 @@ func TestParseUnverified_HappyPath(t *testing.T) {
 	if c.Sub != "user-1" || c.Email != "a@b.co" || c.OrgID != "org-9" {
 		t.Errorf("identity = %+v", c)
 	}
-	if c.PrincipalType != PrincipalUser || !c.IsSuperadmin {
-		t.Errorf("principal = %v superadmin=%v", c.PrincipalType, c.IsSuperadmin)
+	if c.PrincipalType != PrincipalUser {
+		t.Errorf("principal = %v", c.PrincipalType)
+	}
+	if c.Has("platform_admin") {
+		t.Error("is_superadmin must not read as the platform_admin role")
 	}
 	if c.ClientID != "lux-dashboard" {
 		t.Errorf("ClientID = %q, want lux-dashboard", c.ClientID)
-	}
-	if len(c.Scopes) != 3 || c.Scopes[0] != "drive:read" {
-		t.Errorf("Scopes = %v, want [drive:read drive:write cella:run]", c.Scopes)
 	}
 	if c.Exp.IsZero() {
 		t.Error("Exp not populated")
@@ -122,8 +122,5 @@ func TestParseUnverified_ExpiredStillParses(t *testing.T) {
 	}
 	if !c.Exp.Before(time.Now()) {
 		t.Error("expected Exp in the past")
-	}
-	if len(c.Scopes) != 1 || c.Scopes[0] != "drive:read" {
-		t.Errorf("Scopes = %v", c.Scopes)
 	}
 }

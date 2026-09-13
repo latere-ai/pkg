@@ -18,16 +18,19 @@
 //	sub              Sub                    the principal id; the only claim required
 //	principal_type   PrincipalType          "user" or "service"
 //	org_id           OrgID                  the active organisation
-//	roles            Roles                  role names in that organisation
-//	scp              Scopes                 granted scopes
+//	roles            Roles                  platform_admin, then the role names in that organisation
 //	email            Email
 //	client_id        ClientID               "azp" is the fallback
-//	is_superadmin    IsSuperadmin
 //	kind, actor_id   Kind, ActorID          a non-principal actor a token is bound to
 //	iss, aud, exp    Iss, Aud, Exp          the envelope
 //
 // An issuer that stamps only "sub" still verifies; the Identity that results
-// carries the subject and nothing more. [Config.Issuer] and [Config.Audiences]
+// carries the subject and nothing more. Two claims are read by nothing: "scp"
+// is the client's ceiling at the issuer and no service decides from it, and a
+// token that carries a retired flag in place of a role confers nothing, so an
+// admin route opens only to a token whose "roles" names platform_admin. A
+// product whose own tokens carry scopes decodes them into its own type with
+// [DecodePayload] after [Validator.Validate] has verified the token. [Config.Issuer] and [Config.Audiences]
 // are checked when set, and a service should set both: a token minted for
 // another relying party carries the same signature, and the audience is what
 // refuses it here.
@@ -103,8 +106,8 @@ const (
 // Claims is a verified token: the principal it names, as an
 // authkit.Identity, plus the token envelope. Principal fields are promoted,
 // so claims.Sub and claims.Identity.Sub are the same field. ClientID is the
-// originating OAuth client ("client_id", "azp" fallback); Scopes come from
-// the "scp" claim; Kind and ActorID from "kind" and "actor_id".
+// originating OAuth client ("client_id", "azp" fallback); Kind and ActorID
+// from "kind" and "actor_id".
 //
 // Identity.TokenID and Identity.AuthMethod are not claims and are left zero
 // here; Authenticator sets them.
@@ -274,8 +277,6 @@ func claimsFromRawPayload(raw rawPayload) *Claims {
 		OrgID:         raw.OrgID,
 		Email:         raw.Email,
 		ClientID:      clientID,
-		IsSuperadmin:  raw.IsSuperadmin,
-		Scopes:        raw.Scopes,
 		Roles:         raw.Roles,
 		Kind:          raw.Kind,
 		ActorID:       raw.ActorID,
@@ -579,8 +580,6 @@ type rawPayload struct {
 	PrincipalType   string   `json:"principal_type"`
 	Email           string   `json:"email"`
 	OrgID           string   `json:"org_id"`
-	IsSuperadmin    bool     `json:"is_superadmin"`
-	Scopes          []string `json:"scp"`
 	Roles           []string `json:"roles"`
 	ClientID        string   `json:"client_id"`
 	Kind            string   `json:"kind"`

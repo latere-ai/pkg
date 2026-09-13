@@ -67,9 +67,7 @@ func TestJWTAuthenticateLocalToken(t *testing.T) {
 		Sub:           "u-1",
 		OrgID:         "org-1",
 		Email:         "a@b.com",
-		PrincipalType: PrincipalUser,
-		IsSuperadmin:  false,
-		Scopes:        []string{"read:projects"}}
+		PrincipalType: PrincipalUser}
 	j := newJWTWithFakeValidator(&fakeValidator{claims: claims})
 	// Encode a payload with no client_id claim.
 	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"u-1"}`))

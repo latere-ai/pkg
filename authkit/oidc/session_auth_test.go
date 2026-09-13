@@ -66,13 +66,11 @@ func TestSessionAuthenticator_HappyPath(t *testing.T) {
 		AccessToken: "at-1",
 		Expiry:      time.Now().Add(1 * time.Hour),
 		User: User{
-			Sub:          "u-1",
-			Email:        "u@example.test",
-			OrgID:        "org-1",
-			ClientID:     "cli-x",
-			Scopes:       []string{"read:projects"},
-			Roles:        []string{"admin"},
-			IsSuperadmin: false,
+			Sub:      "u-1",
+			Email:    "u@example.test",
+			OrgID:    "org-1",
+			ClientID: "cli-x",
+			Roles:    []string{"admin"},
 		},
 	}
 	if err := c.SetSession(rec, sess); err != nil {

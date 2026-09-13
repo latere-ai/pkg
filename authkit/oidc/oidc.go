@@ -62,8 +62,8 @@ const (
 )
 
 // User is a signed-in principal plus the profile a page renders: the
-// authkit.Identity (Sub, Email, OrgID, Roles in the active org, Scopes,
-// ClientID, IsSuperadmin) with the OIDC "name" and "picture" claims. It is
+// authkit.Identity (Sub, Email, OrgID, Roles, ClientID) with the OIDC "name"
+// and "picture" claims. It is
 // what /userinfo decodes into, what the session cookie stores, and what a
 // ClaimsMapper returns for a non-Latere issuer.
 //

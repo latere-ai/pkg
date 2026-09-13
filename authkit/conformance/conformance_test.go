@@ -127,6 +127,55 @@ func TestAServiceThatDropsTheClaimsFails(t *testing.T) {
 	}
 }
 
+// flagReader is a verifier that still grants the platform role from the
+// retired flag, the way every product did before identity id-09.
+type flagReader struct{ inner authkit.Authenticator }
+
+func (f flagReader) Authenticate(r *http.Request) (authkit.Identity, error) {
+	id, err := f.inner.Authenticate(r)
+	if err != nil {
+		return id, err
+	}
+	var payload struct {
+		Flag bool `json:"is_superadmin"`
+	}
+	raw := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if jwt.DecodePayload(raw, &payload) == nil && payload.Flag {
+		id.Roles = append(id.Roles, authkit.RolePlatformAdmin)
+	}
+	return id, nil
+}
+
+func TestAServiceThatReadsTheFlagFails(t *testing.T) {
+	s := Service{Audience: "drive.latere.ai", New: func(_ testing.TB, issuerURL, jwksURL string) authkit.Authenticator {
+		return flagReader{jwt.NewAuthenticator(jwt.New(jwt.Config{JWKSURL: jwksURL, Issuer: issuerURL, Audiences: []string{"drive.latere.ai"}}))}
+	}}
+	if f := run(t, RefusesTheFlag, s); len(f) != 1 || !strings.Contains(f[0], "reads as the platform admin") {
+		t.Fatalf("flag: %v", f)
+	}
+	if f := run(t, RefusesTheFlag, reference("drive.latere.ai")); len(f) != 0 {
+		t.Fatalf("the reference verifier reads no flag: %v", f)
+	}
+}
+
+// roleless drops the roles claim, so the platform admin is nobody.
+type roleless struct{ inner authkit.Authenticator }
+
+func (l roleless) Authenticate(r *http.Request) (authkit.Identity, error) {
+	id, err := l.inner.Authenticate(r)
+	id.Roles = nil
+	return id, err
+}
+
+func TestAServiceThatDropsTheRolesFails(t *testing.T) {
+	s := Service{Audience: "drive.latere.ai", New: func(_ testing.TB, issuerURL, jwksURL string) authkit.Authenticator {
+		return roleless{jwt.NewAuthenticator(jwt.New(jwt.Config{JWKSURL: jwksURL, Issuer: issuerURL, Audiences: []string{"drive.latere.ai"}}))}
+	}}
+	if f := run(t, RefusesTheFlag, s); len(f) != 1 || !strings.Contains(f[0], "not reported by Has") {
+		t.Fatalf("roles: %v", f)
+	}
+}
+
 // subless accepts a token that names nobody.
 type subless struct{}
 

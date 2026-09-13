@@ -56,15 +56,7 @@ type jwtClaims struct {
 	OrgID           string   `json:"org_id"`
 	ClientID        string   `json:"client_id"`
 	AuthorizedParty string   `json:"azp"`
-	Scope           string   `json:"scope"`
-	Scopes          []string `json:"scopes"`
-	// SCP is the fosite-standard scope claim ("scp"). It is checked
-	// before Scope/Scopes by scopesFromJWT so tokens issued by fosite
-	// (the issuer the auth service uses) surface granted scopes
-	// correctly.
-	SCP          []string `json:"scp"`
-	Roles        []string `json:"roles"`
-	IsSuperadmin bool     `json:"is_superadmin"`
+	Roles           []string `json:"roles"`
 }
 
 // decodeJWTClaims extracts claims from a JWT access token without
@@ -79,8 +71,8 @@ func decodeJWTClaims(accessToken string) (*jwtClaims, error) {
 }
 
 // SessionFromToken builds a Session from a freshly issued token, decoding the
-// access token's JWT for identity hints (sub, email, name, org, roles, scopes,
-// client, superadmin). Identity hints in the cookie are UI-only; downstream API
+// access token's JWT for identity hints (sub, email, name, org, roles,
+// client). Identity hints in the cookie are UI-only; downstream API
 // calls always re-validate the access token. SessionExpiry is stamped at now+ttl
 // when ttl > 0 (the dashboard session lifetime), and left zero otherwise.
 func SessionFromToken(token *oauth2.Token, ttl time.Duration) *Session {
@@ -105,8 +97,6 @@ func SessionFromToken(token *oauth2.Token, ttl time.Duration) *Session {
 				PrincipalType: authkit.PrincipalUser,
 				Roles:         claims.Roles,
 				ClientID:      cmp.Or(claims.ClientID, claims.AuthorizedParty),
-				Scopes:        scopesFromJWT(claims),
-				IsSuperadmin:  claims.IsSuperadmin,
 			},
 			Name:        claims.Name,
 			Picture:     cmp.Or(claims.Picture, claims.AvatarURL),
@@ -122,26 +112,6 @@ func SessionFromToken(token *oauth2.Token, ttl time.Duration) *Session {
 		sess.SessionExpiry = now.Add(ttl)
 	}
 	return sess
-}
-
-// scopesFromJWT reads granted scopes from the fosite-standard "scp" array,
-// the space-delimited "scope" claim, or the "scopes" array, normalizing to
-// a deduped slice. "scp" wins because that is what the auth service (fosite)
-// actually emits; the others are kept for tokens issued by other authorities.
-func scopesFromJWT(c *jwtClaims) []string {
-	if c == nil {
-		return nil
-	}
-	if len(c.SCP) > 0 {
-		return authkit.SplitScopes(strings.Join(c.SCP, " "))
-	}
-	if strings.TrimSpace(c.Scope) != "" {
-		return authkit.SplitScopes(c.Scope)
-	}
-	if len(c.Scopes) > 0 {
-		return authkit.SplitScopes(strings.Join(c.Scopes, " "))
-	}
-	return nil
 }
 
 // isSafeRedirect returns true when target is a relative path that won't
@@ -471,9 +441,6 @@ func (c *Client) SessionFromRequest(w http.ResponseWriter, r *http.Request) (*Se
 	}
 	if refreshed.User.ClientID == "" {
 		refreshed.User.ClientID = sess.User.ClientID
-	}
-	if len(refreshed.User.Scopes) == 0 {
-		refreshed.User.Scopes = sess.User.Scopes
 	}
 	if len(refreshed.User.Roles) == 0 {
 		refreshed.User.Roles = sess.User.Roles

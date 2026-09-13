@@ -154,9 +154,6 @@ func TestValidateUserToken(t *testing.T) {
 	if claims.OrgID != "org-456" {
 		t.Errorf("OrgID = %q, want org-456", claims.OrgID)
 	}
-	if len(claims.Scopes) != 2 || claims.Scopes[0] != "read:projects" {
-		t.Errorf("Scopes = %v, want [read:projects write:projects]", claims.Scopes)
-	}
 	if len(claims.Roles) != 1 || claims.Roles[0] != "editor" {
 		t.Errorf("Roles = %v, want [editor]", claims.Roles)
 	}
@@ -394,19 +391,47 @@ func TestValidateWithoutKid(t *testing.T) {
 	}
 }
 
-func TestValidateSuperadmin(t *testing.T) {
+// TestValidateReadsNoFlagAndNoScope: a token carrying the retired flag and a
+// scope set yields an Identity that holds neither. Access is by role (R9),
+// and "scp" is the client's ceiling at the issuer, not a grant to a person.
+func TestValidateReadsNoFlagAndNoScope(t *testing.T) {
 	key := genKey(t)
 	v := testValidator(t, key)
 	payload := defaultPayload()
 	payload["is_superadmin"] = true
+	payload["scp"] = []string{"admin:everything"}
 	token := signToken(t, key, defaultHeader(key), payload)
 
 	claims, err := v.Validate(token)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !claims.IsSuperadmin {
-		t.Error("IsSuperadmin should be true")
+	if claims.Has(authkit.RolePlatformAdmin) {
+		t.Error("a flag in place of a role must confer nothing")
+	}
+	if claims.Has("admin:everything") {
+		t.Error("a scope must not read as a role")
+	}
+	if claims.Sub != "user-123" {
+		t.Errorf("Sub = %q, the rest of the token still verifies", claims.Sub)
+	}
+}
+
+// TestValidatePlatformAdminRole: platform_admin travels in roles like the
+// organisation roles, and Has reports it.
+func TestValidatePlatformAdminRole(t *testing.T) {
+	key := genKey(t)
+	v := testValidator(t, key)
+	payload := defaultPayload()
+	payload["roles"] = []string{authkit.RolePlatformAdmin, "owner"}
+	token := signToken(t, key, defaultHeader(key), payload)
+
+	claims, err := v.Validate(token)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !claims.Has(authkit.RolePlatformAdmin) || !claims.Has("owner") || claims.Has("admin") {
+		t.Errorf("Roles = %v: Has must report exactly the names carried", claims.Roles)
 	}
 }
 

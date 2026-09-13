@@ -4,10 +4,12 @@
 // Package conformance is rule R2 of latere-ai/specs
 // infrastructure/identity.md as a test a service runs: the service
 // verifies aud = self, reads one authkit.Identity, and performs no HTTP
-// call to the issuer on the request path. A repository calls Run from one
-// of its tests with the authenticator it installs in production, built
-// against the stub issuer the suite hands it, and the suite fails the
-// build when any of the five checks does not hold.
+// call to the issuer on the request path, and rule R9: access is by role,
+// so a token carrying the retired is_superadmin flag and no platform_admin
+// role holds no authority. A repository calls Run from one of its tests
+// with the authenticator it installs in production, built against the stub
+// issuer the suite hands it, and the suite fails the build when any of the
+// six checks does not hold.
 package conformance
 
 import (
@@ -52,6 +54,7 @@ func Run(t *testing.T, s Service) {
 	t.Run("refuses another audience", func(t *testing.T) { RefusesOtherAudience(t, s) })
 	t.Run("refuses a token with no subject", func(t *testing.T) { RefusesNoSubject(t, s) })
 	t.Run("calls nothing but the key set", func(t *testing.T) { CallsOnlyTheKeySet(t, s) })
+	t.Run("reads no flag in place of a role", func(t *testing.T) { RefusesTheFlag(t, s) })
 }
 
 func setup(t TB, s Service) (*issuertest.Server, authkit.Authenticator) {
@@ -127,6 +130,38 @@ func RefusesNoSubject(t TB, s Service) {
 	tok := iss.Mint(issuertest.Claims{Aud: issuertest.StringList{s.Audience}, Omit: []string{"sub"}})
 	if _, err := a.Authenticate(request(tok)); err == nil {
 		t.Errorf("a token with no sub was admitted")
+	}
+}
+
+// RefusesTheFlag: a token carrying is_superadmin: true and no platform_admin
+// role yields an Identity on which Has(platform_admin) is false, so no admin
+// route gated on the role opens to it (identity id-09). A token that names
+// the role in roles is the one that holds it, and Has reports it.
+func RefusesTheFlag(t TB, s Service) {
+	t.Helper()
+	iss, a := setup(t, s)
+	flagged := iss.Mint(issuertest.Claims{
+		Sub: "user_1", Aud: issuertest.StringList{s.Audience}, OrgID: "org_1",
+		Roles: []string{authkit.RoleMember}, PrincipalType: string(authkit.PrincipalUser),
+		Extra: map[string]any{"is_superadmin": true},
+	})
+	id, err := a.Authenticate(request(flagged))
+	if err != nil {
+		t.Fatalf("a token for %q was refused: %v", s.Audience, err)
+	}
+	if id.Has(authkit.RolePlatformAdmin) {
+		t.Errorf("a token carrying is_superadmin and no platform_admin role reads as the platform admin; access is by role (R9)")
+	}
+	admin := iss.Mint(issuertest.Claims{
+		Sub: "user_2", Aud: issuertest.StringList{s.Audience}, OrgID: "org_1",
+		Roles: []string{authkit.RolePlatformAdmin, authkit.RoleOwner}, PrincipalType: string(authkit.PrincipalUser),
+	})
+	id, err = a.Authenticate(request(admin))
+	if err != nil {
+		t.Fatalf("a token for %q was refused: %v", s.Audience, err)
+	}
+	if !id.Has(authkit.RolePlatformAdmin) {
+		t.Errorf("Identity.Roles = %v: the platform_admin role in roles is not reported by Has", id.Roles)
 	}
 }
 

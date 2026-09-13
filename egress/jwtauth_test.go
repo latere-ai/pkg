@@ -43,7 +43,7 @@ func authWith(c *jwt.Claims, err error) *TokenAuth {
 
 // goodClaims returns a claim set that passes every check.
 func goodClaims(actor string) *jwt.Claims {
-	return &jwt.Claims{Kind: testKind, ActorID: actor, Scopes: []string{testScope}, Aud: []string{testAudience}}
+	return &jwt.Claims{Kind: testKind, ActorID: actor, Aud: []string{testAudience}}
 }
 
 // rawJWT builds a syntactically valid RS256 token with the given kid. The
@@ -55,8 +55,14 @@ func rawJWT(kid, payload string) string {
 }
 
 // tok is a bearer header carrying a token whose payload names the principal
-// under the custom subject claim.
-func tok(principal string) string { return "Bearer " + rawJWT("k1", `{"workload_id":"`+principal+`"}`) }
+// under the custom subject claim and carries the gateway scope. The scope is
+// read from the verified payload, not from the family Identity, which
+// carries none: it is the product's own claim on its own token.
+func tok(principal string) string { return tokScoped(principal, testScope) }
+
+func tokScoped(principal, scope string) string {
+	return "Bearer " + rawJWT("k1", `{"workload_id":"`+principal+`","scp":["`+scope+`"]}`)
+}
 
 func TestTokenAuth_Accepts(t *testing.T) {
 	a := authWith(goodClaims("w-1"), nil)
@@ -65,11 +71,11 @@ func TestTokenAuth_Accepts(t *testing.T) {
 		t.Fatalf("expected w-1/ok, got %q/%v", id, ok)
 	}
 	// scheme is case-insensitive
-	if _, ok := a.Authenticate("bearer " + rawJWT("k1", `{"workload_id":"w-1"}`)); !ok {
+	if _, ok := a.Authenticate("bearer " + strings.TrimPrefix(tok("w-1"), "Bearer ")); !ok {
 		t.Fatal("lowercase bearer should work")
 	}
 	// Basic auth carries the JWT as the password (HTTPS_PROXY userinfo).
-	basic := "Basic " + base64.StdEncoding.EncodeToString([]byte("x:"+rawJWT("k1", `{"workload_id":"w-1"}`)))
+	basic := "Basic " + base64.StdEncoding.EncodeToString([]byte("x:"+strings.TrimPrefix(tok("w-1"), "Bearer ")))
 	if id, ok := a.Authenticate(basic); !ok || id != "w-1" {
 		t.Fatalf("basic-auth token should authenticate, got %q/%v", id, ok)
 	}
@@ -174,8 +180,6 @@ func FuzzBearerToken(f *testing.F) {
 func TestTokenAuth_Rejects(t *testing.T) {
 	wrongKind := goodClaims("w")
 	wrongKind.Kind = "user"
-	wrongScope := goodClaims("w")
-	wrongScope.Scopes = []string{"other"}
 	wrongAud := goodClaims("w")
 	wrongAud.Aud = []string{"other.example"}
 	missingAud := goodClaims("w")
@@ -190,7 +194,8 @@ func TestTokenAuth_Rejects(t *testing.T) {
 		{"validate error", tok("w"), authWith(nil, errors.New("bad sig"))},
 		{"nil claims", tok("w"), authWith(nil, nil)},
 		{"wrong kind", tok("w"), authWith(wrongKind, nil)},
-		{"missing scope", tok("w"), authWith(wrongScope, nil)},
+		{"missing scope", tokScoped("w", "other"), authWith(goodClaims("w"), nil)},
+		{"no scope claim", "Bearer " + rawJWT("k1", `{"workload_id":"w"}`), authWith(goodClaims("w"), nil)},
 		{"wrong audience", tok("w"), authWith(wrongAud, nil)},
 		{"missing audience", tok("w"), authWith(missingAud, nil)},
 	}
@@ -244,8 +249,8 @@ func TestGateway_AudienceEnforcedOnConnect(t *testing.T) {
 	}})
 	wrongAud := goodClaims("w-1")
 	wrongAud.Aud = []string{"other.example"}
-	right := rawJWT("k1", `{"workload_id":"w-1","v":"right"}`)
-	wrong := rawJWT("k1", `{"workload_id":"w-1","v":"wrong"}`)
+	right := rawJWT("k1", `{"workload_id":"w-1","v":"right","scp":["`+testScope+`"]}`)
+	wrong := rawJWT("k1", `{"workload_id":"w-1","v":"wrong","scp":["`+testScope+`"]}`)
 	auth := &TokenAuth{
 		v: mapValidator{byTok: map[string]*jwt.Claims{
 			right: goodClaims("w-1"),

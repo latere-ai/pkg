@@ -6,6 +6,7 @@ package authkit
 import (
 	"errors"
 	"net/http/httptest"
+	"slices"
 	"testing"
 )
 
@@ -27,19 +28,18 @@ func TestNewDevAuthenticator_LoopbackActivates(t *testing.T) {
 	if id.AuthMethod != MethodDev {
 		t.Errorf("AuthMethod = %q, want dev", id.AuthMethod)
 	}
-	if id.IsSuperadmin {
-		t.Error("default identity must NOT be superadmin")
+	if id.Has(RolePlatformAdmin) {
+		t.Error("default identity must NOT carry platform_admin")
 	}
 }
 
 func TestNewDevAuthenticator_CustomIdentity(t *testing.T) {
 	d, err := NewDevAuthenticator(DevConfig{
-		Subject:      "u-1",
-		Email:        "dev@local",
-		Org:          "org-1",
-		Scopes:       []string{"read:projects", "write:projects"},
-		IsSuperadmin: true,
-		PostureHost:  "127.0.0.1",
+		Subject:       "u-1",
+		Email:         "dev@local",
+		Org:           "org-1",
+		PlatformAdmin: true,
+		PostureHost:   "127.0.0.1",
 	})
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -48,11 +48,8 @@ func TestNewDevAuthenticator_CustomIdentity(t *testing.T) {
 	if id.Sub != "u-1" || id.Email != "dev@local" || id.OrgID != "org-1" {
 		t.Errorf("identity not carried: %+v", id)
 	}
-	if !id.IsSuperadmin {
-		t.Error("explicit superadmin not honored")
-	}
-	if len(id.Scopes) != 2 {
-		t.Errorf("Scopes = %v", id.Scopes)
+	if !slices.Equal(id.Roles, []string{RolePlatformAdmin}) {
+		t.Errorf("Roles = %v, want [platform_admin]: PlatformAdmin is a role grant", id.Roles)
 	}
 }
 
@@ -93,7 +90,6 @@ func TestDevAuthenticatorFromEnv_LoopbackFromRedirect(t *testing.T) {
 	t.Setenv("AUTH_DEV_BYPASS", "true")
 	t.Setenv("AUTH_REDIRECT_URL", "http://localhost:3000/callback")
 	t.Setenv("AUTH_DEV_SUBJECT", "env-dev")
-	t.Setenv("AUTH_DEV_SCOPES", "read:x, write:y")
 	d, err := DevAuthenticatorFromEnv()
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -105,30 +101,8 @@ func TestDevAuthenticatorFromEnv_LoopbackFromRedirect(t *testing.T) {
 	if id.Sub != "env-dev" {
 		t.Errorf("Sub = %q", id.Sub)
 	}
-	if len(id.Scopes) != 2 {
-		t.Errorf("Scopes = %v, want 2", id.Scopes)
-	}
-}
-
-func TestDevAuthenticatorFromEnv_DedupesScopes(t *testing.T) {
-	// AUTH_DEV_SCOPES is parsed by the shared SplitScopes, which (unlike
-	// the old local splitList) drops duplicate scopes order-preservingly.
-	t.Setenv("AUTH_DEV_BYPASS", "true")
-	t.Setenv("AUTH_REDIRECT_URL", "http://localhost:3000/callback")
-	t.Setenv("AUTH_DEV_SCOPES", "read:x write:y read:x")
-	d, err := DevAuthenticatorFromEnv()
-	if err != nil || d == nil {
-		t.Fatalf("DevAuthenticatorFromEnv: d=%v err=%v", d, err)
-	}
-	id, _ := d.Authenticate(httptest.NewRequest("GET", "/", nil))
-	want := []string{"read:x", "write:y"}
-	if len(id.Scopes) != len(want) {
-		t.Fatalf("Scopes = %v, want %v (deduped)", id.Scopes, want)
-	}
-	for i, s := range want {
-		if id.Scopes[i] != s {
-			t.Errorf("Scopes[%d] = %q, want %q", i, id.Scopes[i], s)
-		}
+	if len(id.Roles) != 0 {
+		t.Errorf("Roles = %v, want none without AUTH_DEV_SUPERADMIN", id.Roles)
 	}
 }
 
@@ -151,8 +125,8 @@ func TestDevAuthenticatorFromEnv_InsecureOnNonLoopback(t *testing.T) {
 		t.Fatalf("insecure override: %v", err)
 	}
 	id, _ := d.Authenticate(httptest.NewRequest("GET", "/", nil))
-	if !id.IsSuperadmin {
-		t.Error("AUTH_DEV_SUPERADMIN not honored")
+	if !id.Has(RolePlatformAdmin) {
+		t.Error("AUTH_DEV_SUPERADMIN must grant the platform_admin role")
 	}
 }
 

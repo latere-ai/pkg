@@ -29,7 +29,7 @@ func NewBearerToken(token, devSub string) *BearerToken {
 		id: Identity{
 			Sub:           devSub,
 			PrincipalType: PrincipalDev,
-			IsSuperadmin:  true, // dev token bypasses ownership scoping
+			Roles:         []string{RolePlatformAdmin}, // the dev token administers the local installation
 			TokenID:       "dev",
 			AuthMethod:    MethodBearer,
 		},
@@ -39,8 +39,8 @@ func NewBearerToken(token, devSub string) *BearerToken {
 func (b *BearerToken) Authenticate(r *http.Request) (Identity, error) {
 	// Fail closed on an empty configured secret: bearer.Equal("", "") is true,
 	// so without this guard a zero-value or empty-token BearerToken would
-	// accept any request bearing an empty credential and return a superadmin
-	// identity.
+	// accept any request bearing an empty credential and return the platform
+	// administrator's identity.
 	if b.token == "" {
 		return Identity{}, ErrUnauthenticated
 	}

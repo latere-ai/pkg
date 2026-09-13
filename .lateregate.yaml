@@ -50,3 +50,5 @@ license:
 # The identity shape of the family: specs/infrastructure/identity.md in latere-ai/specs
 identity:
   role: none
+  # Access is by role (identity id-09); one way by design.
+  roles_only: true

@@ -60,8 +60,8 @@ func TestNewBearerTokenDefaultDevSub(t *testing.T) {
 	if a.id.Sub != "dev-local" {
 		t.Fatalf("default devSub: %q", a.id.Sub)
 	}
-	if !a.id.IsSuperadmin {
-		t.Fatal("dev token must be superadmin")
+	if !a.id.Has(RolePlatformAdmin) {
+		t.Fatal("dev token must carry the platform_admin role")
 	}
 	if a.id.TokenID != "dev" {
 		t.Fatalf("TokenID = %q, want dev", a.id.TokenID)
@@ -82,8 +82,8 @@ func TestBearerTokenIdentityFields(t *testing.T) {
 	if id.Sub != "my-sub" {
 		t.Fatalf("Sub = %q", id.Sub)
 	}
-	if !id.IsSuperadmin {
-		t.Fatal("IsSuperadmin must be true")
+	if !id.Has(RolePlatformAdmin) {
+		t.Fatal("the dev token must carry the platform_admin role")
 	}
 	if id.AuthMethod != MethodBearer {
 		t.Fatalf("AuthMethod = %q, want %q", id.AuthMethod, MethodBearer)

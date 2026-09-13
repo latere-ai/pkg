@@ -10,6 +10,33 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Removed
+
+- `authkit.Identity.IsSuperadmin` and `authkit.Identity.Scopes`, and
+  `authkit.HasScope` with them (identity id-09, rule R9). Access is by
+  role: the platform administrator is the `platform_admin` name in
+  `roles`, on every token of that principal, and a service decides with
+  its own table over `Identity.Has`. `scp` is OAuth's ceiling on what a
+  client may request and no service decides from it; a product whose own
+  tokens carry scopes decodes them into its own type with
+  `jwt.DecodePayload` after `Validate`, which is what `egress.TokenAuth`
+  now does for the workload scope. `authkit/jwt` and `authkit/oidc` no
+  longer read `is_superadmin` or `scp`: a token carrying the flag and no
+  role yields an Identity on which `Has("platform_admin")` is false.
+- `DevConfig.Scopes` and `AUTH_DEV_SCOPES`. `DevConfig.IsSuperadmin` is
+  `DevConfig.PlatformAdmin`, and `AUTH_DEV_SUPERADMIN` grants the
+  `platform_admin` role rather than setting a flag. `NewBearerToken`'s
+  dev identity carries the role the same way.
+
+### Added
+
+- `authkit.Identity.Has(role string) bool`, and the five names as
+  constants: `RolePlatformAdmin`, `RoleOwner`, `RoleAdmin`, `RoleMember`
+  (the personal-tenant member is a token with no `org_id` and no roles).
+- `conformance.RefusesTheFlag`, the sixth row of the id-04 suite: a token
+  carrying `is_superadmin: true` and no `platform_admin` role opens no
+  admin route, and one carrying the role in `roles` is reported by `Has`.
+  `Run` includes it.
 - `authkit/issuertest` serves `POST /token`, the `client_credentials`
   grant: a client registered with `WithServiceClient` presents HTTP Basic
   credentials and receives a token addressed to the issuer for the account

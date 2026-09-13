@@ -17,7 +17,7 @@ import (
 // "who is signed in, and what orgs can they switch to" so that login
 // validation, profile resolution, and the org list are built identically
 // across services. Apps map this into their own JSON shape and add only their
-// app-specific extras (CSRF token, is_superadmin, quota, …).
+// app-specific extras (CSRF token, roles, quota, …).
 type Me struct {
 	Sub       string     `json:"sub"`
 	Email     string     `json:"email"`

@@ -119,13 +119,27 @@ func (a *TokenAuth) Authenticate(header string) (string, bool) {
 	if a.kind != "" && claims.Kind != a.kind {
 		return "", false
 	}
-	if a.scope != "" && !slices.Contains(claims.Scopes, a.scope) {
-		return "", false
-	}
 	if !slices.Contains(claims.Aud, a.aud) {
 		return "", false
 	}
+	if a.scope != "" && !slices.Contains(scopeClaim(raw), a.scope) {
+		return "", false
+	}
 	return subjectClaim(raw, a.subject)
+}
+
+// scopeClaim reads the "scp" claim from an already verified token's payload.
+// A workload token's scopes are the gateway's own vocabulary, minted by the
+// product that runs it, so they are decoded here into the gateway's own shape
+// rather than read off the family Identity, which carries no scope.
+func scopeClaim(raw string) []string {
+	var payload struct {
+		Scopes []string `json:"scp"`
+	}
+	if err := jwt.DecodePayload(raw, &payload); err != nil {
+		return nil
+	}
+	return payload.Scopes
 }
 
 // subjectClaim reads the string claim named by key from an already verified

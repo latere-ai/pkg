@@ -3,34 +3,13 @@
 
 package authkit
 
-import (
-	"slices"
-	"strings"
-)
-
-// HasScope returns true if the identity is permitted for the given scope.
-// The admin parameter is the product-specific admin scope that implies all
-// other scopes (e.g. "admin:sandbox" or "admin:topos"). IsSuperadmin and the
-// admin scope both bypass fine-grained scope checks. The bearer-token dev
-// identity is superadmin so local dev works uniformly.
-//
-// Each product can wrap this in a method on its own Identity alias:
-//
-//	func (i Identity) HasScope(scope string) bool {
-//	    return authkit.HasScope(i, scope, "admin:myproduct")
-//	}
-func HasScope(id Identity, want, admin string) bool {
-	if id.IsSuperadmin {
-		return true
-	}
-	return slices.ContainsFunc(id.Scopes, func(s string) bool {
-		return s == want || s == admin
-	})
-}
+import "strings"
 
 // SplitScopes splits a space or comma delimited scope string into a deduped,
-// order-preserving slice. It is the one parser for the AUTH_SCOPES and
-// AUTH_DEV_SCOPES environment formats and for the "scope" claim.
+// order-preserving slice. It is the one parser for the AUTH_SCOPES
+// environment format, the scopes a relying party requests from the issuer.
+// No decision is made from a scope: a token's "scp" is the client's
+// ceiling, and access is by role (Identity.Has).
 func SplitScopes(s string) []string {
 	parts := strings.Fields(strings.ReplaceAll(s, ",", " "))
 	out := make([]string, 0, len(parts))
