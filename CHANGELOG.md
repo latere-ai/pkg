@@ -10,6 +10,24 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `authz`, the one authorizer contract the open cores share
+  (latere-ai/specs `decisions/2026-09-13-one-platform-open-cores.md`, C3
+  and C4; Origo spec 028): the envelope `Request{subject, issuer, sub,
+  claims, action, resource, request}` and `Decision{allow, reason, ttl,
+  limits, filter}`; `Client`, which caches an allow for its `ttl` (default
+  60 s, cap 600 s) and a deny for 5 s, never caches an unavailable
+  answer, retries once when the connection failed before a response line
+  and on nothing else, times out at 5 s, and fails closed on every other
+  outcome; `Ask` for an action whose answer shape is the core's own;
+  `ProbeID` and `Check`, the reserved id every authorizer denies;
+  `Subject` and `SplitSubject`, the `<iss>|<sub>` rendering; and `Policy`,
+  the owner policy's frame a core applies when no authorizer is
+  configured. `authz/stub` is the stub authorizer the cores' test tiers
+  run, speaking this contract alone, with a rule table, a request record,
+  and the two outage modes over HTTP and by method.
+
 ## v0.64.0 - 2026-09-13
 
 ### Removed
