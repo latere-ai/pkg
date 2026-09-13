@@ -16,23 +16,32 @@ import (
 	"latere.ai/x/pkg/authkit"
 )
 
-// TestNew_AudienceDefaultsToAuthURL pins the "every RP that calls the
-// auth service's JWT endpoints gets the right aud out of the box"
-// contract. Without this default, callers that forget to set Audience
-// would land tokens with aud:[] and silently 401 against /me/orgs
-// and /userinfo.
-func TestNew_AudienceDefaultsToAuthURL(t *testing.T) {
-	c := New(Config{
+// A client acting for a person requests no audience: the issuer addresses
+// the login token to itself, and products are reached with actor tokens.
+// The parameter is sent only when the configuration names an audience.
+func TestAuthorizeRequestsNoAudienceByDefault(t *testing.T) {
+	base := Config{
 		AuthURL:      "https://auth.example.com",
 		ClientID:     "cid",
 		ClientSecret: "sec",
 		RedirectURL:  "https://app.example.com/cb",
-	})
+	}
+	c := New(base)
 	if c == nil {
 		t.Fatal("New returned nil")
 	}
-	if got := c.cfg.Audience; got != "https://auth.example.com" {
-		t.Errorf("Audience default = %q, want AuthURL", got)
+	if c.cfg.Audience != "" {
+		t.Errorf("Audience = %q, want none by default", c.cfg.Audience)
+	}
+	u, _ := url.Parse(c.AuthCodeURLWithOpts("state", "verifier", nil))
+	if _, ok := u.Query()["audience"]; ok {
+		t.Errorf("authorize URL carries audience=%q, want none", u.Query().Get("audience"))
+	}
+
+	base.Audience = "svc.example.com"
+	u, _ = url.Parse(New(base).AuthCodeURLWithOpts("state", "verifier", nil))
+	if got := u.Query().Get("audience"); got != "svc.example.com" {
+		t.Errorf("audience = %q, want the configured one", got)
 	}
 }
 
@@ -90,29 +99,6 @@ func TestNew_AudienceExplicit(t *testing.T) {
 	}
 }
 
-// TestAuthCodeURLWithOpts_IncludesAudience asserts the audience param
-// makes it onto the /authorize URL. The auth service reads the
-// audience from the request form during the authorize step; if it's
-// missing the issued JWT lands with aud:[] (the JWT strategy always
-// materialises the claim from the granted audience set, even when
-// empty), and downstream JWT-protected calls then 401.
-func TestAuthCodeURLWithOpts_IncludesAudience(t *testing.T) {
-	c := New(Config{
-		AuthURL:      "https://auth.example.com",
-		ClientID:     "cid",
-		ClientSecret: "sec",
-		RedirectURL:  "https://app.example.com/cb",
-	})
-	authURL := c.AuthCodeURLWithOpts("state", "verifier", nil)
-	parsed, err := url.Parse(authURL)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	if got := parsed.Query().Get("audience"); got != "https://auth.example.com" {
-		t.Errorf("audience param = %q, want issuer URL", got)
-	}
-}
-
 func TestAuthURLParams_PreservesPresentEmptyKeys(t *testing.T) {
 	// A present-but-empty value (org_id="") must round-trip — it is the auth
 	// service's switch-to-personal signal. A key present with a nil value slice
@@ -143,18 +129,23 @@ func TestAuthURLParams_PreservesPresentEmptyKeys(t *testing.T) {
 	}
 }
 
-// TestHandleLogin_ForwardsAudience anchors the audience param on the
-// path that real RPs hit (HandleLogin, not the low-level URL builder).
-// Regression-guards a future change that decouples the two.
-func TestHandleLogin_ForwardsAudience(t *testing.T) {
+// TestHandleLogin_ForwardsOnlyAConfiguredAudience anchors the audience
+// rule on the path real relying parties hit (HandleLogin, not the low-level
+// URL builder): none by default, the configured one when set.
+func TestHandleLogin_ForwardsOnlyAConfiguredAudience(t *testing.T) {
 	c := testClient(t)
 	r := httptest.NewRequest("GET", "/login", nil)
 	w := httptest.NewRecorder()
 	c.HandleLogin(w, r)
+	if loc := w.Result().Header.Get("Location"); strings.Contains(loc, "audience=") {
+		t.Errorf("authorize URL carries an audience by default: %s", loc)
+	}
 
-	loc := w.Result().Header.Get("Location")
-	if !strings.Contains(loc, "audience=https%3A%2F%2Fauth.example.com") {
-		t.Errorf("authorize URL missing audience param: %s", loc)
+	c.cfg.Audience = "svc.example.com"
+	w = httptest.NewRecorder()
+	c.HandleLogin(w, httptest.NewRequest("GET", "/login", nil))
+	if loc := w.Result().Header.Get("Location"); !strings.Contains(loc, "audience=svc.example.com") {
+		t.Errorf("authorize URL missing the configured audience: %s", loc)
 	}
 }
 

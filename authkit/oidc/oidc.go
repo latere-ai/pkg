@@ -111,11 +111,11 @@ type Config struct {
 	RedirectURL  string // callback URL, e.g. https://app.latere.ai/callback
 	CookieKey    string // encryption key for cookies (hex or raw string)
 
-	// Audience requested on /authorize. Defaults to AuthURL when empty,
-	// which is what the auth service requires for its JWT-protected
-	// endpoints (/me/orgs, /userinfo, /tokeninfo). Set explicitly only
-	// when the issued access token is meant for a different relying
-	// party (e.g. tokens with aud="<other-service>").
+	// Audience requested on /authorize. Empty for a client that acts for
+	// a person: the issuer addresses the login token to itself, and the
+	// client reaches every product with an actor token ([Client.ActorToken]).
+	// Set only when this client is a service whose own token is meant for
+	// one other service and the issuer registered it to receive that.
 	Audience string
 
 	// Scopes requested on /authorize. When empty, defaults to
@@ -149,6 +149,7 @@ type Client struct {
 	cfg       Config
 	provider  *Provider
 	cookieKey [32]byte
+	actors    actorCache
 }
 
 // LoadConfig reads auth configuration from environment variables.
@@ -211,9 +212,6 @@ func New(cfg Config) *Client {
 		return nil
 	}
 
-	if cfg.Audience == "" {
-		cfg.Audience = cfg.AuthURL
-	}
 	if cfg.CookieName == "" {
 		cfg.CookieName = SessionCookieName
 	}
@@ -237,7 +235,8 @@ func New(cfg Config) *Client {
 	// directly rather than discovered: New stays synchronous and needs no
 	// network to construct a client.
 	c := &Client{
-		cfg: cfg,
+		cfg:    cfg,
+		actors: actorCache{now: time.Now},
 		provider: newProvider(&oauth2.Config{
 			ClientID:     cfg.ClientID,
 			ClientSecret: cfg.ClientSecret,
@@ -327,11 +326,9 @@ func (c *Client) AuthCodeURLWithOpts(state, verifier string, extra url.Values) s
 // binds into the flow cookie.
 func (c *Client) authCodeURL(state, nonce, verifier string, extra url.Values) string {
 	var opts []oauth2.AuthCodeOption
-	// Stamp the audience on every authorize URL. Without it, fosite
-	// emits aud:[] in the access token (the JWT strategy always
-	// materialises the claim from the granted audience set, even when
-	// empty), and the auth service's JWT validator then rejects every
-	// JWT-protected endpoint as an audience mismatch.
+	// A login that names no audience gets a token addressed to the issuer,
+	// which is what a client acting for a person holds; the audience is
+	// sent only when the configuration asks for another.
 	if c.cfg.Audience != "" {
 		opts = append(opts, oauth2.SetAuthURLParam("audience", c.cfg.Audience))
 	}

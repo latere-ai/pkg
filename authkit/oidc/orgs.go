@@ -24,11 +24,10 @@ type OrgEntry struct {
 }
 
 // FetchOrgs calls GET /me/orgs on the configured AuthURL with the
-// supplied access token and returns the org list. The endpoint
-// requires a valid JWT; tokens issued without Config.Audience set to
-// the AuthURL surface here as a 401 rather than an empty list, so
-// callers see the misconfiguration instead of an unexplained empty
-// switcher.
+// supplied access token and returns the org list. The endpoint takes a
+// token addressed to the issuer alone, which is what a login token is; a
+// token minted for a product surfaces here as a 401 rather than an empty
+// list, so callers see the misuse instead of an unexplained empty switcher.
 func (c *Client) FetchOrgs(ctx context.Context, accessToken string) ([]OrgEntry, error) {
 	if c == nil {
 		return nil, errors.New("oidc: client is nil")

@@ -10,6 +10,29 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `oidc.MintActorToken` and `(*oidc.Client).ActorToken`: the one way a
+  service acts for a person at another service. `ActorToken` posts the
+  session token to the issuer's `/actor-tokens` for one audience, asks the
+  full lifetime, and reuses the result per session and audience until 30 s
+  before it expires. The issuer mints only for an audience the client is
+  registered to act at; a refusal reaches the caller with the issuer's
+  reason.
+
+### Changed
+
+- `oidc.Config.Audience` no longer defaults to the issuer and `/authorize`
+  carries no `audience` parameter unless one is configured. A login token
+  is addressed to the issuer alone; a client that set `AUTH_AUDIENCE` to a
+  product removes it and reaches that product with `ActorToken`.
+- `jwt.NewAuthenticator` takes the validator alone; the second argument
+  never had a second value. Callers drop it.
+
+### Removed
+
+- `scopes`: the billing vocabulary, which no service checked.
+
 ## v0.60.1 - 2026-09-12
 
 ### Fixed
