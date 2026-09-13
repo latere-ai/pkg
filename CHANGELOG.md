@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.61.0 - 2026-09-13
+
 ### Added
 
 - `oidc.MintActorToken` and `(*oidc.Client).ActorToken`: the one way a
