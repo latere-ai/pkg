@@ -10,6 +10,13 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Removed
+
+- `jwt.TokenInfoClient`, `jwt.CachedTokenInfo` and `jwt.TokenInfoLookup`:
+  the clients of the issuer's `GET /tokeninfo`, which the issuer no longer
+  serves. Team membership travels in the token as `teams`; read
+  `Identity.Teams` and ask the issuer nothing at request time.
+
 ## v0.61.0 - 2026-09-13
 
 ### Added

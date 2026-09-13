@@ -32,13 +32,12 @@
 // another relying party carries the same signature, and the audience is what
 // refuses it here.
 //
-// # Online revalidation is the consumer's call
+// # Authentication is local
 //
-// [TokenInfoLookup], [TokenInfoClient] and [CachedTokenInfo] call the auth
-// service's GET /tokeninfo. Nothing in this package calls them on a
-// consumer's behalf, and no claim asks it to. A token's own expiry is its
-// revocation window unless the consumer decides otherwise and writes the
-// call.
+// Nothing in this package calls the issuer while a request is served: the
+// signature, the envelope and the claims decide, and a token's own expiry
+// is its revocation window. Membership a service needs, org_id, roles and
+// teams, arrives in the token.
 //
 // # JWKS caching
 //

@@ -22,9 +22,7 @@ type validator interface {
 //
 // Authentication is local: the signature and claims of the presented token
 // decide the Identity. Nothing here calls the issuer, so a token's own
-// expiry is its revocation window. A service that wants online
-// revalidation holds a [TokenInfoLookup] itself and calls it where the
-// decision it changes is visible.
+// expiry is its revocation window.
 type Authenticator struct {
 	V validator
 }
