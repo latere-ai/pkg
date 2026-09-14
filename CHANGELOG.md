@@ -33,6 +33,18 @@ under **Removed** or **Changed** with what to do about it.
   <int>}`; `{"status": 0}` and `Resume` clear either. `authz.Client`
   treats both as `*Unavailable`, which the stub's test proves (Lux spec
   006's forms of unavailability).
+- `authz/conformance`, the test every authorizer passes, which
+  `infrastructure/open-cores.md` and Lux spec 006 said the package carries
+  and it did not: `conformance.Run(t, url, token)` proves the probe id is
+  denied for every subject, the anonymous one included, and every action;
+  a wrong bearer and no bearer are refused; a well-formed request answers
+  a 200 with `allow` a boolean; `ttl` when present is a positive integer,
+  `limits` an object, `filter` owners (`[]string`) and labels
+  (`map[string]string`) and nothing else; and a deny carries a reason. A
+  core names its vocabulary with `WithActions` and its subjects with
+  `WithSubjects`. `authz/stub` passes it, and the package's own test
+  shows an endpoint that allows the probe, or bends any one field, fails
+  it with a message naming the request.
 
 ### Fixed
 

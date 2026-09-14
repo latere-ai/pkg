@@ -1,0 +1,313 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: Apache-2.0
+
+// Package conformance is the test every authorizer passes: the rules of
+// the one authorizer contract the open cores share (latere-ai/specs
+// decisions/2026-09-13-one-platform-open-cores.md, C3 and C4; Lux spec
+// 006) as checks against a running endpoint. A core runs it against the
+// stub authorizer in its test tier and against the authorizer it deploys,
+// and an operator who writes a twenty-line authorizer runs it against
+// that. The package proves the shape of what the endpoint answers; the
+// client's cache, retry and timeout are latere.ai/x/pkg/authz's own and
+// are proved there.
+//
+// One call:
+//
+//	conformance.Run(t, authorizerURL, bearer)
+//
+// checks, in order, that the probe id is denied for every subject and
+// action, that a wrong bearer is refused, and that a well-formed request
+// answers a 200 whose body has the contract's shape: allow a boolean, ttl
+// when present a positive integer, limits when present an object, filter
+// when present owners and labels, and a deny carrying a reason. The
+// subjects and the action vocabulary have defaults an authorizer that
+// reads the request answers; a core names its own with WithSubjects and
+// WithActions.
+package conformance
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"testing"
+
+	"latere.ai/x/pkg/authz"
+)
+
+// Action is one entry of a core's vocabulary: the action name and the
+// resource kind it acts on.
+type Action struct {
+	Name string
+	Kind string
+}
+
+// Option configures a run.
+type Option func(*suite)
+
+// WithActions names the vocabulary the checks send. The default is two
+// actions on one kind an authorizer that reads the request answers.
+func WithActions(actions ...Action) Option {
+	return func(s *suite) { s.actions = actions }
+}
+
+// WithSubjects names the rendered subjects the checks send. The anonymous
+// subject, the empty string, is always sent to the probe as well. The
+// default is two subjects of an example issuer.
+func WithSubjects(subjects ...string) Option {
+	return func(s *suite) { s.subjects = subjects }
+}
+
+// WithHTTPClient sends the calls through the given client; the default
+// is a client with the contract's timeout.
+func WithHTTPClient(c *http.Client) Option {
+	return func(s *suite) { s.http = c }
+}
+
+// The defaults a run sends when a core names none.
+var (
+	defaultActions  = []Action{{"resource.read", "Resource"}, {"resource.write", "Resource"}}
+	defaultSubjects = []string{"https://issuer.example|alice", "https://issuer.example|bob"}
+)
+
+type suite struct {
+	url, token string
+	actions    []Action
+	subjects   []string
+	http       *http.Client
+}
+
+// Run runs every check against the authorizer at url, which requires the
+// bearer token, and fails t when any does not hold. It is the one call a
+// repository makes. Each failure names the check and the request that
+// broke it.
+func Run(t testing.TB, url, token string, opts ...Option) {
+	t.Helper()
+	s := &suite{url: url, token: token, actions: defaultActions, subjects: defaultSubjects, http: &http.Client{Timeout: authz.Timeout}}
+	for _, o := range opts {
+		o(s)
+	}
+	if url == "" {
+		t.Fatalf("conformance: Run needs the authorizer's URL")
+	}
+	if len(s.actions) == 0 || len(s.subjects) == 0 {
+		t.Fatalf("conformance: Run needs at least one action and one subject")
+	}
+	s.deniesTheProbe(t)
+	s.refusesAWrongBearer(t)
+	s.answersAWellFormedRequest(t)
+}
+
+// deniesTheProbe: the reserved id is denied for every subject, the
+// anonymous one included, and every action, with a reason.
+func (s *suite) deniesTheProbe(t testing.TB) {
+	t.Helper()
+	for _, subject := range append([]string{""}, s.subjects...) {
+		for _, a := range s.actions {
+			req := authz.Probe(a.Name, a.Kind)
+			setSubject(&req, subject)
+			what := fmt.Sprintf("the probe as %q for %s", subject, a.Name)
+			status, raw := s.post(t, s.token, req, what)
+			if status != http.StatusOK {
+				t.Errorf("%s answered %d; the probe is a request like any other and is denied with a 200", what, status)
+				continue
+			}
+			d, ok := checkShape(t, what, raw)
+			if ok && d.Allow {
+				t.Errorf("%s was allowed; every authorizer denies the probe id %s, and a core's check command reads an allow as an endpoint that does not read the request", what, authz.ProbeID)
+			}
+		}
+	}
+}
+
+// refusesAWrongBearer: a request under another bearer, and one under
+// none, is not answered with a 200.
+func (s *suite) refusesAWrongBearer(t testing.TB) {
+	t.Helper()
+	req := authz.Probe(s.actions[0].Name, s.actions[0].Kind)
+	for _, tc := range []struct {
+		name, token string
+	}{{"a wrong bearer", s.token + "-wrong"}, {"no bearer", ""}} {
+		if status, _ := s.post(t, tc.token, req, tc.name); status == http.StatusOK {
+			t.Errorf("%s was answered with a 200; the authorizer does not check its bearer", tc.name)
+		}
+	}
+}
+
+// answersAWellFormedRequest: a request from each subject for each action
+// on a fresh id is a 200 whose body has the contract's shape, and a deny
+// carries a reason.
+func (s *suite) answersAWellFormedRequest(t testing.TB) {
+	t.Helper()
+	for _, subject := range s.subjects {
+		for _, a := range s.actions {
+			req := authz.Request{
+				Action:   a.Name,
+				Resource: authz.NewResource(a.Kind, freshID(), map[string]any{"owner": subject}),
+				Request:  authz.Caller{ID: "conformance-" + freshID(), IP: "203.0.113.4", UserAgent: "authz/conformance"},
+				Claims:   map[string]any{},
+			}
+			setSubject(&req, subject)
+			what := fmt.Sprintf("%s by %q", a.Name, subject)
+			status, raw := s.post(t, s.token, req, what)
+			if status != http.StatusOK {
+				t.Errorf("%s answered %d; a decision, allow or deny, is a 200", what, status)
+				continue
+			}
+			checkShape(t, what, raw)
+		}
+	}
+}
+
+// setSubject fills the three subject fields from a rendered subject.
+func setSubject(req *authz.Request, subject string) {
+	req.Subject = subject
+	req.Issuer, req.Sub, _ = authz.SplitSubject(subject)
+}
+
+// post sends one envelope and returns the status and body. A call that
+// produces no response fails the run: nothing else can be checked.
+func (s *suite) post(t testing.TB, token string, req authz.Request, what string) (int, []byte) {
+	t.Helper()
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("%s: encoding the envelope: %v", what, err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), authz.Timeout)
+	defer cancel()
+	r, err := http.NewRequestWithContext(ctx, http.MethodPost, s.url, bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("%s: %v", what, err)
+	}
+	if token != "" {
+		r.Header.Set("Authorization", "Bearer "+token)
+	}
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Accept", "application/json")
+	resp, err := s.http.Do(r)
+	if err != nil {
+		t.Fatalf("%s: the authorizer at %s did not answer: %v", what, s.url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		t.Fatalf("%s: reading the answer: %v", what, err)
+	}
+	return resp.StatusCode, raw
+}
+
+// checkShape reads a 200 body against the contract: allow a boolean, ttl
+// when present a positive integer, limits when present an object, filter
+// when present an object of owners ([]string) and labels
+// (map[string]string) and nothing else, reason when present a string,
+// and a deny carrying a non-empty reason. ok is false when the body is
+// no decision at all.
+func checkShape(t testing.TB, what string, raw []byte) (authz.Decision, bool) {
+	t.Helper()
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Errorf("%s: the body is not a JSON object: %v", what, err)
+		return authz.Decision{}, false
+	}
+	allow, present := fields["allow"]
+	if !present {
+		t.Errorf("%s: the body has no allow field; a 200 without one is no answer and a core fails closed on it", what)
+		return authz.Decision{}, false
+	}
+	var verdict bool
+	if err := json.Unmarshal(allow, &verdict); err != nil {
+		t.Errorf("%s: allow is %s; it is a boolean", what, allow)
+		return authz.Decision{}, false
+	}
+	if ttl, present := fields["ttl"]; present && !isNull(ttl) && !isPositiveInteger(ttl) {
+		t.Errorf("%s: ttl is %s; it is a positive integer of seconds", what, ttl)
+	}
+	if limits, present := fields["limits"]; present && !isNull(limits) {
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(limits, &obj); err != nil {
+			t.Errorf("%s: limits is %s; it is an object of the core's figures", what, limits)
+		}
+	}
+	if filter, present := fields["filter"]; present && !isNull(filter) {
+		checkFilter(t, what, filter)
+	}
+	var reason string
+	if r, present := fields["reason"]; present && !isNull(r) {
+		if err := json.Unmarshal(r, &reason); err != nil {
+			t.Errorf("%s: reason is %s; it is a string", what, r)
+		}
+	}
+	if !verdict && reason == "" {
+		t.Errorf("%s: a deny with no reason; the reason is the developer detail of the core's 403", what)
+	}
+	d, err := authz.ParseDecision(raw)
+	if err != nil {
+		t.Errorf("%s: the client reads the body as no decision: %v", what, err)
+		return authz.Decision{}, false
+	}
+	return d, true
+}
+
+// checkFilter reads a filter object: owners a list of strings, labels a
+// map of strings, and no other key.
+func checkFilter(t testing.TB, what string, filter json.RawMessage) {
+	t.Helper()
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(filter, &obj); err != nil {
+		t.Errorf("%s: filter is %s; it is an object of owners and labels", what, filter)
+		return
+	}
+	for k, v := range obj {
+		switch k {
+		case "owners":
+			var owners []string
+			if !isNull(v) && json.Unmarshal(v, &owners) != nil {
+				t.Errorf("%s: filter.owners is %s; it is a list of rendered subjects", what, v)
+			}
+		case "labels":
+			var labels map[string]string
+			if !isNull(v) && json.Unmarshal(v, &labels) != nil {
+				t.Errorf("%s: filter.labels is %s; it is a map of string to string", what, v)
+			}
+		default:
+			t.Errorf("%s: filter carries %q; the contract's filter is owners and labels", what, k)
+		}
+	}
+}
+
+func isNull(raw json.RawMessage) bool { return bytes.Equal(bytes.TrimSpace(raw), []byte("null")) }
+
+// isPositiveInteger reports whether raw is a JSON number, not a quoted
+// one, that is a whole number above zero.
+func isPositiveInteger(raw json.RawMessage) bool {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return false
+	}
+	n, ok := v.(json.Number)
+	if !ok {
+		return false
+	}
+	i, err := n.Int64()
+	return err == nil && i > 0
+}
+
+// freshID is a random id no object has, so a well-formed request is about
+// an object the authorizer has never seen and the answer is not a cached
+// one.
+func freshID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic(err)
+	}
+	b[6] = b[6]&0x0f | 0x40
+	b[8] = b[8]&0x3f | 0x80
+	h := hex.EncodeToString(b[:])
+	return h[:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
+}
