@@ -743,8 +743,21 @@ func TestValidateConcurrentKidMiss(t *testing.T) {
 	wg.Wait()
 }
 
-func TestJWKSCacheSkipsNonRSA(t *testing.T) {
-	data := `{"keys":[{"kty":"EC","kid":"ec1","alg":"ES256","use":"sig","crv":"P-256","x":"abc","y":"def"}]}`
+// TestJWKSCacheSkipsUnusableKeys: a key of a type this package does not
+// verify with, an EC key on another curve, one whose coordinates do not
+// decode or are not 32 bytes, and a point off the curve are skipped, and
+// the set they leave is empty.
+func TestJWKSCacheSkipsUnusableKeys(t *testing.T) {
+	zero32 := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
+	one32 := base64.RawURLEncoding.EncodeToString(append(make([]byte, 31), 1))
+	data := `{"keys":[
+		{"kty":"oct","kid":"k1","alg":"HS256","k":"c2VjcmV0"},
+		{"kty":"EC","kid":"ec1","alg":"ES384","use":"sig","crv":"P-384","x":"` + zero32 + `","y":"` + zero32 + `"},
+		{"kty":"EC","kid":"ec2","alg":"ES256","use":"sig","crv":"P-256","x":"!!","y":"` + zero32 + `"},
+		{"kty":"EC","kid":"ec3","alg":"ES256","use":"sig","crv":"P-256","x":"` + zero32 + `","y":"!!"},
+		{"kty":"EC","kid":"ec4","alg":"ES256","use":"sig","crv":"P-256","x":"abc","y":"def"},
+		{"kty":"EC","kid":"ec5","alg":"ES256","use":"sig","crv":"P-256","x":"` + one32 + `","y":"` + one32 + `"}
+	]}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, err := w.Write([]byte(data)); err != nil {
 			t.Errorf("write JWKS response: %v", err)

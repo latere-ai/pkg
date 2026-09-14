@@ -1,9 +1,19 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: Apache-2.0
 
-// Package jwt verifies the RS256 JWTs the Latere auth service issues, using
-// the keys it publishes at its JWKS endpoint. Verification is offline: no
+// Package jwt verifies the JWTs the Latere auth service issues, using the
+// keys it publishes at its JWKS endpoint. Verification is offline: no
 // request path calls the auth service.
+//
+// # Algorithms
+//
+// Two signatures verify, the two the family's issuers sign with: RS256
+// over an RSA key (JWKS kty RSA) and ES256 over a P-256 key (kty EC, crv
+// P-256). The header's alg selects the key family: an RS256 token is
+// checked against RSA keys alone and an ES256 token against P-256 keys
+// alone, so a signature is never tried against a key of the other kind. A
+// token whose alg is neither is [ErrUnsupportedAlg], and a key of any
+// other type or curve in the set is skipped.
 //
 // # What a token names
 //
@@ -71,6 +81,8 @@ package jwt
 import (
 	"context"
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
@@ -148,7 +160,8 @@ type Config struct {
 	HTTPClient *http.Client
 }
 
-// Validator validates RS256 JWTs using keys fetched from a JWKS endpoint.
+// Validator validates RS256 and ES256 JWTs using keys fetched from a JWKS
+// endpoint.
 type Validator struct {
 	cfg   Config
 	cache *jwksCache
@@ -199,7 +212,7 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 	if err := json.Unmarshal(headerBytes, &header); err != nil {
 		return nil, ErrMalformedToken
 	}
-	if header.Alg != "RS256" {
+	if header.Alg != algRS256 && header.Alg != algES256 {
 		return nil, ErrUnsupportedAlg
 	}
 
@@ -217,7 +230,7 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 	sigInput := parts[0] + "." + parts[1]
 	digest := hashSHA256([]byte(sigInput))
 
-	if !verifySignature(keys, header.Kid, digest, sig) {
+	if !verifySignature(keys, header.Kid, header.Alg, digest, sig) {
 		return nil, ErrInvalidSignature
 	}
 
@@ -370,9 +383,38 @@ func ClaimsFromContext(ctx context.Context) *Claims {
 
 // ── JWKS Cache ──────────────────────────────────────────────────────────────
 
+// The two algorithms a token may name.
+const (
+	algRS256 = "RS256"
+	algES256 = "ES256"
+)
+
+// jwkEntry is one usable key of the set: an RSA key, which answers RS256,
+// or a P-256 key, which answers ES256. Exactly one of the two is set.
 type jwkEntry struct {
 	kid string
-	pub *rsa.PublicKey
+	rsa *rsa.PublicKey
+	ec  *ecdsa.PublicKey
+}
+
+// verifies reports whether the key checks sig over digest under alg. An
+// RSA key answers RS256 alone and a P-256 key ES256 alone, so a token
+// whose header names one algorithm is never checked against a key of the
+// other family. An ES256 signature is the JWS form, r and s as two 32-byte
+// integers.
+func (k jwkEntry) verifies(alg string, digest, sig []byte) bool {
+	switch {
+	case alg == algRS256 && k.rsa != nil:
+		return rsa.VerifyPKCS1v15(k.rsa, crypto.SHA256, digest, sig) == nil
+	case alg == algES256 && k.ec != nil:
+		if len(sig) != 64 {
+			return false
+		}
+		r := new(big.Int).SetBytes(sig[:32])
+		s := new(big.Int).SetBytes(sig[32:])
+		return ecdsa.Verify(k.ec, digest, r, s)
+	}
+	return false
 }
 
 // minForcedRefreshInterval bounds how often a kid miss may force a JWKS
@@ -470,18 +512,28 @@ func (c *jwksCache) load(force bool) ([]jwkEntry, error) {
 
 	var keys []jwkEntry
 	for _, k := range jwks.Keys {
-		if k.Kty != "RSA" {
+		e := jwkEntry{kid: k.Kid}
+		switch k.Kty {
+		case "RSA":
+			pub, err := parseRSAPublicKey(k.N, k.E)
+			if err != nil {
+				continue
+			}
+			e.rsa = pub
+		case "EC":
+			pub, err := parseECPublicKey(k.Crv, k.X, k.Y)
+			if err != nil {
+				continue
+			}
+			e.ec = pub
+		default:
 			continue
 		}
-		pub, err := parseRSAPublicKey(k.N, k.E)
-		if err != nil {
-			continue
-		}
-		keys = append(keys, jwkEntry{kid: k.Kid, pub: pub})
+		keys = append(keys, e)
 	}
 
 	if len(keys) == 0 {
-		// A well-formed 200 that yields no usable RSA keys must not discard a
+		// A well-formed 200 that yields no usable keys must not discard a
 		// still-valid cache: keep serving the cache and leave cachedAt untouched
 		// so the next request retries (mirrors the error-path fallback).
 		if cached, _ := c.cachedOr(nil); len(cached) > 0 {
@@ -524,8 +576,13 @@ type jwkRaw struct {
 	Kid string `json:"kid"`
 	Alg string `json:"alg"`
 	Use string `json:"use"`
-	N   string `json:"n"`
-	E   string `json:"e"`
+	// N and E are an RSA key's modulus and exponent.
+	N string `json:"n"`
+	E string `json:"e"`
+	// Crv, X and Y are an EC key's curve and point.
+	Crv string `json:"crv"`
+	X   string `json:"x"`
+	Y   string `json:"y"`
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -547,23 +604,48 @@ func parseRSAPublicKey(nB64, eB64 string) (*rsa.PublicKey, error) {
 	return &rsa.PublicKey{N: n, E: e}, nil
 }
 
+// parseECPublicKey reads a JWK EC key. Only P-256 is a key this package
+// verifies with, and the point must lie on the curve; the coordinates are
+// the base64url of two 32-byte big-endian integers (RFC 7518 §6.2.1).
+func parseECPublicKey(crv, xB64, yB64 string) (*ecdsa.PublicKey, error) {
+	if crv != "P-256" {
+		return nil, fmt.Errorf("authkit/jwt: unsupported curve %q", crv)
+	}
+	x, err := base64.RawURLEncoding.DecodeString(xB64)
+	if err != nil {
+		return nil, err
+	}
+	y, err := base64.RawURLEncoding.DecodeString(yB64)
+	if err != nil {
+		return nil, err
+	}
+	if len(x) != 32 || len(y) != 32 {
+		return nil, errors.New("authkit/jwt: EC coordinates are not 32 bytes")
+	}
+	point := make([]byte, 0, 65)
+	point = append(point, 0x04)
+	point = append(point, x...)
+	point = append(point, y...)
+	return ecdsa.ParseUncompressedPublicKey(elliptic.P256(), point)
+}
+
 func hashSHA256(data []byte) []byte {
 	h := crypto.SHA256.New()
 	h.Write(data)
 	return h.Sum(nil)
 }
 
-func verifySignature(keys []jwkEntry, kid string, digest, sig []byte) bool {
+func verifySignature(keys []jwkEntry, kid, alg string, digest, sig []byte) bool {
 	if kid != "" {
 		for _, k := range keys {
 			if k.kid == kid {
-				return rsa.VerifyPKCS1v15(k.pub, crypto.SHA256, digest, sig) == nil
+				return k.verifies(alg, digest, sig)
 			}
 		}
 	}
 	// Fallback: try all keys.
 	for _, k := range keys {
-		if rsa.VerifyPKCS1v15(k.pub, crypto.SHA256, digest, sig) == nil {
+		if k.verifies(alg, digest, sig) {
 			return true
 		}
 	}

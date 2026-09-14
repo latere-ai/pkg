@@ -10,6 +10,17 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `authkit/jwt` verifies ES256 beside RS256 (latere-ai/specs
+  `infrastructure/open-cores.md`, C5; Lux spec 006): a token whose header
+  names `alg: ES256` is checked against the key set's `kty: EC`, `crv:
+  P-256` keys, an RS256 one against its RSA keys, and never the other way
+  round, so a signature is not tried against a key of the other family.
+  Any other `alg` is still `ErrUnsupportedAlg`, and a key of another type
+  or curve is skipped as a non-RSA key was. `issuertest.WithES256` is the
+  stub that mints such tokens.
+
 ## v0.65.0 - 2026-09-13
 
 ### Added
