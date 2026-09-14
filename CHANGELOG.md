@@ -10,6 +10,49 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `llmdialect/bridge`, the translation layer between LLM provider API
+  dialects as an import (latere-ai/specs
+  `infrastructure/pkg/pkg-08-llmdialect-bridge.md`; Lux spec 021): what
+  a proxy writes around a `llmdialect` codec pair, taken out of the Lux
+  gateway so a program translates requests, responses, and streams with
+  no gateway running. `Open(from, to, Options)` pairs the codecs of two
+  dialects and is `Unsupported` for a dialect with none; `Request`
+  decodes, writes the upstream's model name, encodes, and returns the
+  loss report with the caller's entries in it, nil when nothing was
+  lost; `Response` writes the caller's name back and returns the usage
+  normalised so input never counts cache reads; `Stream` relays event by
+  event with `FirstByte`, `Flush`, and `Fail` hooks, the name on
+  `message_start`, and the last value of each usage member; and
+  `StreamResponse` re-emits one JSON body as the caller's events. Around
+  the pair, in each of four wires (`WireOpenAI`, `WireAnthropic`,
+  `WireGoogle`, `WireLux`): `Envelope` and `ParseEnvelope` for the error
+  shape, `ErrorFrame` for the frame that ends a stream which failed past
+  its first byte, `GoogleStatus`, `ModelList` and `ModelEntry` over
+  `Model`, whose zero fields are what each API writes for a model
+  without that datum (the display name is the name, the owner `owner`,
+  the creation time the epoch), `CountTokens` and `CountBody` for a count
+  the upstream cannot answer, and `UsageOf` and `NewUsageScanner` for the
+  usage members of a body or of a stream as it is relayed, SSE or JSON
+  array. The byte edits `Probe`, `SetModel`, `SetModelInFrame`,
+  `SetIncludeUsage`, and `RemoveMember` change one member of a body and
+  no other byte, and `RemoveMember` now reads a key with an escaped
+  quote correctly where the gateway's copy did not. Every failure is an
+  `*Error` with one of seven codes, one sentence each, the codec's words
+  in `Detail`, the codec's error under `Unwrap`, and, for
+  `DecodeRequest`, the refusal scope that `Scope` reports. Two of the
+  spec's open questions are taken at their written defaults: `Response`
+  keeps its loss slot, nil with today's codecs, so a codec that reports
+  response-leg loss does not change the signature; and
+  `CountBody(WireGoogle, n)` renders Google's own `{"totalTokens":n}`,
+  written because the wire is otherwise complete and to be removed if no
+  second consumer appears. The goldens under `testdata/` are the
+  gateway's own bytes: every envelope, frame, list, entry, and count
+  body, and every dialect pair's request, response, stream, and
+  re-emitted-events leg, so the swap Lux spec 021 carries is a diff and
+  not a judgement.
+
 ## v0.67.0 - 2026-09-14
 
 - `authkit/jwt.Scopes(raw)` decodes the `scp` claim of a product-local token in one place, so a service that mints tokens for its own seams (rule R4) reads their scopes through the shared helper instead of re-declaring `{scp []string}` at each call site. The family identity still carries no scope (rule R9); this centralises the decode, not the meaning.
