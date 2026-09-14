@@ -1,0 +1,1 @@
+{"content":[{"text":"hi","type":"text"}],"id":"msg_1","model":"shown-model","role":"assistant","stop_reason":"end_turn","stop_sequence":null,"type":"message","usage":{"cache_creation_input_tokens":5,"cache_read_input_tokens":1,"input_tokens":10,"output_tokens":4}}

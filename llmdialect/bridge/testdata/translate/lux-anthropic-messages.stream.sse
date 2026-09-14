@@ -1,0 +1,18 @@
+event: message_start
+data: {"type":"message_start","id":"m1","model":"shown-model","index":0,"usage":{"input_tokens":11,"output_tokens":1,"cache_read_input_tokens":2}}
+
+event: block_start
+data: {"type":"block_start","index":0,"block":{"type":"text"}}
+
+event: text_delta
+data: {"type":"text_delta","index":0,"delta":"hi"}
+
+event: block_stop
+data: {"type":"block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","index":0,"stop_reason":"end_turn","usage":{"input_tokens":11,"output_tokens":6,"cache_read_input_tokens":2}}
+
+event: message_stop
+data: {"type":"message_stop","index":0}
+

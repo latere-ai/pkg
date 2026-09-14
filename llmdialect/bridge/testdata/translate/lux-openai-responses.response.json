@@ -1,0 +1,1 @@
+{"id":"1","model":"shown-model","blocks":[{"type":"thinking","text":"thinking"},{"type":"text","text":"hi"},{"type":"tool_use","tool_use":{"id":"call_9","name":"shell","args":{"cmd":"ls"}}}],"stop_reason":"tool_use","usage":{"input_tokens":90,"output_tokens":20,"cache_read_input_tokens":10,"reasoning_tokens":8}}

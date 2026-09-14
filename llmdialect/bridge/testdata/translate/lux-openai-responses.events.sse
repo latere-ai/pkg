@@ -1,0 +1,36 @@
+event: message_start
+data: {"type":"message_start","id":"1","model":"shown-model","index":0}
+
+event: block_start
+data: {"type":"block_start","index":0,"block":{"type":"thinking"}}
+
+event: thinking_delta
+data: {"type":"thinking_delta","index":0,"delta":"thinking"}
+
+event: block_stop
+data: {"type":"block_stop","index":0}
+
+event: block_start
+data: {"type":"block_start","index":1,"block":{"type":"text"}}
+
+event: text_delta
+data: {"type":"text_delta","index":1,"delta":"hi"}
+
+event: block_stop
+data: {"type":"block_stop","index":1}
+
+event: block_start
+data: {"type":"block_start","index":2,"block":{"type":"tool_use","tool_use":{"id":"call_9","name":"shell"}}}
+
+event: args_delta
+data: {"type":"args_delta","index":2,"delta":"{\"cmd\":\"ls\"}"}
+
+event: block_stop
+data: {"type":"block_stop","index":2}
+
+event: message_delta
+data: {"type":"message_delta","index":0,"stop_reason":"tool_use","usage":{"input_tokens":90,"output_tokens":20,"cache_read_input_tokens":10,"reasoning_tokens":8}}
+
+event: message_stop
+data: {"type":"message_stop","index":0}
+

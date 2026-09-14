@@ -1,0 +1,1 @@
+{"max_tokens":32,"messages":[{"content":[{"text":"hello","type":"text"}],"role":"user"}],"model":"upstream-model"}

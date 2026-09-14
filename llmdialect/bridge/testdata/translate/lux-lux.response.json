@@ -1,0 +1,1 @@
+{"id":"lux-1","model":"shown-model","blocks":[{"type":"text","text":"hi"}],"stop_reason":"end_turn","usage":{"input_tokens":7,"output_tokens":1,"reasoning_tokens":1}}

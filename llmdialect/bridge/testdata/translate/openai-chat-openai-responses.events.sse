@@ -1,0 +1,16 @@
+data: {"choices":[{"delta":{"role":"assistant"},"index":0,"logprobs":null}],"created":0,"id":"1","model":"shown-model","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"reasoning_content":"thinking"},"index":0,"logprobs":null}],"created":0,"id":"1","model":"shown-model","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"content":"hi"},"index":0,"logprobs":null}],"created":0,"id":"1","model":"shown-model","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"","name":"shell"},"id":"call_9","index":0,"type":"function"}]},"index":0,"logprobs":null}],"created":0,"id":"1","model":"shown-model","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"{\"cmd\":\"ls\"}"},"index":0}]},"index":0,"logprobs":null}],"created":0,"id":"1","model":"shown-model","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{},"finish_reason":"tool_calls","index":0,"logprobs":null}],"created":0,"id":"1","model":"shown-model","object":"chat.completion.chunk"}
+
+data: {"choices":[],"created":0,"id":"1","model":"shown-model","object":"chat.completion.chunk","usage":{"completion_tokens":20,"completion_tokens_details":{"reasoning_tokens":8},"prompt_tokens":100,"prompt_tokens_details":{"cached_tokens":10},"total_tokens":120}}
+
+data: [DONE]
+

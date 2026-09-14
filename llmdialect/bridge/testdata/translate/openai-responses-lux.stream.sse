@@ -1,0 +1,9 @@
+event: response.created
+data: {"response":{"created_at":0,"id":"resp_l1","model":"shown-model","object":"response","output":[],"status":"in_progress"},"sequence_number":0,"type":"response.created"}
+
+event: response.in_progress
+data: {"response":{"created_at":0,"id":"resp_l1","model":"shown-model","object":"response","output":[],"status":"in_progress"},"sequence_number":1,"type":"response.in_progress"}
+
+event: response.completed
+data: {"response":{"created_at":0,"id":"resp_l1","incomplete_details":null,"model":"shown-model","object":"response","output":[],"status":"completed","usage":{"input_tokens":4,"input_tokens_details":{"cached_tokens":0},"output_tokens":9,"output_tokens_details":{"reasoning_tokens":2},"total_tokens":13}},"sequence_number":2,"type":"response.completed"}
+
