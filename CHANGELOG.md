@@ -45,6 +45,26 @@ under **Removed** or **Changed** with what to do about it.
   `WithSubjects`. `authz/stub` passes it, and the package's own test
   shows an endpoint that allows the probe, or bends any one field, fails
   it with a message naming the request.
+- `ratelimit.Buckets.AllowN(key, n)`, a charge of n tokens at once or none,
+  `Retry` the wait until all n are available, and
+  `ratelimit.Buckets.Adjust(key, delta)`, which settles a reservation: a
+  positive delta refunds up to the burst and a negative one debits past
+  zero into a deficit the refill covers before the next `Allow`. Lux spec
+  007's rate windows reserve an estimate, settle to the measured count,
+  and refund whole on a later refusal; until now `Allow` took exactly one
+  token and nothing gave any back.
+
+### Changed
+
+- `ratelimit.Config.PerMinute` of zero is no longer a disabled limiter: it
+  is the mode with no default bucket, where a key is unlimited until
+  `SetRate` gives it a rate and limited to that rate after (Lux spec 007,
+  whose rates arrive per Key). A negative `PerMinute` and a nil `*Buckets`
+  still disable everything, and every positive `PerMinute` behaves as
+  before. A caller that passed zero to turn the limiter off and never
+  called `SetRate` sees no change; one that did call `SetRate` now limits
+  that key, and passes a negative value to keep the old behaviour.
+  `Allowance.Remaining` reads zero, not a negative figure, in a deficit.
 
 ### Fixed
 
