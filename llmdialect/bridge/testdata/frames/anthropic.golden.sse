@@ -1,0 +1,3 @@
+event: error
+data: {"type":"error","error":{"type":"upstream_error","message":"The provider returned an error."},"request_id":"req_1"}
+
