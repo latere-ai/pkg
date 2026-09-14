@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.66.0 - 2026-09-14
+
 ### Added
 
 - `authkit/jwt` verifies ES256 beside RS256 (latere-ai/specs
