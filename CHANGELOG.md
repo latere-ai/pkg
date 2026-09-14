@@ -33,7 +33,8 @@ under **Removed** or **Changed** with what to do about it.
   `Model`, whose zero fields are what each API writes for a model
   without that datum (the display name is the name, the owner `owner`,
   the creation time the epoch), `CountTokens` and `CountBody` for a count
-  the upstream cannot answer, and `UsageOf` and `NewUsageScanner` for the
+  the upstream cannot answer, with `CountTokensFor` naming the body's
+  dialect where a wire carries more than one request shape, and `UsageOf` and `NewUsageScanner` for the
   usage members of a body or of a stream as it is relayed, SSE or JSON
   array. The byte edits `Probe`, `SetModel`, `SetModelInFrame`,
   `SetIncludeUsage`, and `RemoveMember` change one member of a body and

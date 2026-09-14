@@ -8,6 +8,7 @@ import (
 
 	"latere.ai/x/pkg/llmdialect"
 	"latere.ai/x/pkg/llmdialect/anthropic"
+	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
 	"latere.ai/x/pkg/llmdialect/openaichat"
 	"latere.ai/x/pkg/llmdialect/tokencount"
@@ -39,6 +40,23 @@ func CountTokens(w Wire, body []byte) (n int64, estimated bool, err error) {
 	fe := frontendForWire(w)
 	if fe == nil {
 		return 0, false, &Error{Code: Unsupported, Detail: "no frontend codec for wire " + quote(string(w))}
+	}
+	req, err := fe.DecodeRequest(body)
+	if err != nil {
+		return 0, false, wrap(DecodeRequest, err)
+	}
+	return tokencount.Estimate(req), true, nil
+}
+
+// CountTokensFor is CountTokens for a body in one named dialect rather
+// than a wire's default codec: a wire may carry more than one request
+// shape, as WireOpenAI carries Chat Completions and Responses, and the
+// caller that knows which route the body came in on names it here. A
+// dialect with no frontend codec is Unsupported.
+func CountTokensFor(d ir.Dialect, body []byte) (n int64, estimated bool, err error) {
+	fe := frontendFor(d)
+	if fe == nil {
+		return 0, false, &Error{Code: Unsupported, Detail: "no frontend codec for dialect " + quote(string(d))}
 	}
 	req, err := fe.DecodeRequest(body)
 	if err != nil {

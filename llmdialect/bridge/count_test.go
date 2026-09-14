@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"latere.ai/x/pkg/llmdialect"
+	"latere.ai/x/pkg/llmdialect/ir"
 )
 
 // TestCountTokens: the estimate over the decoded request for every wire
@@ -45,6 +46,34 @@ func TestCountTokens(t *testing.T) {
 		if !errors.As(err, &e) || e.Code != Unsupported || estimated {
 			t.Errorf("%q: %v", w, err)
 		}
+	}
+}
+
+// TestCountTokensFor counts a body by its own dialect: a Responses body
+// that CountTokens's Chat codec refuses is counted through the Responses
+// codec, and a dialect with no codec is Unsupported.
+func TestCountTokensFor(t *testing.T) {
+	body := []byte(`{"model":"m","input":"hello there"}`)
+	if _, _, err := CountTokens(WireOpenAI, body); err == nil {
+		t.Fatal("the wire's Chat codec read a Responses body")
+	}
+	n, estimated, err := CountTokensFor(ir.DialectOpenAIResponses, body)
+	if err != nil || n <= 0 || !estimated {
+		t.Fatalf("Responses: %d %v %v", n, estimated, err)
+	}
+	chat := fixture(t, "fixtures/openai-chat.request.json")
+	if n, _, err := CountTokensFor(ir.DialectOpenAIChat, chat); err != nil || n <= 0 {
+		t.Fatalf("Chat: %d %v", n, err)
+	}
+	if wn, _, err := CountTokens(WireOpenAI, chat); err != nil || wn != n {
+		t.Fatalf("CountTokens and CountTokensFor disagree on a Chat body: %d %d %v", wn, n, err)
+	}
+	var e *Error
+	if _, _, err := CountTokensFor(ir.Dialect("nope"), chat); !errors.As(err, &e) || e.Code != Unsupported {
+		t.Fatalf("an unknown dialect: %v", err)
+	}
+	if _, _, err := CountTokensFor(ir.DialectOpenAIChat, []byte(`{"model":"gpt"}`)); !errors.As(err, &e) || e.Code != DecodeRequest {
+		t.Fatalf("a body the codec refuses: %v", err)
 	}
 }
 
