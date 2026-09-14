@@ -26,6 +26,13 @@ under **Removed** or **Changed** with what to do about it.
   can prove a service dialled the issuer zero times during its data-plane
   requests (Lux spec 001's third invariant, spec 015). The two reads are
   not themselves recorded, and an empty record is `[]`, never `null`.
+- `authz/stub` has the second kind of outage beside a status: `FailBody`
+  makes every answer a 200 whose body is no answer, `BodyMalformed` (not
+  JSON) or `BodyNoAllow` (parses, no `allow` field), and `PUT /fail` takes
+  `{"body": "malformed"}` or `{"body": "no-allow"}` beside `{"status":
+  <int>}`; `{"status": 0}` and `Resume` clear either. `authz.Client`
+  treats both as `*Unavailable`, which the stub's test proves (Lux spec
+  006's forms of unavailability).
 
 ### Fixed
 

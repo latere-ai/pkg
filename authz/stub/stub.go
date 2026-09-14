@@ -14,6 +14,12 @@
 // stub through a host port: PUT /rules, GET and DELETE /requests, PUT
 // /fail, POST /hang, POST /resume. A core adds an action with an answer
 // shape of its own through WithAction.
+//
+// The outage modes are the forms of unavailability the contract names
+// (Lux spec 006): a status other than 200 (Fail), a 200 whose body is not
+// JSON or parses but carries no allow (FailBody), and no answer at all
+// (Hang). A core's client treats every one of them as *authz.Unavailable
+// and fails closed.
 package stub
 
 import (
@@ -58,6 +64,23 @@ func star(pattern, value string) bool {
 // registers. The body it returns is written as the 200.
 type Answer func(req authz.Request) any
 
+// Body is a 200 that is no answer, the second kind of outage: FailBody
+// selects one, and PUT /fail takes it as {"body": "<mode>"}.
+type Body string
+
+const (
+	// BodyMalformed is a 200 whose body is not JSON.
+	BodyMalformed Body = "malformed"
+	// BodyNoAllow is a 200 whose body parses but carries no allow field.
+	BodyNoAllow Body = "no-allow"
+)
+
+// bodies are the bytes each Body mode writes.
+var bodies = map[Body]string{
+	BodyMalformed: "{not json",
+	BodyNoAllow:   `{"reason":"an answer with no verdict"}`,
+}
+
 // Option configures a Server.
 type Option func(*Server)
 
@@ -98,6 +121,7 @@ type Server struct {
 	rules    []Rule
 	requests []authz.Request
 	fail     int
+	failBody Body
 	hung     chan struct{}
 	closed   chan struct{}
 	srv      *httptest.Server
@@ -192,10 +216,19 @@ func (s *Server) ClearRequests() {
 }
 
 // Fail makes every answer the given status; 0 restores the rule table.
+// It replaces a FailBody in force.
 func (s *Server) Fail(status int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.fail = status
+	s.fail, s.failBody = status, ""
+}
+
+// FailBody makes every answer a 200 with a body that is no answer, the
+// mode's; "" restores the rule table. It replaces a Fail in force.
+func (s *Server) FailBody(mode Body) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.fail, s.failBody = 0, mode
 }
 
 // Hang makes the endpoint never answer until Resume or Close.
@@ -207,12 +240,12 @@ func (s *Server) Hang() {
 	}
 }
 
-// Resume clears Hang and Fail: the next request is answered from the
-// rule table.
+// Resume clears Hang, Fail, and FailBody: the next request is answered
+// from the rule table.
 func (s *Server) Resume() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.fail = 0
+	s.fail, s.failBody = 0, ""
 	if s.hung != nil {
 		close(s.hung)
 		s.hung = nil
@@ -266,7 +299,7 @@ func (s *Server) decide(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	s.requests = append(s.requests, req)
-	fail, hung, answer := s.fail, s.hung, s.actions[req.Action]
+	fail, failBody, hung, answer := s.fail, s.failBody, s.hung, s.actions[req.Action]
 	s.mu.Unlock()
 	if hung != nil {
 		select {
@@ -278,6 +311,11 @@ func (s *Server) decide(w http.ResponseWriter, r *http.Request) {
 	}
 	if fail != 0 {
 		http.Error(w, "failing on request", fail)
+		return
+	}
+	if failBody != "" {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, bodies[failBody])
 		return
 	}
 	if answer != nil {
@@ -314,17 +352,27 @@ func (s *Server) putRules(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// putFail reads {"status": <int>} and calls Fail with it; 0 clears the
-// outage.
+// putFail reads {"status": <int>} and calls Fail with it, or {"body":
+// "malformed"} or {"body": "no-allow"} and calls FailBody; {"status": 0}
+// clears either outage. A body mode it does not know is a 400.
 func (s *Server) putFail(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Status int `json:"status"`
+		Status int  `json:"status"`
+		Body   Body `json:"body"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	s.Fail(body.Status)
+	if body.Body != "" {
+		if _, ok := bodies[body.Body]; !ok {
+			http.Error(w, "unknown body mode "+string(body.Body), http.StatusBadRequest)
+			return
+		}
+		s.FailBody(body.Body)
+	} else {
+		s.Fail(body.Status)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
