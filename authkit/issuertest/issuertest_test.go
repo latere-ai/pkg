@@ -11,6 +11,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -439,5 +440,61 @@ func TestTokenEndpointWithNoClientsRefusesEveryGrant(t *testing.T) {
 	s := New(t)
 	if _, _, err := oidc.ClientCredentials(context.Background(), s.URL(), "any", "thing", "", nil); err == nil || !strings.Contains(err.Error(), "401") {
 		t.Fatalf("want invalid_client 401, got %v", err)
+	}
+}
+
+// TestControlAPIReadsAndClearsTheRecorder: GET /requests is what Requests
+// returns and DELETE /requests is ResetRequests, so a test in another
+// process reads the recorder (Lux spec 015). Neither is recorded itself,
+// and an empty record is an empty array.
+func TestControlAPIReadsAndClearsTheRecorder(t *testing.T) {
+	s := New(t)
+	read := func() []string {
+		t.Helper()
+		resp, err := http.Get(s.srv.URL + "/requests")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "application/json" {
+			t.Fatalf("GET /requests: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+		}
+		raw, _ := io.ReadAll(resp.Body)
+		if strings.TrimSpace(string(raw)) == "null" {
+			t.Fatal("an empty record read as null")
+		}
+		var got []string
+		if err := json.Unmarshal(raw, &got); err != nil {
+			t.Fatalf("GET /requests body %q: %v", raw, err)
+		}
+		return got
+	}
+	if got := read(); len(got) != 0 {
+		t.Fatalf("a fresh stub has served %v", got)
+	}
+	for _, p := range []string{"/jwks", "/.well-known/openid-configuration"} {
+		resp, err := http.Get(s.srv.URL + p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+	}
+	if got := read(); len(got) != 2 || got[0] != "GET /jwks" || got[1] != "GET /.well-known/openid-configuration" {
+		t.Fatalf("GET /requests = %v", got)
+	}
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodDelete, s.srv.URL+"/requests", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("DELETE /requests: %d", resp.StatusCode)
+	}
+	if got := read(); len(got) != 0 {
+		t.Fatalf("after DELETE: %v", got)
+	}
+	if got := s.Requests(); len(got) != 0 {
+		t.Fatalf("the method sees %v after the HTTP reset", got)
 	}
 }

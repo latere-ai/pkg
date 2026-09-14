@@ -20,6 +20,17 @@ under **Removed** or **Changed** with what to do about it.
   Any other `alg` is still `ErrUnsupportedAlg`, and a key of another type
   or curve is skipped as a non-RSA key was. `issuertest.WithES256` is the
   stub that mints such tokens.
+- `authkit/issuertest` serves `GET /requests`, the list `Requests()`
+  returns as a JSON array, and `DELETE /requests`, which is
+  `ResetRequests`, mirroring `authz/stub`, so a test in another process
+  can prove a service dialled the issuer zero times during its data-plane
+  requests (Lux spec 001's third invariant, spec 015). The two reads are
+  not themselves recorded, and an empty record is `[]`, never `null`.
+
+### Fixed
+
+- `authkit/issuertest`: the doc comments of `WithDefaultAudience` and
+  `WithServiceClient` were attached to the wrong function.
 
 ## v0.65.0 - 2026-09-13
 

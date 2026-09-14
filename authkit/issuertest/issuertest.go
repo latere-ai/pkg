@@ -9,6 +9,11 @@
 // consumer's end-to-end tier can mint for a product the way the issuer
 // does. It serves plain HTTP on a loopback address.
 //
+// The stub records every request it serves, and a test in another
+// process reads the record at GET /requests and clears it with DELETE
+// /requests, so a stack tier can prove a service dialled the issuer zero
+// times during its data-plane requests (Lux spec 001's third invariant).
+//
 // The stub began as Origo's test/stubs/issuer and moved here with id-04 so
 // that the conformance suite (authkit/conformance) and every repository's
 // tests share one issuer.
@@ -122,6 +127,10 @@ func WithClock(now func() time.Time) Option {
 
 // WithDefaultAudience sets the aud a minted token carries when Claims
 // names none. Without it a token with no Aud has no aud claim.
+func WithDefaultAudience(aud string) Option {
+	return func(s *Server) { s.defaultAud = aud }
+}
+
 // WithServiceClient registers a confidential client for the
 // client_credentials grant at POST /token. A stub with no registered
 // client answers every grant with invalid_client.
@@ -132,10 +141,6 @@ func WithServiceClient(clientID string, c ServiceClient) Option {
 		}
 		s.clients[clientID] = c
 	}
-}
-
-func WithDefaultAudience(aud string) Option {
-	return func(s *Server) { s.defaultAud = aud }
 }
 
 // Server is the stub issuer.
@@ -205,31 +210,47 @@ func NewHandler(opts ...Option) *Server {
 	s.mux.HandleFunc("POST /actor-tokens", s.actorTokens)
 	s.mux.HandleFunc("POST /token", s.token)
 	s.mux.HandleFunc("POST /rotate", func(w http.ResponseWriter, _ *http.Request) { s.Rotate(); w.WriteHeader(http.StatusNoContent) })
+	s.mux.HandleFunc("GET "+requestsPath, func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, s.Requests()) })
+	s.mux.HandleFunc("DELETE "+requestsPath, func(w http.ResponseWriter, _ *http.Request) { s.ResetRequests(); w.WriteHeader(http.StatusNoContent) })
 	s.mux.HandleFunc("POST /hang", func(w http.ResponseWriter, _ *http.Request) { s.Hang(); w.WriteHeader(http.StatusNoContent) })
 	s.mux.HandleFunc("POST /resume", func(w http.ResponseWriter, _ *http.Request) { s.Resume(); w.WriteHeader(http.StatusNoContent) })
 	return s
 }
 
-// Handler is the stub's routes, recording every request it serves.
+// requestsPath is the recorder's HTTP surface: GET reads what Requests
+// returns, DELETE is ResetRequests. Neither is recorded, so a test across
+// a process boundary reads exactly what the service under test called.
+const requestsPath = "/requests"
+
+// Handler is the stub's routes, recording every request it serves except
+// the two reads of the recorder itself.
 func (s *Server) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		s.mu.Lock()
-		s.requests = append(s.requests, r.Method+" "+r.URL.Path)
-		s.mu.Unlock()
+		if r.URL.Path != requestsPath {
+			s.mu.Lock()
+			s.requests = append(s.requests, r.Method+" "+r.URL.Path)
+			s.mu.Unlock()
+		}
 		s.mux.ServeHTTP(w, r)
 	})
 }
 
 // Requests lists every request the stub has served since the last
 // ResetRequests, as "METHOD /path". A conformance check reads it to prove
-// a service called nothing but the key set during a request.
+// a service called nothing but the key set during a request; a test in
+// another process reads the same list at GET /requests. An empty list is
+// an empty JSON array there, never null.
 func (s *Server) Requests() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.requests == nil {
+		return []string{}
+	}
 	return slices.Clone(s.requests)
 }
 
-// ResetRequests forgets the recorded requests.
+// ResetRequests forgets the recorded requests; DELETE /requests is the
+// same reset over HTTP.
 func (s *Server) ResetRequests() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
