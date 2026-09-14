@@ -1,0 +1,1 @@
+{"id":"m2","type":"message","role":"assistant","model":"claude-3","content":[{"type":"thinking","thinking":"hm","signature":"sig"},{"type":"text","text":"hi"},{"type":"tool_use","id":"t1","name":"f","input":{"a":1}}],"stop_reason":"tool_use","usage":{"input_tokens":2,"output_tokens":3}}
