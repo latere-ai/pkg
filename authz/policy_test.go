@@ -39,9 +39,12 @@ func TestOwnerPolicy(t *testing.T) {
 		{"the owner writes its own", req(alice, "repo.write", "r1"), owned, true, ""},
 		{"the owner administers its own", req(alice, "repo.admin", "r1"), owned, true, ""},
 		{"a stranger is refused", req(bob, "repo.read", "r1"), owned, false, ReasonNotOwner},
-		{"a subject may create", req(bob, "repo.admin", "r2"), none, true, ""},
+		{"a subject may create under an id it chose", req(bob, "repo.admin", "r2"), none, true, ""},
+		{"a subject may create with no id, as a create carries none on the wire", req(bob, "repo.admin", ""), none, true, ""},
+		{"anonymous cannot create with no id either", req("", "repo.admin", ""), none, false, ReasonAnonymous},
 		{"a read of an unknown id is refused like a stranger's", req(bob, "repo.read", "r2"), none, false, ReasonNotOwner},
-		{"an unresolved name is refused", req(bob, "repo.admin", ""), none, false, ReasonNotOwner},
+		{"an unresolved name under another action is refused", req(bob, "repo.write", ""), none, false, ReasonNotOwner},
+		{"a name that resolves to another's object is refused under the create action too", req(bob, "repo.admin", ""), owned, false, ReasonNotOwner},
 		{"a list names no id and is refused to a non-admin", req(bob, "repo.list", ""), none, false, ReasonNotOwner},
 	} {
 		d := p.Decide(tc.req, tc.obj)
@@ -50,9 +53,11 @@ func TestOwnerPolicy(t *testing.T) {
 		}
 	}
 	// A policy that names no create action allows creation to nobody but
-	// an admin.
-	if d := (Policy{}).Decide(req(bob, "repo.admin", "r2"), none); d.Allow {
-		t.Fatal("no create action and a creation was allowed")
+	// an admin, with or without an id.
+	for _, id := range []string{"r2", ""} {
+		if d := (Policy{}).Decide(req(bob, "repo.admin", id), none); d.Allow {
+			t.Fatalf("no create action and a creation with id %q was allowed", id)
+		}
 	}
 }
 

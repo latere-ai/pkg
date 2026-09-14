@@ -68,6 +68,13 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Fixed
 
+- `authz.Policy` allows the `Create` action on an object that does not
+  exist whether or not the request names an id. The row required an id,
+  while `authz.Resource` and `infrastructure/open-cores.md`'s envelope say
+  a create carries none; an id, when present, names the object the caller
+  chose. A name that resolves to another subject's object is still
+  `not_owner` under the create action, and the anonymous subject still
+  creates nothing.
 - `authkit/issuertest`: the doc comments of `WithDefaultAudience` and
   `WithServiceClient` were attached to the wrong function.
 

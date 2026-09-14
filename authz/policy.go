@@ -23,7 +23,9 @@ type Policy struct {
 	// object.
 	Admins []string
 	// Create is the action of the core's vocabulary that creates an
-	// object. It is the one action allowed on an id that does not exist;
+	// object. It is the one action allowed on an object that does not
+	// exist, whether the request names an id, the one the caller chose
+	// for the new object, or none, as a create on the wire carries none;
 	// every other action on an unknown object is refused with the same
 	// reason as an object the subject does not own, so a deny does not
 	// disclose whether the object exists.
@@ -51,9 +53,11 @@ const (
 //  2. the anonymous subject is denied;
 //  3. an admin is allowed everything;
 //  4. the owner of an object that exists is allowed;
-//  5. the Create action on an id that does not exist is allowed, so a
-//     subject may create; an id names the object the caller chose;
-//  6. everything else is denied as not_owner.
+//  5. the Create action on an object that does not exist is allowed, so a
+//     subject may create, with no id, as a create carries none on the
+//     wire, or with the id the caller chose for the new object;
+//  6. everything else is denied as not_owner: another subject's object,
+//     an unknown id or an unresolved name under any other action.
 func (p Policy) Decide(req Request, obj Object) Decision {
 	switch {
 	case strings.EqualFold(req.Resource.ID, ProbeID):
@@ -64,7 +68,7 @@ func (p Policy) Decide(req Request, obj Object) Decision {
 		return Decision{Allow: true}
 	case obj.Exists && obj.Owner == req.Subject:
 		return Decision{Allow: true}
-	case !obj.Exists && req.Resource.ID != "" && p.Create != "" && req.Action == p.Create:
+	case !obj.Exists && p.Create != "" && req.Action == p.Create:
 		return Decision{Allow: true}
 	}
 	return Decision{Reason: ReasonNotOwner}
