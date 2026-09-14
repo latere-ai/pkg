@@ -37,6 +37,7 @@ import (
 	"testing"
 
 	"latere.ai/x/pkg/authz"
+	"latere.ai/x/pkg/otel"
 )
 
 // Action is one entry of a core's vocabulary: the action name and the
@@ -63,7 +64,7 @@ func WithSubjects(subjects ...string) Option {
 }
 
 // WithHTTPClient sends the calls through the given client; the default
-// is a client with the contract's timeout.
+// is an instrumented client with the contract's timeout.
 func WithHTTPClient(c *http.Client) Option {
 	return func(s *suite) { s.http = c }
 }
@@ -87,7 +88,8 @@ type suite struct {
 // broke it.
 func Run(t testing.TB, url, token string, opts ...Option) {
 	t.Helper()
-	s := &suite{url: url, token: token, actions: defaultActions, subjects: defaultSubjects, http: &http.Client{Timeout: authz.Timeout}}
+	s := &suite{url: url, token: token, actions: defaultActions, subjects: defaultSubjects,
+		http: &http.Client{Timeout: authz.Timeout, Transport: otel.Transport(nil)}}
 	for _, o := range opts {
 		o(s)
 	}
