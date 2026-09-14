@@ -344,6 +344,23 @@ func DecodePayload(rawToken string, v any) error {
 	return nil
 }
 
+// Scopes decodes the "scp" claim of a compact JWT: a product-local token's
+// own capability list. The family identity carries no scope (rule R9); a
+// service that mints a token for its own seams (rule R4) reads that token's
+// scopes through this one helper rather than re-declaring the claim at each
+// call site. Like [DecodePayload] it verifies no signature, so use it only on
+// a token already verified or one that never left a trusted boundary; a
+// malformed token yields nil.
+func Scopes(rawToken string) []string {
+	var p struct {
+		Scopes []string `json:"scp"`
+	}
+	if err := DecodePayload(rawToken, &p); err != nil {
+		return nil
+	}
+	return p.Scopes
+}
+
 // ── Middleware ───────────────────────────────────────────────────────────────
 
 type ctxKey int

@@ -1144,3 +1144,20 @@ func TestValidateActorClaims(t *testing.T) {
 		t.Errorf("non-actor token carried ActorID=%q Kind=%q, want empty", claims2.ActorID, claims2.Kind)
 	}
 }
+
+// TestScopes decodes the scp claim of a product-local token without
+// verifying it, and yields nil for a malformed token.
+func TestScopes(t *testing.T) {
+	hdr := b64(map[string]any{"alg": "none"})
+	tok := hdr + "." + b64(map[string]any{"sub": "svc", "scp": []string{"github:mint-token", "read:sandbox"}}) + ".sig"
+	got := Scopes(tok)
+	if len(got) != 2 || got[0] != "github:mint-token" || got[1] != "read:sandbox" {
+		t.Fatalf("Scopes = %v", got)
+	}
+	if s := Scopes(hdr + "." + b64(map[string]any{"sub": "svc"}) + ".sig"); s != nil {
+		t.Fatalf("no scp should be nil, got %v", s)
+	}
+	if s := Scopes("not.a.jwt.x"); s != nil {
+		t.Fatalf("malformed token should be nil, got %v", s)
+	}
+}
