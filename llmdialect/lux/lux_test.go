@@ -139,6 +139,40 @@ func TestDecodeRequestLoss(t *testing.T) {
 	}
 }
 
+// TestDecodeRequestServerToolsAndWebSearchAreNotLoss: both fields are
+// decoded, so a request carrying them reports no loss.
+func TestDecodeRequestServerToolsAndWebSearchAreNotLoss(t *testing.T) {
+	in := `{
+		"model": "m",
+		"messages": [{"role": "user", "blocks": [{"type": "text", "text": "hi"}]}],
+		"server_tools": [{"type": "web_search_20250305", "name": "web_search", "config": {"max_uses": 3}}],
+		"web_search": {"context_size": "medium", "user_location": {"type": "approximate", "city": "Munich"}}
+	}`
+	req, err := NewFrontend().DecodeRequest([]byte(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if losses := req.Loss.Strings(); losses != nil {
+		t.Fatalf("a request with server_tools and web_search reported loss %v", losses)
+	}
+	if len(req.ServerTools) != 1 || req.ServerTools[0].Type != "web_search_20250305" || req.ServerTools[0].Name != "web_search" || string(req.ServerTools[0].Config) != `{"max_uses": 3}` {
+		t.Fatalf("server_tools = %+v", req.ServerTools)
+	}
+	if req.WebSearch == nil || req.WebSearch.ContextSize != "medium" || string(req.WebSearch.UserLocation) != `{"type": "approximate", "city": "Munich"}` {
+		t.Fatalf("web_search = %+v", req.WebSearch)
+	}
+	// Every field Request declares is a key the decoder names, so the two
+	// cannot drift apart again.
+	var wire map[string]json.RawMessage
+	raw, _ := json.Marshal(Request{})
+	_ = json.Unmarshal(raw, &wire)
+	for k := range wire {
+		if !requestKeys[k] {
+			t.Errorf("Request declares %q and requestKeys does not name it", k)
+		}
+	}
+}
+
 func TestDecodeRequestErrors(t *testing.T) {
 	cases := []struct {
 		name string

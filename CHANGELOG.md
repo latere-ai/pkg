@@ -77,6 +77,11 @@ under **Removed** or **Changed** with what to do about it.
   creates nothing.
 - `authkit/issuertest`: the doc comments of `WithDefaultAudience` and
   `WithServiceClient` were attached to the wrong function.
+- `llmdialect/lux`: a request carrying `server_tools` or `web_search`
+  reported both as loss although the decoder reads them, so a caller saw a
+  spurious loss header on an answer that lost nothing. Both are named
+  among the request keys, and the test holds every field `Request`
+  declares to a named key so the two cannot drift again.
 
 ## v0.65.0 - 2026-09-13
 
