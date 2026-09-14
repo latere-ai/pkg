@@ -62,11 +62,12 @@ func TestCountTokensFor(t *testing.T) {
 		t.Fatalf("Responses: %d %v %v", n, estimated, err)
 	}
 	chat := fixture(t, "fixtures/openai-chat.request.json")
-	if n, _, err := CountTokensFor(ir.DialectOpenAIChat, chat); err != nil || n <= 0 {
-		t.Fatalf("Chat: %d %v", n, err)
+	chatN, _, err := CountTokensFor(ir.DialectOpenAIChat, chat)
+	if err != nil || chatN <= 0 {
+		t.Fatalf("Chat: %d %v", chatN, err)
 	}
-	if wn, _, err := CountTokens(WireOpenAI, chat); err != nil || wn != n {
-		t.Fatalf("CountTokens and CountTokensFor disagree on a Chat body: %d %d %v", wn, n, err)
+	if wn, _, err := CountTokens(WireOpenAI, chat); err != nil || wn != chatN {
+		t.Fatalf("CountTokens and CountTokensFor disagree on a Chat body: %d %d %v", wn, chatN, err)
 	}
 	var e *Error
 	if _, _, err := CountTokensFor(ir.Dialect("nope"), chat); !errors.As(err, &e) || e.Code != Unsupported {
