@@ -317,7 +317,7 @@ func TestDecodeResponseSkipsUnknownBlocks(t *testing.T) {
 
 func streamEvents() []ir.Event {
 	inTok := &ir.Usage{InputTokens: 12}
-	full := &ir.Usage{InputTokens: 12, OutputTokens: 34, CacheReadInputTokens: i64(5), ReasoningTokens: 6}
+	full := &ir.Usage{InputTokens: 12, OutputTokens: 34, CacheReadInputTokens: i64(5), CacheWriteInputTokens: i64(0), ReasoningTokens: 6}
 	return []ir.Event{
 		{Type: ir.EventMessageStart, ID: "msg_1", Model: "m", Usage: inTok},
 		{Type: ir.EventBlockStart, Index: 0, Block: &ir.Block{Type: ir.BlockText}},
@@ -687,4 +687,111 @@ func TestUsageCostUSDMicroNotAliased(t *testing.T) {
 	if *got.CostUSDMicro != 99 {
 		t.Fatalf("usageFromIR aliases the cost pointer: ir = %d", *got.CostUSDMicro)
 	}
+}
+
+// TestUsageCacheCountsNilVsZero pins the two cache counts against literal
+// wire bytes on both legs, as the cost is pinned: an absent or null
+// member decodes to nil, a present one to its value, zero included; nil
+// encodes to no key and a zero to the key with 0; and neither pointer
+// aliases across the wire/IR boundary.
+func TestUsageCacheCountsNilVsZero(t *testing.T) {
+	cases := []struct {
+		name, body      string
+		wantRead, wantW *int64
+	}{
+		{"absent", `{"id":"x","usage":{"input_tokens":1,"output_tokens":2}}`, nil, nil},
+		{"null", `{"id":"x","usage":{"input_tokens":1,"cache_read_input_tokens":null,"cache_write_input_tokens":null}}`, nil, nil},
+		{"zeros", `{"id":"x","usage":{"input_tokens":1,"cache_read_input_tokens":0,"cache_write_input_tokens":0}}`, i64(0), i64(0)},
+		{"counts", `{"id":"x","usage":{"input_tokens":1,"cache_read_input_tokens":3,"cache_write_input_tokens":4}}`, i64(3), i64(4)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NewBackend().DecodeResponse([]byte(tc.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got.Usage.CacheReadInputTokens, tc.wantRead) || !reflect.DeepEqual(got.Usage.CacheWriteInputTokens, tc.wantW) {
+				t.Fatalf("usage = %+v, want read %v write %v", got.Usage, tc.wantRead, tc.wantW)
+			}
+		})
+	}
+	body, err := NewFrontend().EncodeResponse(&ir.Response{ID: "m", Model: "m",
+		Usage: ir.Usage{InputTokens: 1, CacheReadInputTokens: i64(0), CacheWriteInputTokens: i64(0)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"cache_read_input_tokens":0`) || !strings.Contains(string(body), `"cache_write_input_tokens":0`) {
+		t.Fatalf("reported zeros must be encoded: %s", body)
+	}
+	body, err = NewFrontend().EncodeResponse(&ir.Response{ID: "m", Model: "m", Usage: ir.Usage{InputTokens: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "cache_read_input_tokens") || strings.Contains(string(body), "cache_write_input_tokens") {
+		t.Fatalf("unreported counts must be omitted: %s", body)
+	}
+
+	wire := Usage{CacheReadInputTokens: i64(5), CacheWriteInputTokens: i64(6)}
+	toIR := usageToIR(wire)
+	*toIR.CacheReadInputTokens, *toIR.CacheWriteInputTokens = 50, 60
+	if *wire.CacheReadInputTokens != 5 || *wire.CacheWriteInputTokens != 6 {
+		t.Fatalf("usageToIR aliases a cache pointer: wire = %+v", wire)
+	}
+	back := usageFromIR(toIR)
+	*back.CacheReadInputTokens, *back.CacheWriteInputTokens = 7, 8
+	if *toIR.CacheReadInputTokens != 50 || *toIR.CacheWriteInputTokens != 60 {
+		t.Fatalf("usageFromIR aliases a cache pointer: ir = %+v", toIR)
+	}
+}
+
+// jsonHasKey reports whether any object in raw has a member whose name
+// folds to key, which is how encoding/json matches a member, so the
+// fuzz invariant asks the question the decoder answers.
+func jsonHasKey(raw []byte, key string) bool {
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(raw, &obj) != nil {
+		return false
+	}
+	for k, v := range obj {
+		if strings.EqualFold(k, key) || jsonHasKey(v, key) {
+			return true
+		}
+	}
+	return false
+}
+
+// FuzzDecodeResponseUsage holds each optional usage member to its own
+// wire key under any usage object: a member is set only when its key
+// appeared, and a decoded usage re-encodes to bytes that decode to the
+// same usage.
+func FuzzDecodeResponseUsage(f *testing.F) {
+	f.Add([]byte(`{"input_tokens":1,"output_tokens":2}`))
+	f.Add([]byte(`{"input_tokens":1,"cache_read_input_tokens":0,"cache_write_input_tokens":0,"cost_usd_micro":0}`))
+	f.Add([]byte(`{"cache_read_input_tokens":null,"cache_write_input_tokens":3}`))
+	f.Fuzz(func(t *testing.T, usage []byte) {
+		got, err := NewBackend().DecodeResponse(append(append([]byte(`{"id":"x","usage":`), usage...), '}'))
+		if err != nil {
+			return
+		}
+		for key, member := range map[string]*int64{
+			"cache_read_input_tokens":  got.Usage.CacheReadInputTokens,
+			"cache_write_input_tokens": got.Usage.CacheWriteInputTokens,
+			"cost_usd_micro":           got.Usage.CostUSDMicro,
+		} {
+			if member != nil && !jsonHasKey(usage, key) {
+				t.Fatalf("%s = %d reported by %s", key, *member, usage)
+			}
+		}
+		body, err := NewFrontend().EncodeResponse(&ir.Response{ID: "x", Usage: got.Usage})
+		if err != nil {
+			t.Fatal(err)
+		}
+		again, err := NewBackend().DecodeResponse(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(again.Usage, got.Usage) {
+			t.Fatalf("usage changed across a round trip: %+v then %+v", got.Usage, again.Usage)
+		}
+	})
 }

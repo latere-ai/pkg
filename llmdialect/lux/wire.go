@@ -139,11 +139,17 @@ type ResponseSchema struct {
 
 // Usage is token and cost accounting for one call.
 type Usage struct {
-	InputTokens           int64 `json:"input_tokens"`
-	OutputTokens          int64 `json:"output_tokens"`
-	CacheReadInputTokens  int64 `json:"cache_read_input_tokens,omitempty"`
-	CacheWriteInputTokens int64 `json:"cache_write_input_tokens,omitempty"`
-	ReasoningTokens       int64 `json:"reasoning_tokens,omitempty"`
+	InputTokens  int64 `json:"input_tokens"`
+	OutputTokens int64 `json:"output_tokens"`
+	// CacheReadInputTokens and CacheWriteInputTokens are the input
+	// tokens served from and written to the provider's prompt cache.
+	// The pointers carry the nil/zero distinction onto the wire, as
+	// CostUSDMicro's does: omitempty drops only nil, so a count the
+	// backend reported as zero travels as "cache_read_input_tokens":0
+	// and stays distinguishable from a backend that reported none.
+	CacheReadInputTokens  *int64 `json:"cache_read_input_tokens,omitempty"`
+	CacheWriteInputTokens *int64 `json:"cache_write_input_tokens,omitempty"`
+	ReasoningTokens       int64  `json:"reasoning_tokens,omitempty"`
 	// CostUSDMicro is the gateway-reported cost in millionths of a USD.
 	// The pointer carries the nil/zero distinction onto the wire:
 	// omitempty drops only nil, so an explicitly reported zero cost
@@ -317,8 +323,8 @@ func usageToIR(u Usage) ir.Usage {
 	return ir.Usage{
 		InputTokens:           u.InputTokens,
 		OutputTokens:          u.OutputTokens,
-		CacheReadInputTokens:  optInt64(u.CacheReadInputTokens),
-		CacheWriteInputTokens: optInt64(u.CacheWriteInputTokens),
+		CacheReadInputTokens:  copyInt64(u.CacheReadInputTokens),
+		CacheWriteInputTokens: copyInt64(u.CacheWriteInputTokens),
 		ReasoningTokens:       u.ReasoningTokens,
 		CostUSDMicro:          copyInt64(u.CostUSDMicro),
 	}
@@ -328,28 +334,11 @@ func usageFromIR(u ir.Usage) Usage {
 	return Usage{
 		InputTokens:           u.InputTokens,
 		OutputTokens:          u.OutputTokens,
-		CacheReadInputTokens:  deref(u.CacheReadInputTokens),
-		CacheWriteInputTokens: deref(u.CacheWriteInputTokens),
+		CacheReadInputTokens:  copyInt64(u.CacheReadInputTokens),
+		CacheWriteInputTokens: copyInt64(u.CacheWriteInputTokens),
 		ReasoningTokens:       u.ReasoningTokens,
 		CostUSDMicro:          copyInt64(u.CostUSDMicro),
 	}
-}
-
-// optInt64 is a wire count as an optional IR count. This wire drops a
-// zero with omitempty, so zero and absent are one value here, nil.
-func optInt64(v int64) *int64 {
-	if v == 0 {
-		return nil
-	}
-	return &v
-}
-
-// deref is an optional count's value, zero when it was not reported.
-func deref(p *int64) int64 {
-	if p == nil {
-		return 0
-	}
-	return *p
 }
 
 // copyInt64 copies an optional value across the wire/IR boundary, so

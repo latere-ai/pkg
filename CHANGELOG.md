@@ -73,12 +73,15 @@ under **Removed** or **Changed** with what to do about it.
   well as `message_start`, where a later zero never erases a count
   already reported; the OpenAI-shaped frontends keep writing
   `cached_tokens` as 0 for nil, since those wires always carry the
-  member and their readers take 0 as "no cache read". `bridge.Usage` is
-  unchanged, a floored total for a meter. What to do about it: a
-  consumer that read the two fields dereferences them after a nil check,
-  nil meaning unknown; one that built an `ir.Usage` literal takes the
-  address of the count; and a `==` between two `ir.Usage` values now
-  compares pointers, so compare members or use `reflect.DeepEqual`.
+  member and their readers take 0 as "no cache read". `lux.Usage` (and
+  so `luxsdk.Usage`) carries the two as `*int64` with `omitempty`, as it
+  already carries `cost_usd_micro`: nil is no key, an explicit zero
+  travels as `0`. `bridge.Usage` is unchanged, a floored total for a
+  meter. What to do about it: a consumer that read the two fields
+  dereferences them after a nil check, nil meaning unknown; one that
+  built an `ir.Usage` or `lux.Usage` literal takes the address of the
+  count; and a `==` between two `ir.Usage` values now compares pointers,
+  so compare members or use `reflect.DeepEqual`.
 
 ## v0.67.0 - 2026-09-14
 
