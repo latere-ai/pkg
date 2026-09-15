@@ -288,23 +288,34 @@ type respOutputItem struct {
 	} `json:"summary"`
 }
 
+// respUsage is the Responses usage object. input_tokens_details and its
+// cached_tokens are pointers because their absence is a datum: a server
+// without per-request cache accounting writes neither, and that is not
+// a cache that served nothing.
 type respUsage struct {
 	InputTokens        int64 `json:"input_tokens"`
 	OutputTokens       int64 `json:"output_tokens"`
-	InputTokensDetails struct {
-		CachedTokens int64 `json:"cached_tokens"`
+	InputTokensDetails *struct {
+		CachedTokens *int64 `json:"cached_tokens"`
 	} `json:"input_tokens_details"`
 	OutputTokensDetails struct {
 		ReasoningTokens int64 `json:"reasoning_tokens"`
 	} `json:"output_tokens_details"`
 }
 
+// toUsage converts wire usage to IR semantics: IR input tokens exclude
+// cache reads, while input_tokens includes them. The cache read count
+// is set only when the wire carried one; this dialect has no cache
+// write count.
 func (u *respUsage) toUsage() ir.Usage {
-	cached := u.InputTokensDetails.CachedTokens
+	var cached *int64
+	if u.InputTokensDetails != nil {
+		cached = u.InputTokensDetails.CachedTokens
+	}
 	return ir.Usage{
-		InputTokens:          max(u.InputTokens-cached, 0),
+		InputTokens:          max(u.InputTokens-deref(cached), 0),
 		OutputTokens:         u.OutputTokens,
-		CacheReadInputTokens: &cached,
+		CacheReadInputTokens: cached,
 		ReasoningTokens:      u.OutputTokensDetails.ReasoningTokens,
 	}
 }
