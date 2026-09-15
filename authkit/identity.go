@@ -71,6 +71,19 @@ type Identity struct {
 	// then the caller's roles in OrgID. A personal token carries none.
 	// Absent or unknown roles confer no authority (fail-safe).
 	Roles []string `json:"roles,omitempty"`
+	// PreferredUsername, OrgSlug and OrgName are the issuer's display
+	// labels for the principal and for OrgID: the person's handle, and
+	// the slug and display name of the active organisation. They let a
+	// service name the owner of a resource without asking the issuer for
+	// it. The issuer omits a label it has no value for, leaving the field
+	// empty: PreferredUsername until the person claims a handle, OrgSlug
+	// and OrgName whenever OrgID is empty.
+	//
+	// They are labels and never authority: the membership a service
+	// decides from stays OrgID and Roles.
+	PreferredUsername string `json:"preferred_username,omitempty"`
+	OrgSlug           string `json:"org_slug,omitempty"`
+	OrgName           string `json:"org_name,omitempty"`
 	// ClientID is the OAuth client_id of the caller's token. Used to
 	// resolve per-client config. Empty for dev bearer tokens and for
 	// older JWTs minted before the client_id claim was added.
