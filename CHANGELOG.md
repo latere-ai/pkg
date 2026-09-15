@@ -65,8 +65,12 @@ under **Removed** or **Changed** with what to do about it.
   extension; both are known request keys now rather than unknown-field
   loss, and `cache_salt` is still recorded as `ir.LossCacheSalt` because
   the partition it puts on the engine's cache has no IR member and does
-  not reach the upstream. `ir.PrefixCacheKeys` is that hash, documented
-  byte for byte (role, type and the block's content fields, each as a
+  not reach the upstream. Messages, which has no key member: the
+  breakpoints its `cache_control` blocks mark, as the lowercase hex
+  SHA-256 of the system and message content up to and including the
+  last one, so two requests that share that prefix share the key
+  whatever follows. `ir.PrefixCacheKeys` is that hash, documented byte
+  for byte (role, type and the block's content fields, each as a
   netstring) and fixed, and returns one key per breakpoint in order so
   a router can fall back to a shorter prefix.
 

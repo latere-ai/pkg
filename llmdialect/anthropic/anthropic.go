@@ -144,6 +144,15 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 		}
 		req.Messages = append(req.Messages, msg)
 	}
+	// The Messages API has no cache key member; its cache_control
+	// breakpoints are the caller's statement of which prefix it expects
+	// to be cached. The key is the hash of the prefix up to the last
+	// breakpoint, over the IR's arrangement (system-role turns already
+	// folded into System), as ir.PrefixCacheKeys documents, so two
+	// requests that share that prefix share the key.
+	if keys := ir.PrefixCacheKeys(req.System, req.Messages); len(keys) > 0 {
+		req.CacheKey = keys[len(keys)-1]
+	}
 	for _, raw := range wire.Tools {
 		var t wireTool
 		if err := json.Unmarshal(raw, &t); err != nil {
