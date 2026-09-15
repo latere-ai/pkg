@@ -53,6 +53,17 @@ under **Removed** or **Changed** with what to do about it.
   body, and every dialect pair's request, response, stream, and
   re-emitted-events leg, so the swap Lux spec 021 carries is a diff and
   not a judgement.
+- `llmdialect/ir.Request.CacheKey`, the caller's prefix-cache key:
+  requests that share it share a cacheable prefix, so whoever sits in
+  front of the engine can keep them on the replica whose cache holds it.
+  It is routing information for that layer, not a member for the
+  engine, and no backend emits it: the IR cannot tell a caller's own key
+  from one this layer derived, and a derived key that changes every
+  turn would steer an upstream's own cache routing worse than no key.
+  `ir.PrefixCacheKeys` is that hash, documented byte for byte (role,
+  type and the block's content fields, each as a netstring) and fixed,
+  and returns one key per breakpoint in order so a router can fall back
+  to a shorter prefix.
 
 ### Changed
 
