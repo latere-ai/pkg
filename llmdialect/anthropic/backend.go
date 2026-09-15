@@ -332,23 +332,25 @@ func encodeImageSource(img *ir.Image) map[string]any {
 // present when the model thought (effort or thinking requested); its
 // thinking_tokens are the Anthropic name for what the Responses dialect
 // reports as reasoning_tokens, and are already included in output_tokens.
+// The two cache members are pointers so a usage that omits one (or
+// writes null, as older responses did) decodes to an unreported count
+// rather than a measured zero.
 type backendUsage struct {
-	InputTokens              int64 `json:"input_tokens"`
-	OutputTokens             int64 `json:"output_tokens"`
-	CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
-	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+	InputTokens              int64  `json:"input_tokens"`
+	OutputTokens             int64  `json:"output_tokens"`
+	CacheReadInputTokens     *int64 `json:"cache_read_input_tokens"`
+	CacheCreationInputTokens *int64 `json:"cache_creation_input_tokens"`
 	OutputTokensDetails      *struct {
 		ThinkingTokens int64 `json:"thinking_tokens"`
 	} `json:"output_tokens_details"`
 }
 
 func (u *backendUsage) toUsage() ir.Usage {
-	read, write := u.CacheReadInputTokens, u.CacheCreationInputTokens
 	out := ir.Usage{
 		InputTokens:           u.InputTokens,
 		OutputTokens:          u.OutputTokens,
-		CacheReadInputTokens:  &read,
-		CacheWriteInputTokens: &write,
+		CacheReadInputTokens:  u.CacheReadInputTokens,
+		CacheWriteInputTokens: u.CacheCreationInputTokens,
 	}
 	if u.OutputTokensDetails != nil {
 		out.ReasoningTokens = u.OutputTokensDetails.ThinkingTokens
@@ -449,6 +451,16 @@ func (d *backendEventDecoder) finish() {
 	d.finished = true
 }
 
+// mergeCount takes a later frame's optional count into dst: absent
+// contributes nothing, a zero fills only an unreported dst, and any
+// other value replaces it.
+func mergeCount(dst **int64, src *int64) {
+	if src == nil || (*src == 0 && *dst != nil) {
+		return
+	}
+	*dst = src
+}
+
 func (d *backendEventDecoder) stopOrDefault() ir.StopReason {
 	if d.stop == "" {
 		return ir.StopEndTurn
@@ -539,9 +551,12 @@ func (d *backendEventDecoder) consume(data []byte) error {
 			if frame.Usage.InputTokens > 0 {
 				d.usage.InputTokens = frame.Usage.InputTokens
 			}
-			if read := frame.Usage.CacheReadInputTokens; read > 0 {
-				d.usage.CacheReadInputTokens = &read
-			}
+			// Newer API versions repeat the cache counts here. A count
+			// reported on message_delta replaces message_start's, a zero
+			// never erases a count already reported, and a count only
+			// message_delta carried is still a report.
+			mergeCount(&d.usage.CacheReadInputTokens, frame.Usage.CacheReadInputTokens)
+			mergeCount(&d.usage.CacheWriteInputTokens, frame.Usage.CacheCreationInputTokens)
 		}
 	case "message_stop":
 		d.finish()
