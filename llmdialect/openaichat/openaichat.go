@@ -339,12 +339,15 @@ func imageURL(img *ir.Image) string {
 	return "data:" + img.MediaType + ";base64," + img.Data
 }
 
-// wireUsage is the Chat Completions usage object.
+// wireUsage is the Chat Completions usage object. prompt_tokens_details
+// and its cached_tokens are pointers because their absence is a datum:
+// an openai-compatible server without per-request cache accounting
+// writes neither, and that is not a cache that served nothing.
 type wireUsage struct {
 	PromptTokens        int64 `json:"prompt_tokens"`
 	CompletionTokens    int64 `json:"completion_tokens"`
-	PromptTokensDetails struct {
-		CachedTokens int64 `json:"cached_tokens"`
+	PromptTokensDetails *struct {
+		CachedTokens *int64 `json:"cached_tokens"`
 	} `json:"prompt_tokens_details"`
 	CompletionTokensDetails struct {
 		ReasoningTokens int64 `json:"reasoning_tokens"`
@@ -353,13 +356,17 @@ type wireUsage struct {
 
 // toUsage converts wire usage to IR semantics: IR input tokens exclude
 // cache reads (Anthropic convention), while prompt_tokens includes
-// them.
+// them. The cache read count is set only when the wire carried one;
+// this dialect has no cache write count.
 func (u *wireUsage) toUsage() *ir.Usage {
-	cached := u.PromptTokensDetails.CachedTokens
+	var cached *int64
+	if u.PromptTokensDetails != nil {
+		cached = u.PromptTokensDetails.CachedTokens
+	}
 	return &ir.Usage{
-		InputTokens:          max(u.PromptTokens-cached, 0),
+		InputTokens:          max(u.PromptTokens-deref(cached), 0),
 		OutputTokens:         u.CompletionTokens,
-		CacheReadInputTokens: &cached,
+		CacheReadInputTokens: cached,
 		ReasoningTokens:      u.CompletionTokensDetails.ReasoningTokens,
 	}
 }

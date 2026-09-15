@@ -499,7 +499,9 @@ func finishReason(stop ir.StopReason) string {
 
 // encodeFrontUsage converts IR usage back to the Chat Completions
 // shape: prompt_tokens includes cache reads, with the cached share in
-// prompt_tokens_details.
+// prompt_tokens_details. An unreported cache read count is written as
+// 0: this wire always carries the member, and its readers take 0 as
+// the value for a call that read no cache.
 func encodeFrontUsage(u ir.Usage) map[string]any {
 	cached := deref(u.CacheReadInputTokens)
 	return map[string]any{

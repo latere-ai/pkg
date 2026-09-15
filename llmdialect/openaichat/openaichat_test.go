@@ -4,6 +4,7 @@
 package openaichat
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -340,6 +341,101 @@ func TestDecodeResponse(t *testing.T) {
 	if !reflect.DeepEqual(resp.Usage, want) {
 		t.Fatalf("usage = %+v want %+v", resp.Usage, want)
 	}
+}
+
+// TestDecodeUsageCacheReporting pins the nil/zero distinction on the
+// cache read count: a usage without prompt_tokens_details, or with it
+// null, is a server that measured nothing and decodes to nil; one that
+// carries cached_tokens decodes to that count, zero included. The
+// buffered body and the stream's usage chunk agree.
+func TestDecodeUsageCacheReporting(t *testing.T) {
+	cases := []struct {
+		name, usage string
+		wantIn      int64
+		wantCached  *int64
+	}{
+		{"no details", `{"prompt_tokens":10,"completion_tokens":1}`, 10, nil},
+		{"null details", `{"prompt_tokens":10,"completion_tokens":1,"prompt_tokens_details":null}`, 10, nil},
+		{"details without cached_tokens", `{"prompt_tokens":10,"completion_tokens":1,"prompt_tokens_details":{"audio_tokens":0}}`, 10, nil},
+		{"reported zero", `{"prompt_tokens":10,"completion_tokens":1,"prompt_tokens_details":{"cached_tokens":0}}`, 10, i64(0)},
+		{"reported count", `{"prompt_tokens":10,"completion_tokens":1,"prompt_tokens_details":{"cached_tokens":7}}`, 3, i64(7)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := NewBackend(BackendOptions{}).DecodeResponse([]byte(
+				`{"id":"x","choices":[{"message":{"content":"y"}}],"usage":` + tc.usage + `}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := ir.Usage{InputTokens: tc.wantIn, OutputTokens: 1, CacheReadInputTokens: tc.wantCached}
+			if !reflect.DeepEqual(resp.Usage, want) {
+				t.Fatalf("buffered usage = %+v want %+v", resp.Usage, want)
+			}
+			events := drain(t, chunk(`{"id":"x","choices":[],"usage":`+tc.usage+`}`)+chunk(`[DONE]`))
+			if got := events[1].Usage; got == nil || !reflect.DeepEqual(*got, want) {
+				t.Fatalf("stream usage = %+v want %+v", got, want)
+			}
+		})
+	}
+}
+
+// jsonHasKey reports whether any object in raw has a member whose name
+// folds to key, which is how encoding/json matches a member, so the
+// fuzz invariant asks the question the decoder answers.
+func jsonHasKey(raw []byte, key string) bool {
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(raw, &obj) != nil {
+		return false
+	}
+	for k, v := range obj {
+		if strings.EqualFold(k, key) || jsonHasKey(v, key) {
+			return true
+		}
+	}
+	return false
+}
+
+// FuzzUsageDecode holds the cache read count to its wire member under
+// any usage object: it is set only when cached_tokens appeared, this
+// dialect never sets a write count, input never goes negative, and the
+// buffered and streamed decodes of one usage object agree.
+func FuzzUsageDecode(f *testing.F) {
+	f.Add([]byte(`{"prompt_tokens":10,"completion_tokens":1}`))
+	f.Add([]byte(`{"prompt_tokens":10,"prompt_tokens_details":{"cached_tokens":0}}`))
+	f.Add([]byte(`{"prompt_tokens":1,"prompt_tokens_details":{"cached_tokens":9}}`))
+	f.Add([]byte(`{"prompt_tokens_details":null}`))
+	f.Add([]byte(`{"prompt_tokens_details":{"cached_tokens":null}}`))
+	f.Add([]byte(`null`))
+	f.Add([]byte("{}\n"))
+	f.Fuzz(func(t *testing.T, usage []byte) {
+		resp, err := NewBackend(BackendOptions{}).DecodeResponse(
+			append(append([]byte(`{"id":"x","choices":[{"message":{"content":"y"}}],"usage":`), usage...), '}'))
+		if err != nil {
+			return
+		}
+		u := resp.Usage
+		if u.CacheReadInputTokens != nil && !jsonHasKey(usage, "cached_tokens") {
+			t.Fatalf("cache read %d reported by %s", *u.CacheReadInputTokens, usage)
+		}
+		if u.CacheWriteInputTokens != nil {
+			t.Fatalf("a cache write count from a wire that has none: %s", usage)
+		}
+		if u.InputTokens < 0 {
+			t.Fatalf("negative input: %+v", u)
+		}
+		if bytes.ContainsAny(usage, "\r\n") {
+			return // a line break splits the SSE data line; not a usage question
+		}
+		// A usage member that is null is no usage on the stream and the
+		// zero value on the body; anything else decodes the same on both.
+		events := drain(t, chunk(`{"id":"x","choices":[],"usage":`+string(usage)+`}`)+chunk(`[DONE]`))
+		switch got := events[1].Usage; {
+		case got == nil && u != (ir.Usage{}):
+			t.Fatalf("stream reported no usage, buffered %+v", u)
+		case got != nil && !reflect.DeepEqual(*got, u):
+			t.Fatalf("stream usage %+v, buffered %+v", got, u)
+		}
+	})
 }
 
 func TestDecodeResponseStopReasons(t *testing.T) {
