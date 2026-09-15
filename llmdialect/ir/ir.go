@@ -15,9 +15,13 @@
 package ir
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"io"
 	"math"
 	"slices"
+	"strconv"
 )
 
 // Dialect names an LLM inference wire dialect. Every codec package
@@ -280,6 +284,17 @@ type Request struct {
 	WebSearch     *WebSearch
 	UserID        string // caller-supplied end-user identifier
 
+	// CacheKey is the caller's prefix-cache key: requests that share it
+	// share a cacheable prefix, so whoever sits in front of the engine
+	// can keep them on the replica whose cache holds it. It is routing
+	// information for that layer, not a member for the engine, and
+	// backends do not emit it. Frontends fill it from the signal each
+	// wire has: the Responses and Chat prompt_cache_key, the Chat
+	// cache_salt extension, and for Messages the breakpoints its
+	// cache_control blocks mark, hashed by PrefixCacheKeys. Empty when
+	// the request carried none.
+	CacheKey string
+
 	// LogProbs asks for the log probability of every token the model
 	// emits, and TopLogProbs for that many alternatives at each
 	// position. TopLogProbs > 0 implies LogProbs: alternatives to a
@@ -302,6 +317,7 @@ type LossField string
 // Static loss fields.
 const (
 	LossCacheControl      LossField = "cache_control"
+	LossCacheSalt         LossField = "cache_salt"
 	LossCitations         LossField = "citations"
 	LossInclude           LossField = "include"
 	LossLogProbs          LossField = "logprobs"
@@ -352,6 +368,84 @@ func LossTextFormatOf(t string) LossField { return LossField("text.format." + t)
 
 // LossResponseFormatOf marks an unsupported response_format type.
 func LossResponseFormatOf(t string) LossField { return LossField("response_format." + t) }
+
+// PrefixCacheKeys derives the prefix-cache keys a request's breakpoints
+// mark: one key per block whose CacheHint is set, in order, each the
+// lowercase hex SHA-256 of the system blocks and message blocks up to
+// and including that block. Nil when no block has a hint. The last key
+// covers the longest marked prefix and is what a frontend puts in
+// Request.CacheKey; the earlier ones cover the shorter prefixes a
+// router can fall back to when no replica holds the longest. Two
+// requests that share a marked prefix share its key whatever follows.
+//
+// The hash input is fixed so a key computed elsewhere matches. Each
+// covered block contributes, in this order: its role ("system" for a
+// system block, otherwise the message's role), its type, its text (a
+// text or thinking block's), its signature, its redacted payload, then
+// for an image its media type, data and URL, for a tool use its id,
+// name and arguments, and for a tool result its tool_use_id, "1" or "0"
+// for is_error, and its inner blocks each contributed the same way
+// under the role "tool_result". Every field is written as its byte
+// length in decimal, a colon, the bytes and a comma, so no boundary is
+// ambiguous. The model, tools and sampling parameters are not part of
+// it: a router knows the model, and the prefix is what a cache holds.
+func PrefixCacheKeys(system []Block, messages []Message) []string {
+	h := sha256.New()
+	var keys []string
+	visit := func(role string, b Block) {
+		hashBlock(h, role, b)
+		if b.CacheHint {
+			keys = append(keys, hex.EncodeToString(h.Sum(nil)))
+		}
+	}
+	for _, b := range system {
+		visit("system", b)
+	}
+	for _, m := range messages {
+		for _, b := range m.Blocks {
+			visit(string(m.Role), b)
+		}
+	}
+	return keys
+}
+
+func hashBlock(w io.Writer, role string, b Block) {
+	hashField(w, role)
+	hashField(w, string(b.Type))
+	hashField(w, b.Text)
+	hashField(w, b.Signature)
+	hashField(w, b.Redacted)
+	if b.Image != nil {
+		hashField(w, b.Image.MediaType)
+		hashField(w, b.Image.Data)
+		hashField(w, b.Image.URL)
+	}
+	if b.ToolUse != nil {
+		hashField(w, b.ToolUse.ID)
+		hashField(w, b.ToolUse.Name)
+		hashField(w, string(b.ToolUse.Args))
+	}
+	if b.ToolResult != nil {
+		hashField(w, b.ToolResult.ToolUseID)
+		if b.ToolResult.IsError {
+			hashField(w, "1")
+		} else {
+			hashField(w, "0")
+		}
+		for _, inner := range b.ToolResult.Blocks {
+			hashBlock(w, "tool_result", inner)
+		}
+	}
+}
+
+// hashField writes one field as a netstring: length, colon, bytes,
+// comma. A hash.Hash never fails to write, so the errors are dropped.
+func hashField(w io.Writer, s string) {
+	_, _ = io.WriteString(w, strconv.Itoa(len(s)))
+	_, _ = io.WriteString(w, ":")
+	_, _ = io.WriteString(w, s)
+	_, _ = io.WriteString(w, ",")
+}
 
 // Loss is an ordered, deduplicated list of lost fields.
 type Loss struct {
