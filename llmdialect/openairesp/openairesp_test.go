@@ -101,6 +101,21 @@ func TestDecodeRequestCodexShape(t *testing.T) {
 	}
 }
 
+// TestDecodeRequestCacheKey: prompt_cache_key fills the key and is a
+// known member, not loss.
+func TestDecodeRequestCacheKey(t *testing.T) {
+	req := decode(t, `{"model": "m", "input": "hello", "prompt_cache_key": "tenant-7"}`)
+	if req.CacheKey != "tenant-7" {
+		t.Fatalf("CacheKey = %q", req.CacheKey)
+	}
+	if got := req.Loss.Strings(); got != nil {
+		t.Fatalf("prompt_cache_key reported as loss: %v", got)
+	}
+	if req := decode(t, `{"model": "m", "input": "hello"}`); req.CacheKey != "" {
+		t.Fatalf("no member must leave the key empty, got %q", req.CacheKey)
+	}
+}
+
 func TestDecodeRequestStringInputAndSchema(t *testing.T) {
 	req := decode(t, `{
 		"model": "m", "input": "hello",

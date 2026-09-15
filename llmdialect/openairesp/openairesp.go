@@ -46,6 +46,7 @@ var requestKeys = map[string]bool{
 	"parallel_tool_calls": true, "reasoning": true, "text": true,
 	"store": true, "previous_response_id": true, "user": true,
 	"metadata": true, "include": true, "top_logprobs": true,
+	"prompt_cache_key": true,
 }
 
 // DecodeRequest parses a stateless Responses API request into the IR.
@@ -91,6 +92,7 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 		User               string          `json:"user"`
 		Include            json.RawMessage `json:"include"`
 		TopLogProbs        *int            `json:"top_logprobs"`
+		PromptCacheKey     string          `json:"prompt_cache_key"`
 	}
 	if err := json.Unmarshal(body, &wire); err != nil {
 		return nil, fmt.Errorf("openairesp: malformed request: %w", err)
@@ -128,6 +130,7 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	req.TopP = wire.TopP
 	req.Stream = wire.Stream
 	req.UserID = wire.User
+	req.CacheKey = wire.PromptCacheKey
 	if wire.Instructions != "" {
 		req.System = append(req.System, ir.Block{Type: ir.BlockText, Text: wire.Instructions})
 	}

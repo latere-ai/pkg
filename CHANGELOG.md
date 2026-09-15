@@ -60,10 +60,11 @@ under **Removed** or **Changed** with what to do about it.
   engine, and no backend emits it: the IR cannot tell a caller's own key
   from one this layer derived, and a derived key that changes every
   turn would steer an upstream's own cache routing worse than no key.
-  `ir.PrefixCacheKeys` is that hash, documented byte for byte (role,
-  type and the block's content fields, each as a netstring) and fixed,
-  and returns one key per breakpoint in order so a router can fall back
-  to a shorter prefix.
+  The frontends fill it from the signal each wire has. Responses:
+  `prompt_cache_key`. `ir.PrefixCacheKeys` is that hash, documented byte
+  for byte (role, type and the block's content fields, each as a
+  netstring) and fixed, and returns one key per breakpoint in order so
+  a router can fall back to a shorter prefix.
 
 ## v0.67.0 - 2026-09-14
 
