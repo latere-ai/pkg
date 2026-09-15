@@ -64,12 +64,17 @@ under **Removed** or **Changed** with what to do about it.
   decoded to zero, and the Anthropic frontend then wrote
   `cache_read_input_tokens: 0` and `cache_creation_input_tokens: 0`,
   which a Messages-API client reads as a measurement that found nothing
-  cached, the opposite of "not measured". `bridge.Usage` is unchanged, a
-  floored total for a meter. What to do about it: a consumer that read
-  the two fields dereferences them after a nil check, nil meaning
-  unknown; one that built an `ir.Usage` literal takes the address of the
-  count; and a `==` between two `ir.Usage` values now compares pointers,
-  so compare members or use `reflect.DeepEqual`.
+  cached, the opposite of "not measured". Now the `openaichat` backend
+  sets the read count only when `prompt_tokens_details.cached_tokens`
+  is present, and never a write count, since the wire has none; the
+  Chat frontend keeps writing `cached_tokens` as 0 for nil, since that
+  wire always carries the member and its readers take 0 as "no cache
+  read". `bridge.Usage` is unchanged, a floored total for a meter. What
+  to do about it: a consumer that read the two fields dereferences them
+  after a nil check, nil meaning unknown; one that built an `ir.Usage`
+  literal takes the address of the count; and a `==` between two
+  `ir.Usage` values now compares pointers, so compare members or use
+  `reflect.DeepEqual`.
 
 ## v0.67.0 - 2026-09-14
 

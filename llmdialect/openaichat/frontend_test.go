@@ -197,6 +197,23 @@ func TestFrontendEncodeResponse(t *testing.T) {
 	}
 }
 
+// TestFrontendEncodeUsageUnreportedCache: this wire always carries
+// prompt_tokens_details.cached_tokens, so an unreported cache read count
+// is written as 0 and prompt_tokens is the input alone.
+func TestFrontendEncodeUsageUnreportedCache(t *testing.T) {
+	raw, err := NewFrontend().EncodeResponse(&ir.Response{Usage: ir.Usage{InputTokens: 40, OutputTokens: 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	_ = json.Unmarshal(raw, &got)
+	usage := got["usage"].(map[string]any)
+	if usage["prompt_tokens"].(float64) != 40 || usage["total_tokens"].(float64) != 45 ||
+		usage["prompt_tokens_details"].(map[string]any)["cached_tokens"].(float64) != 0 {
+		t.Fatalf("usage wrong: %v", usage)
+	}
+}
+
 func TestFrontendEncodeResponseStopMapping(t *testing.T) {
 	for stop, want := range map[ir.StopReason]string{
 		ir.StopEndTurn: "stop", ir.StopStopSequence: "stop",
