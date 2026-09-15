@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.68.0 - 2026-09-15
+
 ### Added
 
 - `llmdialect/bridge`, the translation layer between LLM provider API
