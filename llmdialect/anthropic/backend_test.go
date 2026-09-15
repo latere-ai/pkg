@@ -4,6 +4,7 @@
 package anthropic
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -281,6 +282,121 @@ func TestBackendDecodeResponse(t *testing.T) {
 	if !reflect.DeepEqual(resp.Usage, want) {
 		t.Fatalf("usage = %+v want %+v", resp.Usage, want)
 	}
+}
+
+// TestBackendDecodeUsageCacheReporting pins the nil/zero distinction on
+// both cache counts: a usage that omits a member, or writes it null,
+// decodes to nil for it; one that carries it decodes to the count, zero
+// included. On the stream, a count message_delta carries fills one
+// message_start did not, a zero there never erases a count already
+// reported, and a nonzero one replaces it.
+func TestBackendDecodeUsageCacheReporting(t *testing.T) {
+	cases := []struct {
+		name, usage string
+		want        ir.Usage
+	}{
+		{"neither", `{"input_tokens":10,"output_tokens":1}`, ir.Usage{InputTokens: 10, OutputTokens: 1}},
+		{"null", `{"input_tokens":10,"output_tokens":1,"cache_read_input_tokens":null,"cache_creation_input_tokens":null}`, ir.Usage{InputTokens: 10, OutputTokens: 1}},
+		{"zeros", `{"input_tokens":10,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}`,
+			ir.Usage{InputTokens: 10, OutputTokens: 1, CacheReadInputTokens: i64(0), CacheWriteInputTokens: i64(0)}},
+		{"read only", `{"input_tokens":10,"output_tokens":1,"cache_read_input_tokens":4}`,
+			ir.Usage{InputTokens: 10, OutputTokens: 1, CacheReadInputTokens: i64(4)}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := NewBackend(BackendOptions{}).DecodeResponse([]byte(
+				`{"id":"m","type":"message","content":[{"type":"text","text":"x"}],"usage":` + tc.usage + `}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(resp.Usage, tc.want) {
+				t.Fatalf("usage = %+v want %+v", resp.Usage, tc.want)
+			}
+		})
+	}
+
+	streamCases := []struct {
+		name, start, delta string
+		want               ir.Usage
+	}{
+		{"start without, delta without", `{"input_tokens":9}`, `{"output_tokens":5}`,
+			ir.Usage{InputTokens: 9, OutputTokens: 5}},
+		{"start without, delta reports zero", `{"input_tokens":9}`, `{"output_tokens":5,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}`,
+			ir.Usage{InputTokens: 9, OutputTokens: 5, CacheReadInputTokens: i64(0), CacheWriteInputTokens: i64(0)}},
+		{"start reports, delta zero keeps it", `{"input_tokens":9,"cache_read_input_tokens":3,"cache_creation_input_tokens":2}`, `{"output_tokens":5,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}`,
+			ir.Usage{InputTokens: 9, OutputTokens: 5, CacheReadInputTokens: i64(3), CacheWriteInputTokens: i64(2)}},
+		{"delta replaces with a count", `{"input_tokens":9,"cache_read_input_tokens":3}`, `{"output_tokens":5,"cache_read_input_tokens":7,"cache_creation_input_tokens":4}`,
+			ir.Usage{InputTokens: 9, OutputTokens: 5, CacheReadInputTokens: i64(7), CacheWriteInputTokens: i64(4)}},
+	}
+	for _, tc := range streamCases {
+		t.Run(tc.name, func(t *testing.T) {
+			events := drainBackend(t, anthropicSSE(
+				[2]string{"message_start", `{"type":"message_start","message":{"id":"m","model":"c","usage":` + tc.start + `}}`},
+				[2]string{"message_delta", `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":` + tc.delta + `}`},
+				[2]string{"message_stop", `{"type":"message_stop"}`},
+			))
+			md := events[len(events)-2]
+			if md.Type != ir.EventMessageDelta || md.Usage == nil || !reflect.DeepEqual(*md.Usage, tc.want) {
+				t.Fatalf("message_delta usage = %+v want %+v", md.Usage, tc.want)
+			}
+		})
+	}
+}
+
+// jsonHasKey reports whether any object in raw has a member whose name
+// folds to key, which is how encoding/json matches a member, so the
+// fuzz invariant asks the question the decoder answers.
+func jsonHasKey(raw []byte, key string) bool {
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(raw, &obj) != nil {
+		return false
+	}
+	for k, v := range obj {
+		if strings.EqualFold(k, key) || jsonHasKey(v, key) {
+			return true
+		}
+	}
+	return false
+}
+
+// FuzzBackendUsageDecode holds each cache count to its own wire member
+// under any usage object: set only when the member appeared, and the
+// buffered decode agrees with a stream whose message_start carried the
+// same object.
+func FuzzBackendUsageDecode(f *testing.F) {
+	f.Add([]byte(`{"input_tokens":10,"output_tokens":1}`))
+	f.Add([]byte(`{"input_tokens":10,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}`))
+	f.Add([]byte(`{"input_tokens":10,"cache_read_input_tokens":null}`))
+	f.Add([]byte(`{"cache_creation_input_tokens":5,"output_tokens_details":{"thinking_tokens":2}}`))
+	f.Add([]byte("{}\n"))
+	f.Fuzz(func(t *testing.T, usage []byte) {
+		resp, err := NewBackend(BackendOptions{}).DecodeResponse(
+			append(append([]byte(`{"id":"m","type":"message","content":[],"usage":`), usage...), '}'))
+		if err != nil {
+			return
+		}
+		u := resp.Usage
+		if u.CacheReadInputTokens != nil && !jsonHasKey(usage, "cache_read_input_tokens") {
+			t.Fatalf("cache read %d reported by %s", *u.CacheReadInputTokens, usage)
+		}
+		if u.CacheWriteInputTokens != nil && !jsonHasKey(usage, "cache_creation_input_tokens") {
+			t.Fatalf("cache write %d reported by %s", *u.CacheWriteInputTokens, usage)
+		}
+		if bytes.ContainsAny(usage, "\r\n") {
+			return // a line break splits the SSE data line; not a usage question
+		}
+		dec := NewBackend(BackendOptions{}).NewEventDecoder(strings.NewReader(anthropicSSE(
+			[2]string{"message_start", `{"type":"message_start","message":{"id":"m","model":"c","usage":` + string(usage) + `}}`},
+			[2]string{"message_stop", `{"type":"message_stop"}`},
+		)))
+		start, err := dec.Next()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if start.Usage == nil || !reflect.DeepEqual(*start.Usage, u) {
+			t.Fatalf("message_start usage %+v, buffered %+v", start.Usage, u)
+		}
+	})
 }
 
 func TestBackendDecodeResponseErrors(t *testing.T) {
