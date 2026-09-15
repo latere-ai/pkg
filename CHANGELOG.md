@@ -61,8 +61,12 @@ under **Removed** or **Changed** with what to do about it.
   from one this layer derived, and a derived key that changes every
   turn would steer an upstream's own cache routing worse than no key.
   The frontends fill it from the signal each wire has. Responses:
-  `prompt_cache_key`. `ir.PrefixCacheKeys` is that hash, documented byte
-  for byte (role, type and the block's content fields, each as a
+  `prompt_cache_key`. Chat: `prompt_cache_key`, else vLLM's `cache_salt`
+  extension; both are known request keys now rather than unknown-field
+  loss, and `cache_salt` is still recorded as `ir.LossCacheSalt` because
+  the partition it puts on the engine's cache has no IR member and does
+  not reach the upstream. `ir.PrefixCacheKeys` is that hash, documented
+  byte for byte (role, type and the block's content fields, each as a
   netstring) and fixed, and returns one key per breakpoint in order so
   a router can fall back to a shorter prefix.
 
