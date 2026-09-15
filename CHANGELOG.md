@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.69.0 - 2026-09-16
+
 ### Added
 
 - `authkit.Identity.PreferredUsername`, `.OrgSlug` and `.OrgName`, the
