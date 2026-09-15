@@ -636,9 +636,10 @@ func (d *EventDecoder) consume(data []byte) error {
 		Choices []struct {
 			Index int `json:"index"`
 			Delta struct {
-				Content          *string        `json:"content"`
-				ReasoningContent string         `json:"reasoning_content"`
-				ToolCalls        []wireToolCall `json:"tool_calls"`
+				Content          *string         `json:"content"`
+				ReasoningContent string          `json:"reasoning_content"`
+				Reasoning        json.RawMessage `json:"reasoning"`
+				ToolCalls        []wireToolCall  `json:"tool_calls"`
 			} `json:"delta"`
 			LogProbs     *wireLogProbs `json:"logprobs"`
 			FinishReason string        `json:"finish_reason"`
@@ -663,7 +664,7 @@ func (d *EventDecoder) consume(data []byte) error {
 		if c.Index != 0 {
 			continue // n>1 is not part of the IR; only choice 0 streams through
 		}
-		if rc := c.Delta.ReasoningContent; rc != "" {
+		if rc := reasoningText(c.Delta.ReasoningContent, c.Delta.Reasoning); rc != "" {
 			d.ensureBlock(blockThinking, ir.Block{Type: ir.BlockThinking})
 			d.pending = append(d.pending, ir.Event{Type: ir.EventThinkingDelta, Index: d.openIndex, Delta: rc})
 		}

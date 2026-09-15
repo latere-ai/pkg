@@ -475,6 +475,44 @@ func FuzzUsageDecode(f *testing.F) {
 	})
 }
 
+// TestEventDecoderReasoningAlias is the stream side of the alias: deltas
+// spelled reasoning open and extend the same thinking block that
+// reasoning_content deltas do, a delta carrying both keeps
+// reasoning_content, and a non-string reasoning delta contributes nothing.
+func TestEventDecoderReasoningAlias(t *testing.T) {
+	stream := chunk(`{"id":"c1","model":"m","choices":[{"index":0,"delta":{"reasoning":"hm"}}]}`) +
+		chunk(`{"id":"c1","choices":[{"index":0,"delta":{"reasoning_content":"canonical","reasoning":"alias"}}]}`) +
+		chunk(`{"id":"c1","choices":[{"index":0,"delta":{"reasoning":{"effort":"high"}}}]}`) +
+		chunk(`{"id":"c1","choices":[{"index":0,"delta":{"reasoning":"m2"}}]}`) +
+		chunk(`{"id":"c1","choices":[{"index":0,"delta":{"content":"answer"}}]}`) +
+		chunk(`{"id":"c1","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`) +
+		chunk(`[DONE]`)
+	events := drain(t, stream)
+	var types []ir.EventType
+	var thinking []string
+	for _, ev := range events {
+		types = append(types, ev.Type)
+		if ev.Type == ir.EventThinkingDelta {
+			thinking = append(thinking, ev.Delta)
+		}
+	}
+	want := []ir.EventType{
+		ir.EventMessageStart,
+		ir.EventBlockStart, ir.EventThinkingDelta, ir.EventThinkingDelta, ir.EventThinkingDelta, ir.EventBlockStop,
+		ir.EventBlockStart, ir.EventTextDelta, ir.EventBlockStop,
+		ir.EventMessageDelta, ir.EventMessageStop,
+	}
+	if !reflect.DeepEqual(types, want) {
+		t.Fatalf("event types = %v\nwant %v", types, want)
+	}
+	if !reflect.DeepEqual(thinking, []string{"hm", "canonical", "m2"}) {
+		t.Fatalf("thinking deltas = %q", thinking)
+	}
+	if events[1].Block.Type != ir.BlockThinking || events[6].Block.Type != ir.BlockText {
+		t.Fatal("block kinds wrong")
+	}
+}
+
 func TestDecodeResponseStopReasons(t *testing.T) {
 	for finish, want := range map[string]ir.StopReason{
 		"stop": ir.StopEndTurn, "length": ir.StopMaxTokens,
