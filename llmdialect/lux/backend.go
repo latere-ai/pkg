@@ -39,6 +39,7 @@ func (*Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 		StopSequences: req.StopSequences,
 		Stream:        req.Stream,
 		UserID:        req.UserID,
+		CacheKey:      req.CacheKey,
 		LogProbs:      req.LogProbs,
 		TopLogProbs:   req.TopLogProbs,
 	}

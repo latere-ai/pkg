@@ -35,8 +35,12 @@ type Request struct {
 	Schema        *ResponseSchema `json:"schema,omitempty"`
 	WebSearch     *WebSearch      `json:"web_search,omitempty"`
 	UserID        string          `json:"user_id,omitempty"`
-	LogProbs      bool            `json:"logprobs,omitempty"`
-	TopLogProbs   int             `json:"top_logprobs,omitempty"`
+	// CacheKey is the caller's prefix-cache key, carried verbatim: the
+	// lux dialect is the IR on the wire, so a lux caller names its own
+	// key and no key is derived from its cache_hint blocks.
+	CacheKey    string `json:"cache_key,omitempty"`
+	LogProbs    bool   `json:"logprobs,omitempty"`
+	TopLogProbs int    `json:"top_logprobs,omitempty"`
 }
 
 // TokenLogProb is one token and its log probability under the

@@ -60,6 +60,7 @@ func richIRRequest() *ir.Request {
 		Reasoning:     &ir.Reasoning{BudgetTokens: 2048},
 		Schema:        &ir.ResponseSchema{Name: "out", Description: "d", Schema: raw(`{"type":"object"}`), Strict: true},
 		UserID:        "u-1",
+		CacheKey:      "prefix-7",
 	}
 }
 
@@ -90,7 +91,8 @@ func TestDecodeRequestGolden(t *testing.T) {
 		"messages": [{"role": "user", "blocks": [{"type": "text", "text": "hi"}]}],
 		"reasoning": {"effort": "high"},
 		"max_tokens": 128,
-		"stream": true
+		"stream": true,
+		"cache_key": "prefix-7"
 	}`
 	req, err := NewFrontend().DecodeRequest([]byte(in))
 	if err != nil {
@@ -98,6 +100,14 @@ func TestDecodeRequestGolden(t *testing.T) {
 	}
 	if req.Model != "claude-sonnet-5" || !req.Stream || *req.MaxTokens != 128 {
 		t.Fatalf("bad decode: %#v", req)
+	}
+	// The key is carried verbatim and never derived from cache_hint, so a
+	// lux caller's own key survives and a caller that set none has none.
+	if req.CacheKey != "prefix-7" {
+		t.Fatalf("bad cache_key: %q", req.CacheKey)
+	}
+	if got := req.Loss.Strings(); got != nil {
+		t.Fatalf("cache_key reported as loss: %v", got)
 	}
 	if len(req.System) != 1 || req.System[0].Text != "sys" || !req.System[0].CacheHint {
 		t.Fatalf("bad system: %#v", req.System)

@@ -43,7 +43,7 @@ var requestKeys = map[string]bool{
 	"server_tools": true, "web_search": true,
 	"tool_choice": true, "max_tokens": true, "temperature": true,
 	"top_p": true, "top_k": true, "stop_sequences": true, "stream": true,
-	"reasoning": true, "schema": true, "user_id": true,
+	"reasoning": true, "schema": true, "user_id": true, "cache_key": true,
 	"logprobs": true, "top_logprobs": true,
 }
 
@@ -79,6 +79,7 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	req.StopSequences = wire.StopSequences
 	req.Stream = wire.Stream
 	req.UserID = wire.UserID
+	req.CacheKey = wire.CacheKey
 	req.LogProbs = wire.LogProbs
 	req.TopLogProbs = wire.TopLogProbs
 	if wire.TopLogProbs < 0 {
