@@ -336,8 +336,8 @@ func TestDecodeResponse(t *testing.T) {
 		t.Fatalf("blocks wrong: %+v", resp.Blocks)
 	}
 	// IR input tokens exclude cache reads: 100 prompt - 60 cached = 40.
-	want := ir.Usage{InputTokens: 40, OutputTokens: 20, CacheReadInputTokens: 60, ReasoningTokens: 5}
-	if resp.Usage != want {
+	want := ir.Usage{InputTokens: 40, OutputTokens: 20, CacheReadInputTokens: i64(60), ReasoningTokens: 5}
+	if !reflect.DeepEqual(resp.Usage, want) {
 		t.Fatalf("usage = %+v want %+v", resp.Usage, want)
 	}
 }

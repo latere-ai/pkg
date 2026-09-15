@@ -169,7 +169,7 @@ func TestFrontendEncodeResponse(t *testing.T) {
 			{Type: ir.BlockRedactedThinking, Redacted: "xx"},
 		},
 		StopReason: ir.StopToolUse,
-		Usage:      ir.Usage{InputTokens: 40, OutputTokens: 5, CacheReadInputTokens: 60, ReasoningTokens: 2},
+		Usage:      ir.Usage{InputTokens: 40, OutputTokens: 5, CacheReadInputTokens: i64(60), ReasoningTokens: 2},
 	}
 	raw, err := NewFrontend().EncodeResponse(resp)
 	if err != nil {

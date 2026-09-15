@@ -355,13 +355,21 @@ type wireUsage struct {
 // cache reads (Anthropic convention), while prompt_tokens includes
 // them.
 func (u *wireUsage) toUsage() *ir.Usage {
-	in := max(u.PromptTokens-u.PromptTokensDetails.CachedTokens, 0)
+	cached := u.PromptTokensDetails.CachedTokens
 	return &ir.Usage{
-		InputTokens:          in,
+		InputTokens:          max(u.PromptTokens-cached, 0),
 		OutputTokens:         u.CompletionTokens,
-		CacheReadInputTokens: u.PromptTokensDetails.CachedTokens,
+		CacheReadInputTokens: &cached,
 		ReasoningTokens:      u.CompletionTokensDetails.ReasoningTokens,
 	}
+}
+
+// deref is an optional count's value, zero when it was not reported.
+func deref(p *int64) int64 {
+	if p == nil {
+		return 0
+	}
+	return *p
 }
 
 // wireLogProbs is the per-choice logprobs object, on the response body

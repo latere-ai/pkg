@@ -54,6 +54,23 @@ under **Removed** or **Changed** with what to do about it.
   re-emitted-events leg, so the swap Lux spec 021 carries is a diff and
   not a judgement.
 
+### Changed
+
+- `llmdialect/ir.Usage.CacheReadInputTokens` and `CacheWriteInputTokens`
+  are `*int64`: nil when the backend reported no such figure, a pointer
+  to the count, zero included, when it did. They were plain integers,
+  so an engine without per-request cache accounting (an
+  OpenAI-compatible server that writes no `prompt_tokens_details`)
+  decoded to zero, and the Anthropic frontend then wrote
+  `cache_read_input_tokens: 0` and `cache_creation_input_tokens: 0`,
+  which a Messages-API client reads as a measurement that found nothing
+  cached, the opposite of "not measured". `bridge.Usage` is unchanged, a
+  floored total for a meter. What to do about it: a consumer that read
+  the two fields dereferences them after a nil check, nil meaning
+  unknown; one that built an `ir.Usage` literal takes the address of the
+  count; and a `==` between two `ir.Usage` values now compares pointers,
+  so compare members or use `reflect.DeepEqual`.
+
 ## v0.67.0 - 2026-09-14
 
 - `authkit/jwt.Scopes(raw)` decodes the `scp` claim of a product-local token in one place, so a service that mints tokens for its own seams (rule R4) reads their scopes through the shared helper instead of re-declaring `{scp []string}` at each call site. The family identity still carries no scope (rule R9); this centralises the decode, not the meaning.

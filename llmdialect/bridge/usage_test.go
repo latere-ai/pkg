@@ -10,6 +10,8 @@ import (
 	"latere.ai/x/pkg/llmdialect/ir"
 )
 
+func i64(v int64) *int64 { return &v }
+
 // TestUsageMembersPerWire reads each wire's usage members off one body,
 // with input excluding cached input on every wire and every member
 // floored at zero.
@@ -134,9 +136,9 @@ func TestUsageFromIR(t *testing.T) {
 	if _, ok := p.usage(); ok {
 		t.Error("nil usage reported something")
 	}
-	p.fromIR(&ir.Usage{InputTokens: 10, CacheReadInputTokens: 2})
+	p.fromIR(&ir.Usage{InputTokens: 10, CacheReadInputTokens: i64(2)})
 	p.fromIR(&ir.Usage{OutputTokens: 5})
-	p.fromIR(&ir.Usage{OutputTokens: 7, CacheWriteInputTokens: 1, ReasoningTokens: 3})
+	p.fromIR(&ir.Usage{OutputTokens: 7, CacheWriteInputTokens: i64(1), ReasoningTokens: 3})
 	got, ok := p.usage()
 	if !ok || got != (Usage{Input: 10, Output: 7, CachedInput: 2, CacheWrite: 1, Reasoning: 3}) {
 		t.Errorf("%+v %v", got, ok)

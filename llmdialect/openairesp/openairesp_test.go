@@ -180,7 +180,7 @@ func TestEncodeResponse(t *testing.T) {
 			{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "call_1", Name: "shell", Args: json.RawMessage(`{"cmd":"ls"}`)}},
 		},
 		StopReason: ir.StopToolUse,
-		Usage:      ir.Usage{InputTokens: 40, OutputTokens: 6, CacheReadInputTokens: 60, ReasoningTokens: 2},
+		Usage:      ir.Usage{InputTokens: 40, OutputTokens: 6, CacheReadInputTokens: i64(60), ReasoningTokens: 2},
 	}
 	raw, err := NewFrontend().EncodeResponse(resp)
 	if err != nil {

@@ -343,11 +343,12 @@ type backendUsage struct {
 }
 
 func (u *backendUsage) toUsage() ir.Usage {
+	read, write := u.CacheReadInputTokens, u.CacheCreationInputTokens
 	out := ir.Usage{
 		InputTokens:           u.InputTokens,
 		OutputTokens:          u.OutputTokens,
-		CacheReadInputTokens:  u.CacheReadInputTokens,
-		CacheWriteInputTokens: u.CacheCreationInputTokens,
+		CacheReadInputTokens:  &read,
+		CacheWriteInputTokens: &write,
 	}
 	if u.OutputTokensDetails != nil {
 		out.ReasoningTokens = u.OutputTokensDetails.ThinkingTokens
@@ -538,8 +539,8 @@ func (d *backendEventDecoder) consume(data []byte) error {
 			if frame.Usage.InputTokens > 0 {
 				d.usage.InputTokens = frame.Usage.InputTokens
 			}
-			if frame.Usage.CacheReadInputTokens > 0 {
-				d.usage.CacheReadInputTokens = frame.Usage.CacheReadInputTokens
+			if read := frame.Usage.CacheReadInputTokens; read > 0 {
+				d.usage.CacheReadInputTokens = &read
 			}
 		}
 	case "message_stop":

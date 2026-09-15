@@ -150,12 +150,14 @@ func (p parts) usage() (Usage, bool) {
 // fromIR merges an IR usage member by member: a translated stream
 // reports usage on message_start and on message_delta, and a nonzero
 // member reported later replaces one reported earlier, while a zero
-// never erases a value already reported.
+// never erases a value already reported. A cache count the IR has none
+// of counts as zero here: Usage is the floored total a meter wants,
+// not the report.
 func (p *parts) fromIR(u *ir.Usage) {
 	if u == nil {
 		return
 	}
-	in, out, cached, write, reasoning := u.InputTokens, u.OutputTokens, u.CacheReadInputTokens, u.CacheWriteInputTokens, u.ReasoningTokens
+	in, out, cached, write, reasoning := u.InputTokens, u.OutputTokens, deref(u.CacheReadInputTokens), deref(u.CacheWriteInputTokens), u.ReasoningTokens
 	if in > 0 || p.prompt == nil {
 		p.prompt = &in
 	}

@@ -397,10 +397,19 @@ const (
 
 // Usage is token and cost accounting for one call.
 type Usage struct {
-	InputTokens           int64
-	OutputTokens          int64
-	CacheReadInputTokens  int64
-	CacheWriteInputTokens int64
+	InputTokens  int64
+	OutputTokens int64
+	// CacheReadInputTokens and CacheWriteInputTokens are the input
+	// tokens the provider served from and wrote to its prompt cache, or
+	// nil when the backend reported no such figure. Nil means not
+	// measured, never zero: an engine without per-request cache
+	// accounting reports nothing, and a frontend that wrote 0 for it
+	// would tell the caller a measurement was taken and found nothing
+	// cached. A reported zero is carried as a zero, so a frontend writes
+	// it. Backends set each from its own wire member and only when that
+	// member is present.
+	CacheReadInputTokens  *int64
+	CacheWriteInputTokens *int64
 	ReasoningTokens       int64
 	// CostUSDMicro is the gateway-reported cost in millionths of a USD,
 	// or nil when the gateway reported none. Nil means unknown, never

@@ -431,11 +431,18 @@ func nullableString(s string) any {
 }
 
 func encodeUsage(u ir.Usage) map[string]any {
+	var read, write int64
+	if u.CacheReadInputTokens != nil {
+		read = *u.CacheReadInputTokens
+	}
+	if u.CacheWriteInputTokens != nil {
+		write = *u.CacheWriteInputTokens
+	}
 	return map[string]any{
 		"input_tokens":                u.InputTokens,
 		"output_tokens":               u.OutputTokens,
-		"cache_read_input_tokens":     u.CacheReadInputTokens,
-		"cache_creation_input_tokens": u.CacheWriteInputTokens,
+		"cache_read_input_tokens":     read,
+		"cache_creation_input_tokens": write,
 	}
 }
 
