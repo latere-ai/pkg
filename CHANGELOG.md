@@ -72,7 +72,9 @@ under **Removed** or **Changed** with what to do about it.
   whatever follows. `ir.PrefixCacheKeys` is that hash, documented byte
   for byte (role, type and the block's content fields, each as a
   netstring) and fixed, and returns one key per breakpoint in order so
-  a router can fall back to a shorter prefix.
+  a router can fall back to a shorter prefix. The lux dialect carries
+  the field as `cache_key`, verbatim and never derived, since a lux
+  caller names its own.
 
 ### Changed
 
