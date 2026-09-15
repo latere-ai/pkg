@@ -225,7 +225,7 @@ func TestEncodeResponse(t *testing.T) {
 		},
 		StopReason:   ir.StopToolUse,
 		StopSequence: "S",
-		Usage:        ir.Usage{InputTokens: 10, OutputTokens: 5, CacheReadInputTokens: 3, CacheWriteInputTokens: 2, ReasoningTokens: 1},
+		Usage:        ir.Usage{InputTokens: 10, OutputTokens: 5, CacheReadInputTokens: i64(3), CacheWriteInputTokens: i64(2), ReasoningTokens: 1},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -317,7 +317,7 @@ func TestDecodeResponseSkipsUnknownBlocks(t *testing.T) {
 
 func streamEvents() []ir.Event {
 	inTok := &ir.Usage{InputTokens: 12}
-	full := &ir.Usage{InputTokens: 12, OutputTokens: 34, CacheReadInputTokens: 5, ReasoningTokens: 6}
+	full := &ir.Usage{InputTokens: 12, OutputTokens: 34, CacheReadInputTokens: i64(5), ReasoningTokens: 6}
 	return []ir.Event{
 		{Type: ir.EventMessageStart, ID: "msg_1", Model: "m", Usage: inTok},
 		{Type: ir.EventBlockStart, Index: 0, Block: &ir.Block{Type: ir.BlockText}},

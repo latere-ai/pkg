@@ -317,8 +317,8 @@ func usageToIR(u Usage) ir.Usage {
 	return ir.Usage{
 		InputTokens:           u.InputTokens,
 		OutputTokens:          u.OutputTokens,
-		CacheReadInputTokens:  u.CacheReadInputTokens,
-		CacheWriteInputTokens: u.CacheWriteInputTokens,
+		CacheReadInputTokens:  optInt64(u.CacheReadInputTokens),
+		CacheWriteInputTokens: optInt64(u.CacheWriteInputTokens),
 		ReasoningTokens:       u.ReasoningTokens,
 		CostUSDMicro:          copyInt64(u.CostUSDMicro),
 	}
@@ -328,11 +328,28 @@ func usageFromIR(u ir.Usage) Usage {
 	return Usage{
 		InputTokens:           u.InputTokens,
 		OutputTokens:          u.OutputTokens,
-		CacheReadInputTokens:  u.CacheReadInputTokens,
-		CacheWriteInputTokens: u.CacheWriteInputTokens,
+		CacheReadInputTokens:  deref(u.CacheReadInputTokens),
+		CacheWriteInputTokens: deref(u.CacheWriteInputTokens),
 		ReasoningTokens:       u.ReasoningTokens,
 		CostUSDMicro:          copyInt64(u.CostUSDMicro),
 	}
+}
+
+// optInt64 is a wire count as an optional IR count. This wire drops a
+// zero with omitempty, so zero and absent are one value here, nil.
+func optInt64(v int64) *int64 {
+	if v == 0 {
+		return nil
+	}
+	return &v
+}
+
+// deref is an optional count's value, zero when it was not reported.
+func deref(p *int64) int64 {
+	if p == nil {
+		return 0
+	}
+	return *p
 }
 
 // copyInt64 copies an optional value across the wire/IR boundary, so

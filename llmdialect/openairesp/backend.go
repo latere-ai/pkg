@@ -300,13 +300,21 @@ type respUsage struct {
 }
 
 func (u *respUsage) toUsage() ir.Usage {
-	in := max(u.InputTokens-u.InputTokensDetails.CachedTokens, 0)
+	cached := u.InputTokensDetails.CachedTokens
 	return ir.Usage{
-		InputTokens:          in,
+		InputTokens:          max(u.InputTokens-cached, 0),
 		OutputTokens:         u.OutputTokens,
-		CacheReadInputTokens: u.InputTokensDetails.CachedTokens,
+		CacheReadInputTokens: &cached,
 		ReasoningTokens:      u.OutputTokensDetails.ReasoningTokens,
 	}
+}
+
+// deref is an optional count's value, zero when it was not reported.
+func deref(p *int64) int64 {
+	if p == nil {
+		return 0
+	}
+	return *p
 }
 
 type respError struct {

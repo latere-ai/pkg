@@ -24,6 +24,8 @@ func mustJSON(t *testing.T, b []byte) map[string]any {
 	return m
 }
 
+func i64(v int64) *int64 { return &v }
+
 func TestBackendName(t *testing.T) {
 	if NewBackend().Name() != DialectName {
 		t.Fatalf("name = %q", NewBackend().Name())
@@ -176,8 +178,8 @@ func TestBackendDecodeResponseToolCall(t *testing.T) {
 		t.Errorf("tool use = %+v", tu)
 	}
 	// IR input excludes cache reads; reasoning tokens preserved.
-	if resp.Usage.InputTokens != 90 || resp.Usage.CacheReadInputTokens != 10 || resp.Usage.ReasoningTokens != 8 {
-		t.Errorf("usage = %+v", resp.Usage)
+	if want := (ir.Usage{InputTokens: 90, OutputTokens: 20, CacheReadInputTokens: i64(10), ReasoningTokens: 8}); !reflect.DeepEqual(resp.Usage, want) {
+		t.Errorf("usage = %+v want %+v", resp.Usage, want)
 	}
 }
 

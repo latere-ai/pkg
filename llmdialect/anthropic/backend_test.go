@@ -277,8 +277,8 @@ func TestBackendDecodeResponse(t *testing.T) {
 	if resp.Blocks[0].Type != ir.BlockThinking || resp.Blocks[0].Signature != "s1" {
 		t.Fatalf("thinking wrong: %+v", resp.Blocks[0])
 	}
-	want := ir.Usage{InputTokens: 10, OutputTokens: 4, CacheReadInputTokens: 6, CacheWriteInputTokens: 2}
-	if resp.Usage != want {
+	want := ir.Usage{InputTokens: 10, OutputTokens: 4, CacheReadInputTokens: i64(6), CacheWriteInputTokens: i64(2)}
+	if !reflect.DeepEqual(resp.Usage, want) {
 		t.Fatalf("usage = %+v want %+v", resp.Usage, want)
 	}
 }
@@ -347,7 +347,7 @@ func TestBackendEventDecoderSequence(t *testing.T) {
 		t.Fatalf("event types = %v\nwant %v", types, want)
 	}
 	start := events[0]
-	if start.ID != "msg_1" || start.Usage.InputTokens != 9 || start.Usage.CacheReadInputTokens != 3 {
+	if start.ID != "msg_1" || start.Usage.InputTokens != 9 || start.Usage.CacheReadInputTokens == nil || *start.Usage.CacheReadInputTokens != 3 {
 		t.Fatalf("message start wrong: %+v", start)
 	}
 	if events[5].Block.ToolUse.ID != "t1" || events[5].Block.ToolUse.Name != "f" {

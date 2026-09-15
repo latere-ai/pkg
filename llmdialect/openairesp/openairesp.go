@@ -437,13 +437,14 @@ func buildOutput(id string, blocks []ir.Block, probs []ir.TokenLogProb) []map[st
 }
 
 func encodeUsage(u ir.Usage) map[string]any {
-	in := u.InputTokens + u.CacheReadInputTokens
+	cached := deref(u.CacheReadInputTokens)
+	in := u.InputTokens + cached
 	return map[string]any{
 		"input_tokens":  in,
 		"output_tokens": u.OutputTokens,
 		"total_tokens":  in + u.OutputTokens,
 		"input_tokens_details": map[string]any{
-			"cached_tokens": u.CacheReadInputTokens,
+			"cached_tokens": cached,
 		},
 		"output_tokens_details": map[string]any{
 			"reasoning_tokens": u.ReasoningTokens,

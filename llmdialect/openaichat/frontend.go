@@ -501,12 +501,13 @@ func finishReason(stop ir.StopReason) string {
 // shape: prompt_tokens includes cache reads, with the cached share in
 // prompt_tokens_details.
 func encodeFrontUsage(u ir.Usage) map[string]any {
+	cached := deref(u.CacheReadInputTokens)
 	return map[string]any{
-		"prompt_tokens":     u.InputTokens + u.CacheReadInputTokens,
+		"prompt_tokens":     u.InputTokens + cached,
 		"completion_tokens": u.OutputTokens,
-		"total_tokens":      u.InputTokens + u.CacheReadInputTokens + u.OutputTokens,
+		"total_tokens":      u.InputTokens + cached + u.OutputTokens,
 		"prompt_tokens_details": map[string]any{
-			"cached_tokens": u.CacheReadInputTokens,
+			"cached_tokens": cached,
 		},
 		"completion_tokens_details": map[string]any{
 			"reasoning_tokens": u.ReasoningTokens,
