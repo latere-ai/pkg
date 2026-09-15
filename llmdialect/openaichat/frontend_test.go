@@ -122,6 +122,37 @@ func TestFrontendDecodeRequestImagesAndSchema(t *testing.T) {
 	}
 }
 
+// TestFrontendDecodeCacheKey: prompt_cache_key fills the key and is not
+// loss; cache_salt fills it when prompt_cache_key is absent and is
+// recorded as loss either way, since its partition of the engine's
+// cache has no IR member; neither leaves the key empty with no loss.
+func TestFrontendDecodeCacheKey(t *testing.T) {
+	body := func(extra string) string {
+		return `{"model": "m", "messages": [{"role": "user", "content": "hi"}]` + extra + `}`
+	}
+	cases := []struct {
+		name, extra, want string
+		loss              []string
+	}{
+		{"neither", ``, "", nil},
+		{"prompt_cache_key", `, "prompt_cache_key": "tenant-7"`, "tenant-7", nil},
+		{"cache_salt", `, "cache_salt": "salt-1"`, "salt-1", []string{"cache_salt"}},
+		{"both", `, "prompt_cache_key": "tenant-7", "cache_salt": "salt-1"`, "tenant-7", []string{"cache_salt"}},
+		{"empty strings", `, "prompt_cache_key": "", "cache_salt": ""`, "", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := decodeFront(t, body(tc.extra))
+			if req.CacheKey != tc.want {
+				t.Fatalf("CacheKey = %q want %q", req.CacheKey, tc.want)
+			}
+			if got := req.Loss.Strings(); !reflect.DeepEqual(got, tc.loss) {
+				t.Fatalf("loss = %v want %v", got, tc.loss)
+			}
+		})
+	}
+}
+
 func TestFrontendDecodeToolChoiceForms(t *testing.T) {
 	base := `{"model":"m","messages":[{"role":"user","content":"x"}],"tool_choice":`
 	for wire, mode := range map[string]ir.ToolChoiceMode{

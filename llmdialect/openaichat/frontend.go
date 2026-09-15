@@ -35,7 +35,7 @@ var requestKeys = map[string]bool{
 	"temperature": true, "top_p": true, "stop": true, "stream": true,
 	"stream_options": true, "user": true, "response_format": true,
 	"reasoning_effort": true, "n": true, "logprobs": true, "top_logprobs": true,
-	"web_search_options": true,
+	"web_search_options": true, "prompt_cache_key": true, "cache_salt": true,
 }
 
 // DecodeRequest parses a Chat Completions request body into the IR.
@@ -81,6 +81,8 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 		N               *int   `json:"n"`
 		LogProbs        bool   `json:"logprobs"`
 		TopLogProbs     *int   `json:"top_logprobs"`
+		PromptCacheKey  string `json:"prompt_cache_key"`
+		CacheSalt       string `json:"cache_salt"`
 	}
 	if err := json.Unmarshal(body, &wire); err != nil {
 		return nil, fmt.Errorf("openaichat: malformed request: %w", err)
@@ -100,6 +102,18 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	req.TopP = wire.TopP
 	req.Stream = wire.Stream
 	req.UserID = wire.User
+	// prompt_cache_key is the wire's own routing hint and wins. cache_salt
+	// is vLLM's extension: it routes the same way (one salt, one cache),
+	// so it seeds the key, but it also partitions the engine's cache, and
+	// nothing in the IR carries a partition, so the salt itself is
+	// recorded as lost whichever member fills the key.
+	req.CacheKey = wire.PromptCacheKey
+	if req.CacheKey == "" {
+		req.CacheKey = wire.CacheSalt
+	}
+	if wire.CacheSalt != "" {
+		req.Loss.Add(ir.LossCacheSalt)
+	}
 	req.MaxTokens = wire.MaxCompletionTokens
 	if req.MaxTokens == nil {
 		req.MaxTokens = wire.MaxTokens
