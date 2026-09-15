@@ -119,6 +119,52 @@ func TestDecodeRequestSystemBlocksAndCacheControl(t *testing.T) {
 	}
 }
 
+// TestDecodeRequestCacheKeyFromBreakpoints: the Messages API has no
+// cache key member, so the key is derived from the cache_control
+// breakpoints: two requests that share the prefix up to the last
+// breakpoint share the key whatever follows, moving the breakpoint
+// changes it, and a request without one has none. A breakpoint on a
+// system-role turn inside messages counts as a system block, since the
+// decoder folds it there.
+func TestDecodeRequestCacheKeyFromBreakpoints(t *testing.T) {
+	withSystemBreakpoint := func(user string) string {
+		return `{"model": "m", "max_tokens": 10,
+			"system": [{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}],
+			"messages": [{"role": "user", "content": "` + user + `"}]}`
+	}
+	a := decode(t, withSystemBreakpoint("hello"))
+	b := decode(t, withSystemBreakpoint("a different conversation"))
+	if a.CacheKey == "" || a.CacheKey != b.CacheKey {
+		t.Fatalf("requests sharing the marked prefix must share the key: %q vs %q", a.CacheKey, b.CacheKey)
+	}
+	if want := ir.PrefixCacheKeys(a.System, a.Messages); want[len(want)-1] != a.CacheKey {
+		t.Fatalf("key %q is not the documented hash %q", a.CacheKey, want[len(want)-1])
+	}
+
+	moved := decode(t, `{"model": "m", "max_tokens": 10,
+		"system": [{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}],
+		"messages": [{"role": "user", "content": [{"type": "text", "text": "hello", "cache_control": {"type": "ephemeral"}}]}]}`)
+	if moved.CacheKey == a.CacheKey {
+		t.Fatal("a later breakpoint must move the key")
+	}
+	if keys := ir.PrefixCacheKeys(moved.System, moved.Messages); len(keys) != 2 || keys[0] != a.CacheKey || keys[1] != moved.CacheKey {
+		t.Fatalf("keys per breakpoint = %v, want the system key then the message key", keys)
+	}
+
+	none := decode(t, `{"model": "m", "max_tokens": 10, "system": "sys", "messages": [{"role": "user", "content": "hello"}]}`)
+	if none.CacheKey != "" {
+		t.Fatalf("no breakpoint must yield no key, got %q", none.CacheKey)
+	}
+
+	folded := decode(t, `{"model": "m", "max_tokens": 10,
+		"messages": [
+			{"role": "system", "content": [{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}]},
+			{"role": "user", "content": "hello"}]}`)
+	if folded.CacheKey != a.CacheKey {
+		t.Fatalf("a folded system turn must hash as a system block: %q vs %q", folded.CacheKey, a.CacheKey)
+	}
+}
+
 func TestDecodeRequestSystemRoleMessages(t *testing.T) {
 	// The native Messages API accepts system-role turns inside
 	// messages (Claude Code sends them); they fold into the system
