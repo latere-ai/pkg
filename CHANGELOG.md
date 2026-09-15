@@ -54,6 +54,18 @@ under **Removed** or **Changed** with what to do about it.
   re-emitted-events leg, so the swap Lux spec 021 carries is a diff and
   not a judgement.
 
+### Fixed
+
+- `llmdialect/openaichat`: the backend reads a model's thinking under
+  `reasoning` as well as `reasoning_content` on `choices[].message`.
+  vLLM's OpenAI-compatible server names the member `reasoning` in some
+  versions, and the codec read only the original spelling, so a caller
+  behind such a server saw the answer with no thinking block,
+  indistinguishable from a model that did not think. `reasoning_content`
+  wins when a body carries both, and a `reasoning` member that is not a
+  string is ignored rather than failing the decode. The frontend still
+  writes `reasoning_content` only.
+
 ## v0.67.0 - 2026-09-14
 
 - `authkit/jwt.Scopes(raw)` decodes the `scp` claim of a product-local token in one place, so a service that mints tokens for its own seams (rule R4) reads their scopes through the shared helper instead of re-declaring `{scp []string}` at each call site. The family identity still carries no scope (rule R9); this centralises the decode, not the meaning.

@@ -8,7 +8,7 @@
 // events. It targets the dialect as spoken by OpenAI itself and the
 // openai-compatible runtimes (vLLM, Ollama, LM Studio, llama.cpp,
 // OpenRouter, Gemini's compat endpoint), including the widespread
-// reasoning_content extension.
+// reasoning_content extension and its reasoning spelling.
 //
 // The frontend codec (caller side) ships separately.
 package openaichat
@@ -437,10 +437,11 @@ func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 		Model   string `json:"model"`
 		Choices []struct {
 			Message struct {
-				Content          *string        `json:"content"`
-				Refusal          *string        `json:"refusal"`
-				ReasoningContent string         `json:"reasoning_content"`
-				ToolCalls        []wireToolCall `json:"tool_calls"`
+				Content          *string         `json:"content"`
+				Refusal          *string         `json:"refusal"`
+				ReasoningContent string          `json:"reasoning_content"`
+				Reasoning        json.RawMessage `json:"reasoning"`
+				ToolCalls        []wireToolCall  `json:"tool_calls"`
 			} `json:"message"`
 			LogProbs     *wireLogProbs `json:"logprobs"`
 			FinishReason string        `json:"finish_reason"`
@@ -460,8 +461,8 @@ func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 	choice := wire.Choices[0]
 
 	resp := &ir.Response{ID: wire.ID, Model: wire.Model}
-	if choice.Message.ReasoningContent != "" {
-		resp.Blocks = append(resp.Blocks, ir.Block{Type: ir.BlockThinking, Text: choice.Message.ReasoningContent})
+	if rc := reasoningText(choice.Message.ReasoningContent, choice.Message.Reasoning); rc != "" {
+		resp.Blocks = append(resp.Blocks, ir.Block{Type: ir.BlockThinking, Text: rc})
 	}
 	if choice.Message.Content != nil && *choice.Message.Content != "" {
 		resp.Blocks = append(resp.Blocks, ir.Block{Type: ir.BlockText, Text: *choice.Message.Content})
@@ -483,6 +484,25 @@ func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 		resp.Usage = *wire.Usage.toUsage()
 	}
 	return resp, nil
+}
+
+// reasoningText is the model's thinking on a message or a delta. The
+// openai-compatible runtimes spell the member two ways: reasoning_content,
+// the original extension, and reasoning, which vLLM's server writes in
+// some versions. Both are read; reasoning_content wins when a body carries
+// both, since it is the spelling every runtime that emits both fills
+// first. A reasoning member that is not a JSON string is not thinking (a
+// server may echo the request's reasoning object under that name) and is
+// ignored rather than failing the decode.
+func reasoningText(content string, alias json.RawMessage) string {
+	if content != "" {
+		return content
+	}
+	var s string
+	if len(alias) > 0 && alias[0] == '"' && json.Unmarshal(alias, &s) == nil {
+		return s
+	}
+	return ""
 }
 
 type wireError struct {
