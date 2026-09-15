@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -195,6 +196,95 @@ func TestBackendDecodeResponseEdge(t *testing.T) {
 	if string(resp2.Blocks[0].ToolUse.Args) != "{}" {
 		t.Errorf("empty args = %s", resp2.Blocks[0].ToolUse.Args)
 	}
+}
+
+// TestBackendDecodeUsageCacheReporting pins the nil/zero distinction on
+// the cache read count: a usage without input_tokens_details, or with it
+// null, decodes to nil; one that carries cached_tokens decodes to that
+// count, zero included. The buffered body and response.completed agree.
+func TestBackendDecodeUsageCacheReporting(t *testing.T) {
+	cases := []struct {
+		name, usage string
+		wantIn      int64
+		wantCached  *int64
+	}{
+		{"no details", `{"input_tokens":10,"output_tokens":1}`, 10, nil},
+		{"null details", `{"input_tokens":10,"output_tokens":1,"input_tokens_details":null}`, 10, nil},
+		{"reported zero", `{"input_tokens":10,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}}`, 10, i64(0)},
+		{"reported count", `{"input_tokens":10,"output_tokens":1,"input_tokens_details":{"cached_tokens":7}}`, 3, i64(7)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := NewBackend().DecodeResponse([]byte(
+				`{"id":"resp_x","model":"m","status":"completed","output":[],"usage":` + tc.usage + `}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := ir.Usage{InputTokens: tc.wantIn, OutputTokens: 1, CacheReadInputTokens: tc.wantCached}
+			if !reflect.DeepEqual(resp.Usage, want) {
+				t.Fatalf("buffered usage = %+v want %+v", resp.Usage, want)
+			}
+			stream := "event: response.completed\ndata: " +
+				`{"type":"response.completed","response":{"id":"resp_x","status":"completed","usage":` + tc.usage + `}}` + "\n\n"
+			dec := NewBackend().NewEventDecoder(strings.NewReader(stream))
+			var last *ir.Usage
+			for {
+				ev, err := dec.Next()
+				if err != nil {
+					break
+				}
+				if ev.Type == ir.EventMessageDelta {
+					last = ev.Usage
+				}
+			}
+			if last == nil || !reflect.DeepEqual(*last, want) {
+				t.Fatalf("stream usage = %+v want %+v", last, want)
+			}
+		})
+	}
+}
+
+// jsonHasKey reports whether any object in raw has a member whose name
+// folds to key, which is how encoding/json matches a member, so the
+// fuzz invariant asks the question the decoder answers.
+func jsonHasKey(raw []byte, key string) bool {
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(raw, &obj) != nil {
+		return false
+	}
+	for k, v := range obj {
+		if strings.EqualFold(k, key) || jsonHasKey(v, key) {
+			return true
+		}
+	}
+	return false
+}
+
+// FuzzBackendUsageDecode holds the cache read count to its wire member
+// under any usage object: set only when cached_tokens appeared, never a
+// write count, and input never negative.
+func FuzzBackendUsageDecode(f *testing.F) {
+	f.Add([]byte(`{"input_tokens":10,"output_tokens":1}`))
+	f.Add([]byte(`{"input_tokens":10,"input_tokens_details":{"cached_tokens":0}}`))
+	f.Add([]byte(`{"input_tokens":1,"input_tokens_details":{"cached_tokens":9}}`))
+	f.Add([]byte(`{"input_tokens_details":{"cached_tokens":null}}`))
+	f.Fuzz(func(t *testing.T, usage []byte) {
+		resp, err := NewBackend().DecodeResponse(
+			append(append([]byte(`{"id":"resp_x","model":"m","status":"completed","output":[],"usage":`), usage...), '}'))
+		if err != nil {
+			return
+		}
+		u := resp.Usage
+		if u.CacheReadInputTokens != nil && !jsonHasKey(usage, "cached_tokens") {
+			t.Fatalf("cache read %d reported by %s", *u.CacheReadInputTokens, usage)
+		}
+		if u.CacheWriteInputTokens != nil {
+			t.Fatalf("a cache write count from a wire that has none: %s", usage)
+		}
+		if u.InputTokens < 0 {
+			t.Fatalf("negative input: %+v", u)
+		}
+	})
 }
 
 func TestBackendDecodeOutputTextInvalid(t *testing.T) {

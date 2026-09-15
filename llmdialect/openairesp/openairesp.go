@@ -436,6 +436,11 @@ func buildOutput(id string, blocks []ir.Block, probs []ir.TokenLogProb) []map[st
 	return output
 }
 
+// encodeUsage renders IR usage in the Responses shape: input_tokens
+// includes cache reads, with the cached share in input_tokens_details.
+// An unreported cache read count is written as 0: this wire always
+// carries the member, and its readers take 0 as the value for a call
+// that read no cache.
 func encodeUsage(u ir.Usage) map[string]any {
 	cached := deref(u.CacheReadInputTokens)
 	in := u.InputTokens + cached
