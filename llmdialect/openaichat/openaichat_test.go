@@ -379,6 +379,43 @@ func TestDecodeUsageCacheReporting(t *testing.T) {
 	}
 }
 
+// TestDecodeResponseReasoningAlias: vLLM's server writes the thinking
+// under reasoning in some versions and reasoning_content in others. A
+// body with either yields the same thinking block; one with both keeps
+// reasoning_content; a reasoning member that is not a string is not
+// thinking and does not fail the decode.
+func TestDecodeResponseReasoningAlias(t *testing.T) {
+	cases := []struct {
+		name, message string
+		want          []ir.Block
+	}{
+		{"reasoning alone", `{"content":"on it","reasoning":"think"}`,
+			[]ir.Block{{Type: ir.BlockThinking, Text: "think"}, {Type: ir.BlockText, Text: "on it"}}},
+		{"reasoning_content alone", `{"content":"on it","reasoning_content":"think"}`,
+			[]ir.Block{{Type: ir.BlockThinking, Text: "think"}, {Type: ir.BlockText, Text: "on it"}}},
+		{"both, reasoning_content wins", `{"content":"on it","reasoning_content":"canonical","reasoning":"alias"}`,
+			[]ir.Block{{Type: ir.BlockThinking, Text: "canonical"}, {Type: ir.BlockText, Text: "on it"}}},
+		{"empty reasoning", `{"content":"on it","reasoning":""}`,
+			[]ir.Block{{Type: ir.BlockText, Text: "on it"}}},
+		{"null reasoning", `{"content":"on it","reasoning":null}`,
+			[]ir.Block{{Type: ir.BlockText, Text: "on it"}}},
+		{"object reasoning is not thinking", `{"content":"on it","reasoning":{"effort":"high"}}`,
+			[]ir.Block{{Type: ir.BlockText, Text: "on it"}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := `{"id":"x","model":"m","choices":[{"index":0,"finish_reason":"stop","message":` + tc.message + `}]}`
+			resp, err := NewBackend(BackendOptions{}).DecodeResponse([]byte(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(resp.Blocks, tc.want) {
+				t.Fatalf("blocks = %+v\nwant %+v", resp.Blocks, tc.want)
+			}
+		})
+	}
+}
+
 // jsonHasKey reports whether any object in raw has a member whose name
 // folds to key, which is how encoding/json matches a member, so the
 // fuzz invariant asks the question the decoder answers.
