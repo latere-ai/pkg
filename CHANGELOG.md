@@ -57,14 +57,15 @@ under **Removed** or **Changed** with what to do about it.
 ### Fixed
 
 - `llmdialect/openaichat`: the backend reads a model's thinking under
-  `reasoning` as well as `reasoning_content` on `choices[].message`.
-  vLLM's OpenAI-compatible server names the member `reasoning` in some
-  versions, and the codec read only the original spelling, so a caller
-  behind such a server saw the answer with no thinking block,
-  indistinguishable from a model that did not think. `reasoning_content`
-  wins when a body carries both, and a `reasoning` member that is not a
-  string is ignored rather than failing the decode. The frontend still
-  writes `reasoning_content` only.
+  `reasoning` as well as `reasoning_content`, on `choices[].message` and
+  on stream deltas alike. vLLM's OpenAI-compatible server names the
+  member `reasoning` in some versions, and the codec read only the
+  original spelling, so a caller behind such a server saw the answer
+  with no thinking block and no thinking deltas, indistinguishable from
+  a model that did not think. `reasoning_content` wins when a body
+  carries both, and a `reasoning` member that is not a string is ignored
+  rather than failing the decode. The frontend still writes
+  `reasoning_content` only.
 
 ## v0.67.0 - 2026-09-14
 
