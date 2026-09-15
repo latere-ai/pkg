@@ -430,20 +430,23 @@ func nullableString(s string) any {
 	return s
 }
 
+// encodeUsage renders IR usage in the Messages shape. The two cache
+// members are written only when the backend reported them, zero
+// included, and omitted when it did not: a Messages client reads
+// cache_read_input_tokens: 0 as a measurement that found nothing cached,
+// which is not what an engine without cache accounting said.
 func encodeUsage(u ir.Usage) map[string]any {
-	var read, write int64
+	out := map[string]any{
+		"input_tokens":  u.InputTokens,
+		"output_tokens": u.OutputTokens,
+	}
 	if u.CacheReadInputTokens != nil {
-		read = *u.CacheReadInputTokens
+		out["cache_read_input_tokens"] = *u.CacheReadInputTokens
 	}
 	if u.CacheWriteInputTokens != nil {
-		write = *u.CacheWriteInputTokens
+		out["cache_creation_input_tokens"] = *u.CacheWriteInputTokens
 	}
-	return map[string]any{
-		"input_tokens":                u.InputTokens,
-		"output_tokens":               u.OutputTokens,
-		"cache_read_input_tokens":     read,
-		"cache_creation_input_tokens": write,
-	}
+	return out
 }
 
 // EventEncoder re-synthesizes the Messages SSE event sequence

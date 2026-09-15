@@ -400,6 +400,78 @@ func TestEncodeResponse(t *testing.T) {
 	}
 }
 
+// TestEncodeUsageOmitsUnreportedCache pins the omission rule on both
+// paths: a cache count the backend did not report writes no key, and a
+// count it reported as zero writes the key with 0. A Messages client
+// reads cache_read_input_tokens: 0 as a measurement that found nothing
+// cached, so the key must not appear for an engine that measured nothing.
+func TestEncodeUsageOmitsUnreportedCache(t *testing.T) {
+	usageOf := func(t *testing.T, raw []byte) map[string]any {
+		t.Helper()
+		var got map[string]any
+		if err := json.Unmarshal(raw, &got); err != nil {
+			t.Fatal(err)
+		}
+		return got["usage"].(map[string]any)
+	}
+	raw, err := NewFrontend().EncodeResponse(&ir.Response{Usage: ir.Usage{InputTokens: 10, OutputTokens: 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	usage := usageOf(t, raw)
+	if _, ok := usage["cache_read_input_tokens"]; ok {
+		t.Fatalf("unreported cache read written: %v", usage)
+	}
+	if _, ok := usage["cache_creation_input_tokens"]; ok {
+		t.Fatalf("unreported cache write written: %v", usage)
+	}
+	if usage["input_tokens"].(float64) != 10 || usage["output_tokens"].(float64) != 5 {
+		t.Fatalf("counts wrong: %v", usage)
+	}
+
+	raw, err = NewFrontend().EncodeResponse(&ir.Response{Usage: ir.Usage{InputTokens: 10, CacheReadInputTokens: i64(0), CacheWriteInputTokens: i64(0)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	usage = usageOf(t, raw)
+	if usage["cache_read_input_tokens"] != 0.0 || usage["cache_creation_input_tokens"] != 0.0 {
+		t.Fatalf("reported zeros must be written: %v", usage)
+	}
+
+	// One reported and one not: each key follows its own count.
+	raw, err = NewFrontend().EncodeResponse(&ir.Response{Usage: ir.Usage{InputTokens: 10, CacheReadInputTokens: i64(4)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	usage = usageOf(t, raw)
+	if _, ok := usage["cache_creation_input_tokens"]; ok || usage["cache_read_input_tokens"] != 4.0 {
+		t.Fatalf("mixed report wrong: %v", usage)
+	}
+
+	// The stream: message_start with no usage at all, message_delta with
+	// a reported zero.
+	var buf bytes.Buffer
+	enc := NewFrontend().NewEventEncoder(&buf)
+	if err := enc.Encode(ir.Event{Type: ir.EventMessageStart, ID: "m"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := enc.Encode(ir.Event{Type: ir.EventMessageDelta, Usage: &ir.Usage{OutputTokens: 3, CacheReadInputTokens: i64(0)}}); err != nil {
+		t.Fatal(err)
+	}
+	frames := readEvents(t, buf.String())
+	var start, delta map[string]any
+	_ = json.Unmarshal(frames[0].Data, &start)
+	_ = json.Unmarshal(frames[2].Data, &delta)
+	startUsage := start["message"].(map[string]any)["usage"].(map[string]any)
+	if _, ok := startUsage["cache_read_input_tokens"]; ok {
+		t.Fatalf("message_start wrote an unreported cache read: %v", startUsage)
+	}
+	deltaUsage := delta["usage"].(map[string]any)
+	if _, ok := deltaUsage["cache_creation_input_tokens"]; ok || deltaUsage["cache_read_input_tokens"] != 0.0 {
+		t.Fatalf("message_delta usage wrong: %v", deltaUsage)
+	}
+}
+
 func TestEncodeResponseDefaultsAndErrors(t *testing.T) {
 	raw, err := NewFrontend().EncodeResponse(&ir.Response{StopSequence: "END"})
 	if err != nil {
