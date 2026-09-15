@@ -10,6 +10,24 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `authkit.Identity.PreferredUsername`, `.OrgSlug` and `.OrgName`, the
+  issuer's display labels for the person and for the active organisation
+  (latere-ai/specs `infrastructure/identity/id-06-code-control-plane.md`,
+  "The origo-web repoint: the token carries the labels"). Once the auth
+  service stamps `preferred_username`, `org_slug` and `org_name` on an
+  actor token, `jwt.Validator.Validate` and `jwt.ParseUnverified` both
+  surface all three, so a service names the owner of a resource from the
+  token it has already verified instead of asking the issuer for a handle
+  or an organisation name. Each claim is optional and its field is empty
+  without it: `PreferredUsername` until the person claims a handle,
+  `OrgSlug` and `OrgName` whenever `OrgID` is empty. They are display only
+  and confer nothing — the membership a service decides from stays `OrgID`
+  and `Roles`. A claim carrying a non-string value is `ErrMalformedToken`,
+  the refusal `org_id` and `email` have always had; none of the three
+  decodes a number or a list to an empty field.
+
 ## v0.68.0 - 2026-09-15
 
 ### Added
