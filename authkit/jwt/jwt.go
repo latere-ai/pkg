@@ -23,22 +23,28 @@
 // embeds authkit.Identity: the subject and its membership, plus the token
 // envelope.
 //
-//	Claim            Field                  Note
-//	─────            ─────                  ────
-//	sub              Sub                    the principal id; the only claim required
-//	principal_type   PrincipalType          "user" or "service"
-//	org_id           OrgID                  the active organisation
-//	roles            Roles                  platform_admin, then the role names in that organisation
-//	email            Email
-//	client_id        ClientID               "azp" is the fallback
-//	kind, actor_id   Kind, ActorID          a non-principal actor a token is bound to
-//	iss, aud, exp    Iss, Aud, Exp          the envelope
+//	Claim               Field                  Note
+//	─────               ─────                  ────
+//	sub                 Sub                    the principal id; the only claim required
+//	principal_type      PrincipalType          "user" or "service"
+//	org_id              OrgID                  the active organisation
+//	roles               Roles                  platform_admin, then the role names in that organisation
+//	email               Email
+//	client_id           ClientID               "azp" is the fallback
+//	kind, actor_id      Kind, ActorID          a non-principal actor a token is bound to
+//	preferred_username  PreferredUsername      the person's handle; absent until they claim one
+//	org_slug, org_name  OrgSlug, OrgName       the slug and display name of org_id; absent with it
+//	iss, aud, exp       Iss, Aud, Exp          the envelope
 //
 // An issuer that stamps only "sub" still verifies; the Identity that results
-// carries the subject and nothing more. Two claims are read by nothing: "scp"
-// is the client's ceiling at the issuer and no service decides from it, and a
-// token that carries a retired flag in place of a role confers nothing, so an
-// admin route opens only to a token whose "roles" names platform_admin. A
+// carries the subject and nothing more. The three label claims are display
+// only: they name the person and the active organisation so that a service
+// can label a resource without calling the issuer, and the membership a
+// service decides from stays "org_id" and "roles". Two claims are read by
+// nothing: "scp" is the client's ceiling at the issuer and no service decides
+// from it, and a token that carries a retired flag in place of a role confers
+// nothing, so an admin route opens only to a token whose "roles" names
+// platform_admin. A
 // product whose own tokens carry scopes decodes them into its own type with
 // [DecodePayload] after [Validator.Validate] has verified the token. [Config.Issuer] and [Config.Audiences]
 // are checked when set, and a service should set both: a token minted for
@@ -119,7 +125,8 @@ const (
 // authkit.Identity, plus the token envelope. Principal fields are promoted,
 // so claims.Sub and claims.Identity.Sub are the same field. ClientID is the
 // originating OAuth client ("client_id", "azp" fallback); Kind and ActorID
-// from "kind" and "actor_id".
+// from "kind" and "actor_id"; PreferredUsername, OrgSlug and OrgName from
+// "preferred_username", "org_slug" and "org_name".
 //
 // Identity.TokenID and Identity.AuthMethod are not claims and are left zero
 // here; Authenticator sets them.
@@ -293,9 +300,14 @@ func claimsFromRawPayload(raw rawPayload) *Claims {
 		Roles:         raw.Roles,
 		Kind:          raw.Kind,
 		ActorID:       raw.ActorID,
-		Iss:           raw.Iss,
-		Aud:           []string(raw.Aud),
-		Exp:           time.Unix(int64(raw.Exp), 0),
+
+		PreferredUsername: raw.PreferredUsername,
+		OrgSlug:           raw.OrgSlug,
+		OrgName:           raw.OrgName,
+
+		Iss: raw.Iss,
+		Aud: []string(raw.Aud),
+		Exp: time.Unix(int64(raw.Exp), 0),
 	}
 }
 
@@ -684,6 +696,13 @@ type rawPayload struct {
 	Kind            string   `json:"kind"`
 	ActorID         string   `json:"actor_id"`
 	AuthorizedParty string   `json:"azp"`
+
+	// The issuer's display labels. Each is a plain string like the claims
+	// above it, so a non-string value fails the payload unmarshal and the
+	// token is ErrMalformedToken, exactly as it is for org_id.
+	PreferredUsername string `json:"preferred_username"`
+	OrgSlug           string `json:"org_slug"`
+	OrgName           string `json:"org_name"`
 }
 
 // jsonAud handles the RFC 7519 "aud" claim which can be a string or []string.

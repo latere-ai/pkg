@@ -128,6 +128,10 @@ func defaultPayload() map[string]any {
 		"is_superadmin":  false,
 		"scp":            []string{"read:projects", "write:projects"},
 		"roles":          []string{"editor"},
+
+		"preferred_username": "ada",
+		"org_slug":           "acme",
+		"org_name":           "Acme, Inc.",
 	}
 }
 
@@ -162,6 +166,53 @@ func TestValidateUserToken(t *testing.T) {
 	}
 	if len(claims.Aud) != 1 || claims.Aud[0] != "my-client" {
 		t.Errorf("Aud = %v", claims.Aud)
+	}
+	if claims.PreferredUsername != "ada" {
+		t.Errorf("PreferredUsername = %q, want ada", claims.PreferredUsername)
+	}
+	if claims.OrgSlug != "acme" || claims.OrgName != "Acme, Inc." {
+		t.Errorf("org labels = %q/%q, want acme/Acme, Inc.", claims.OrgSlug, claims.OrgName)
+	}
+}
+
+// TestValidateLabelsOmitted: the three label claims are optional. A person
+// who has claimed no handle and a token that names no organisation yield
+// empty fields, not an error.
+func TestValidateLabelsOmitted(t *testing.T) {
+	key := genKey(t)
+	v := testValidator(t, key)
+	payload := defaultPayload()
+	for _, claim := range []string{"preferred_username", "org_id", "org_slug", "org_name"} {
+		delete(payload, claim)
+	}
+	token := signToken(t, key, defaultHeader(key), payload)
+
+	claims, err := v.Validate(token)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if claims.PreferredUsername != "" || claims.OrgSlug != "" || claims.OrgName != "" {
+		t.Errorf("labels = %q/%q/%q, want empty", claims.PreferredUsername, claims.OrgSlug, claims.OrgName)
+	}
+}
+
+// TestValidateNonStringClaimRejected: the payload decodes into typed string
+// fields, so a claim carrying a non-string value fails the unmarshal and the
+// whole token is refused. The label claims follow org_id here; none of them
+// decodes a number or a list to the empty string.
+func TestValidateNonStringClaimRejected(t *testing.T) {
+	key := genKey(t)
+	v := testValidator(t, key)
+	for _, claim := range []string{"org_id", "preferred_username", "org_slug", "org_name"} {
+		t.Run(claim, func(t *testing.T) {
+			payload := defaultPayload()
+			payload[claim] = 7
+			token := signToken(t, key, defaultHeader(key), payload)
+
+			if _, err := v.Validate(token); !errors.Is(err, ErrMalformedToken) {
+				t.Errorf("err = %v, want ErrMalformedToken", err)
+			}
+		})
 	}
 }
 
@@ -832,6 +883,11 @@ func TestMiddlewareSuccess(t *testing.T) {
 	// a bearer resolution, so handlers need not know which middleware ran.
 	if gotID.Sub != "user-123" || gotID.TokenID != "user-123" || gotID.AuthMethod != authkit.MethodBearer {
 		t.Errorf("identity from context = %+v", gotID)
+	}
+	// The display labels travel the same path: a handler reading the
+	// Identity behind any Authenticator sees what the token carried.
+	if gotID.PreferredUsername != "ada" || gotID.OrgSlug != "acme" || gotID.OrgName != "Acme, Inc." {
+		t.Errorf("labels on the identity = %q/%q/%q", gotID.PreferredUsername, gotID.OrgSlug, gotID.OrgName)
 	}
 }
 
