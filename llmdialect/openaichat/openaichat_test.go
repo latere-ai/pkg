@@ -417,6 +417,45 @@ func TestEventDecoderReasoningAlias(t *testing.T) {
 	}
 }
 
+// FuzzReasoningAlias holds the alias to reasoning_content under any
+// string: a message that carries only reasoning decodes to the thinking
+// block a message carrying only reasoning_content would, and one that
+// carries both decodes as if it carried reasoning_content alone. The
+// comparisons are between decodes rather than against the input, since
+// json.Marshal rewrites a string that is not UTF-8.
+func FuzzReasoningAlias(f *testing.F) {
+	f.Add("think", "")
+	f.Add("", "x")
+	f.Add("a\"b\\c\n", "\u0000")
+	f.Add("\xf0", "0")
+	f.Add("既に", "alias")
+	f.Fuzz(func(t *testing.T, canonical, alias string) {
+		decode := func(message map[string]any) []ir.Block {
+			t.Helper()
+			raw, _ := json.Marshal(map[string]any{"id": "x", "choices": []any{map[string]any{"message": message}}})
+			resp, err := NewBackend(BackendOptions{}).DecodeResponse(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return resp.Blocks
+		}
+		aliasOnly := decode(map[string]any{"reasoning": alias})
+		if sameValueCanonical := decode(map[string]any{"reasoning_content": alias}); !reflect.DeepEqual(aliasOnly, sameValueCanonical) {
+			t.Fatalf("reasoning %q decoded to %+v, reasoning_content to %+v", alias, aliasOnly, sameValueCanonical)
+		}
+		both := decode(map[string]any{"reasoning_content": canonical, "reasoning": alias})
+		if canonical == "" {
+			if !reflect.DeepEqual(both, aliasOnly) {
+				t.Fatalf("an empty reasoning_content hid reasoning %q: %+v", alias, both)
+			}
+			return
+		}
+		if canonicalOnly := decode(map[string]any{"reasoning_content": canonical}); !reflect.DeepEqual(both, canonicalOnly) {
+			t.Fatalf("reasoning_content %q lost to reasoning %q: %+v", canonical, alias, both)
+		}
+	})
+}
+
 func TestDecodeResponseStopReasons(t *testing.T) {
 	for finish, want := range map[string]ir.StopReason{
 		"stop": ir.StopEndTurn, "length": ir.StopMaxTokens,
