@@ -35,7 +35,8 @@ under **Removed** or **Changed** with what to do about it.
   `jwt.DefaultMaxTokenAge`, a day; a negative value is no bound.
   `jwt.Config.RequireIssuedAt` refuses a token that stamps no `iat` at
   all, for a caller whose issuers always stamp one; without it a token
-  with no `iat` has no age and verifies as it always did.
+  with no `iat` has no age and verifies as it always did. An `iat` of 0 is
+  not an absent one: it names the epoch, so it is ancient.
 - `jwt.Config.LocalIssuer`, `LocalKey` and `LocalKeyID` verify one
   issuer's tokens against a configured key with no JWKS fetch: the tokens
   a process mints for itself, and a stub issuer a test stands up with no

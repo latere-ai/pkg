@@ -482,14 +482,16 @@ func (v *Validator) keysFor(local bool, kid string) ([]jwkEntry, error) {
 
 // validateAge checks the age the "iat" claim gives the token: none when the
 // claim is absent, unless the caller declared that its issuers stamp one.
-func (v *Validator) validateAge(iat float64) error {
-	if iat == 0 {
+// The claim is a pointer so that an absent "iat" and an "iat" of 0 are two
+// different tokens: the second names the epoch and is ancient.
+func (v *Validator) validateAge(iat *float64) error {
+	if iat == nil {
 		if v.cfg.RequireIssuedAt {
 			return ErrTokenTooOld
 		}
 		return nil
 	}
-	if v.cfg.MaxTokenAge > 0 && timeNow().Sub(time.Unix(int64(iat), 0)) > v.cfg.MaxTokenAge {
+	if v.cfg.MaxTokenAge > 0 && timeNow().Sub(time.Unix(int64(*iat), 0)) > v.cfg.MaxTokenAge {
 		return ErrTokenTooOld
 	}
 	return nil
@@ -901,7 +903,7 @@ type rawPayload struct {
 	Aud             jsonAud  `json:"aud"`
 	Exp             float64  `json:"exp"`
 	Nbf             float64  `json:"nbf"`
-	Iat             float64  `json:"iat"`
+	Iat             *float64 `json:"iat"`
 	PrincipalType   string   `json:"principal_type"`
 	Email           string   `json:"email"`
 	OrgID           string   `json:"org_id"`

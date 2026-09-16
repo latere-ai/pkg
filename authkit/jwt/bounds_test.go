@@ -147,6 +147,24 @@ func TestMaxTokenAgeNegativeIsUnbounded(t *testing.T) {
 	}
 }
 
+// TestIssuedAtZeroIsAncient: a token that stamps "iat": 0 named the epoch,
+// which is a token older than any bound. It is not a token with no iat, and
+// the age bound is what refuses it.
+func TestIssuedAtZeroIsAncient(t *testing.T) {
+	key := genKey(t)
+	p := defaultPayload()
+	p["iat"] = float64(0)
+	tok := signToken(t, key, defaultHeader(key), p)
+
+	_, err := testValidator(t, key).Validate(tok)
+	if !errors.Is(err, ErrTokenTooOld) {
+		t.Fatalf("err = %v, want ErrTokenTooOld", err)
+	}
+	if got := ReasonOf(err); got != ReasonTooOld {
+		t.Fatalf("ReasonOf = %q, want %q", got, ReasonTooOld)
+	}
+}
+
 // TestRequireIssuedAt: a token with no iat has no age, so it verifies
 // unless a caller declares that its issuers stamp one.
 func TestRequireIssuedAt(t *testing.T) {
