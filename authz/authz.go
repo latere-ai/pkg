@@ -13,8 +13,18 @@
 // probe every authorizer must deny ([ProbeID], [Check]), the subject
 // rendering ([Subject]), and the owner policy a core applies when no
 // authorizer is configured ([Policy]). The stub authorizer the cores'
-// test tiers run is authz/stub. A core adds its action vocabulary and
-// the fields of its resource kinds; nothing here names a product.
+// test tiers run is authz/stub, and the scaffold an endpoint is written
+// on is authz/server. A core adds its action vocabulary and the fields of
+// its resource kinds; nothing here names a product.
+//
+// A core declares that vocabulary as data, [Vocabulary] over [Action],
+// in a package it publishes at its module root. One declaration is then
+// read by the client, which refuses an action outside it before the wire
+// ([Options.Vocabulary]); by the endpoint, which answers 400 for one
+// (authz/server); and by the conformance suite, which drives a case per
+// row rather than the rows somebody wrote out by hand
+// (conformance.WithVocabulary). The action strings stay the core's: this
+// package names none.
 package authz
 
 import (
