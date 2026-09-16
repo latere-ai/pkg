@@ -51,6 +51,52 @@
 // another relying party carries the same signature, and the audience is what
 // refuses it here.
 //
+// # What is refused, and why
+//
+// Every refusal is an [Error]: the sentinel a caller matches with errors.Is
+// and the [Reason] it belongs to, the word a service writes as the reason of
+// its 401. [ReasonOf] reads that word through any number of wraps, so a
+// service renders the family's word for a refusal rather than inventing one.
+//
+//	Error                Reason              Word
+//	─────                ──────              ────
+//	ErrMalformedToken    ReasonMalformed     malformed
+//	ErrInvalidSignature  ReasonBadSignature  signature
+//	ErrUnsupportedAlg    ReasonBadSignature  signature
+//	ErrInvalidIssuer     ReasonBadIssuer     issuer
+//	ErrInvalidAudience   ReasonBadAudience   audience
+//	ErrTokenExpired      ReasonExpired       expired
+//	ErrTokenNotValidYet  ReasonNotYetValid   nbf
+//	ErrTokenTooLarge     ReasonTooLarge      size
+//	ErrTokenTooOld       ReasonTooOld        iat
+//
+// The word is not the Go identifier and two errors may share one, as the
+// two signature refusals do: an algorithm no key of the set can answer is
+// what a caller learns as a signature that did not check out. [ErrNoToken]
+// carries no reason, because nothing arrived to refuse.
+//
+// # Bounds
+//
+// A bearer token is a credential, not a document. [Config.MaxTokenBytes]
+// refuses one above [DefaultMaxTokenBytes] before it is parsed, and
+// [Config.MaxTokenAge] refuses one whose "iat" is older than
+// [DefaultMaxTokenAge] whatever "exp" it carries, so an issuer that mints a
+// long-lived token does not thereby mint a credential that outlives the day
+// it was issued in. A negative value turns either bound off, and
+// [Config.RequireIssuedAt] refuses a token that stamps no "iat" at all.
+// Both bounds are [Validator.Validate]'s alone: [ParseUnverified] and
+// [DecodePayload] take no Config and read a token already trusted by
+// transport.
+//
+// # A local issuer
+//
+// [Config.LocalIssuer] is an issuer verified against a key the caller
+// configures, with no JWKS fetch: the tokens a process mints for itself, and
+// a stub issuer a test stands up with no server. A token naming it is
+// checked against [Config.LocalKey] under the kid [Config.LocalKeyID] names,
+// and is not checked against [Config.Issuer]; every other token takes the
+// JWKS path unchanged.
+//
 // # Authentication is local
 //
 // Nothing in this package calls the issuer while a request is served: the

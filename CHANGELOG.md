@@ -10,6 +10,59 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `authkit/jwt` carries a reason table. Every refusal is a `*jwt.Error`
+  holding a `jwt.Reason`, and `jwt.ReasonOf(err)` reads it through any
+  number of wraps, so a service writes the family's word for a refusal
+  instead of inventing one: `malformed`, `signature`, `issuer`,
+  `audience`, `expired`, `nbf`, `size`, `iat`. The sentinels keep their
+  identity and their text, so `errors.Is` and every message are what they
+  were. `ErrUnsupportedAlg` reads as `signature`, because an algorithm no
+  key of the set can answer is what a caller learns as a signature that
+  did not check out, and `ErrNoToken` carries no reason, because nothing
+  arrived to refuse.
+- `jwt.Config.MaxTokenBytes` is the size above which a token is
+  `jwt.ErrTokenTooLarge`, checked before the split so nothing large is
+  decoded. A bearer token is a credential, not a document. The default is
+  `jwt.DefaultMaxTokenBytes`, 8 KiB, past every token the family's
+  issuers mint; a negative value is no bound, for a caller whose tokens
+  are larger.
+- `jwt.Config.MaxTokenAge` is how old `iat` may be before a token is
+  `jwt.ErrTokenTooOld`, whatever `exp` it carries, so an issuer that
+  mints a long-lived token does not thereby mint a credential that
+  outlives the day it was issued in. The default is
+  `jwt.DefaultMaxTokenAge`, a day; a negative value is no bound.
+  `jwt.Config.RequireIssuedAt` refuses a token that stamps no `iat` at
+  all, for a caller whose issuers always stamp one; without it a token
+  with no `iat` has no age and verifies as it always did.
+- `jwt.Config.LocalIssuer`, `LocalKey` and `LocalKeyID` verify one
+  issuer's tokens against a configured key with no JWKS fetch: the tokens
+  a process mints for itself, and a stub issuer a test stands up with no
+  server. A token naming the local issuer is checked against that key
+  alone, under the kid `LocalKeyID` names, and is not checked against
+  `Config.Issuer`; every other token takes the JWKS path unchanged. `New`
+  panics on a local issuer configured without a usable key, because such
+  a verifier would refuse its own tokens as bad signatures, which is a
+  wiring mistake and not a verdict.
+
+These are the family's C5 (`latere-ai/specs`,
+`decisions/2026-09-13-one-platform-open-cores.md`): the options Origo's
+verifier has and this one lacked, so that one verifier serves every core.
+ES256 beside RS256, the fourth of them, shipped in v0.66.0.
+
+### Changed
+
+- The two new bounds are refusals a caller that configures neither did not
+  have: a token above 8 KiB, and one whose `iat` is more than a day old
+  under an `exp` that is still in the future. Set `MaxTokenBytes: -1` or
+  `MaxTokenAge: -1` to keep the old behaviour exactly.
+- `Validator.Validate` decodes the payload before it chooses the keys,
+  because the `iss` it carries is what selects them. A token that is both
+  malformed in the payload and wrong in the signature now reads as
+  `ErrMalformedToken` where it read as `ErrInvalidSignature`, and it no
+  longer reaches the key set. Every other order is unchanged.
+
 ## v0.70.1 - 2026-09-16
 
 ### Fixed
