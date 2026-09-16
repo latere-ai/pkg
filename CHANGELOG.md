@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.70.0 - 2026-09-16
+
 ### Added
 
 - `authz.Vocabulary`, a core's action table as data, read by the client,
