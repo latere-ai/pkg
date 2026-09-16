@@ -12,6 +12,19 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Added
 
+- `jwt.Config.ClockSkew` is the tolerance on `exp` and `nbf` for the
+  difference between the issuer's clock and this node's: a token is read
+  until the skew past its `exp`, and from the skew before its `nbf`. Two
+  clocks that disagree by seconds were refusing each other's tokens at the
+  edges with nothing a caller could set. It is zero by default, so nothing
+  a caller verified before verifies differently. It widens those two
+  claims and nothing else: not `MaxTokenAge`, which is how long a token
+  stays a credential on this clock alone, and not a token of
+  `Config.LocalIssuer`, which was stamped on this clock and has no second
+  clock to reconcile.
+
+### Added
+
 - `authkit/jwt` carries a reason table. Every refusal is a `*jwt.Error`
   holding a `jwt.Reason`, and `jwt.ReasonOf(err)` reads it through any
   number of wraps, so a service writes the family's word for a refusal

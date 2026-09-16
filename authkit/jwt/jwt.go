@@ -88,6 +88,12 @@
 // [DecodePayload] take no Config and read a token already trusted by
 // transport.
 //
+// [Config.ClockSkew] is the other direction: the tolerance on "exp" and
+// "nbf" for the difference between the issuer's clock and this node's. It
+// widens those two claims and nothing else, so it reaches neither the age
+// bound, measured against this clock alone, nor a local token, stamped on
+// this clock already.
+//
 // # A local issuer
 //
 // [Config.LocalIssuer] is an issuer verified against a key the caller
@@ -290,6 +296,16 @@ type Config struct {
 	// LocalKeyID is the "kid" a token of LocalIssuer must name. Empty
 	// accepts any kid, since the set holds one key either way.
 	LocalKeyID string
+	// ClockSkew is the tolerance on "exp" and "nbf" for the difference
+	// between the issuer's clock and this node's: a token is read until
+	// ClockSkew past its "exp", and from ClockSkew before its "nbf". Zero
+	// by default, so neither claim is widened unless a caller asks.
+	//
+	// It is a tolerance between two clocks, so it reaches neither
+	// [Config.MaxTokenAge], which is measured against this node's clock
+	// alone, nor a token of [Config.LocalIssuer], which was stamped on
+	// this clock and has no second clock to reconcile.
+	ClockSkew time.Duration
 }
 
 // DefaultMaxTokenBytes is the size bound a caller that configures none
@@ -424,15 +440,21 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 		return nil, ErrInvalidSignature
 	}
 
-	// Validate exp.
+	// Validate exp and nbf, each widened by the skew between the issuer's
+	// clock and this one. A local token was stamped on this clock, so it
+	// gets none.
+	skew := v.cfg.ClockSkew
+	if local {
+		skew = 0
+	}
 	exp := time.Unix(int64(raw.Exp), 0)
-	if timeNow().After(exp) {
+	if timeNow().After(exp.Add(skew)) {
 		return nil, ErrTokenExpired
 	}
 
 	// Validate nbf (RFC 7519 §4.1.5): reject a token used before its
 	// not-before instant. Tokens that omit nbf are unaffected.
-	if raw.Nbf != 0 && timeNow().Before(time.Unix(int64(raw.Nbf), 0)) {
+	if raw.Nbf != 0 && timeNow().Before(time.Unix(int64(raw.Nbf), 0).Add(-skew)) {
 		return nil, ErrTokenNotValidYet
 	}
 
