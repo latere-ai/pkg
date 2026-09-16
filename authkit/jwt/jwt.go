@@ -139,16 +139,62 @@ type Claims struct {
 
 // ── Errors ──────────────────────────────────────────────────────────────────
 
-var (
-	ErrNoToken          = errors.New("authkit/jwt: missing bearer token")
-	ErrMalformedToken   = errors.New("authkit/jwt: malformed token")
-	ErrInvalidSignature = errors.New("authkit/jwt: invalid signature")
-	ErrTokenExpired     = errors.New("authkit/jwt: token expired")
-	ErrTokenNotValidYet = errors.New("authkit/jwt: token not valid yet")
-	ErrInvalidIssuer    = errors.New("authkit/jwt: invalid issuer")
-	ErrInvalidAudience  = errors.New("authkit/jwt: invalid audience")
-	ErrUnsupportedAlg   = errors.New("authkit/jwt: unsupported algorithm")
+// Reason is why a token was refused: one row of the reason table, and the
+// string a core writes as the reason of its 401. The identifiers name the
+// row; the values are the wire words, so a service that renders
+// ReasonOf(err) renders the same word as every other service in the family.
+type Reason string
+
+// The rows of the reason table.
+const (
+	ReasonMalformed    Reason = "malformed"
+	ReasonBadSignature Reason = "signature"
+	ReasonBadIssuer    Reason = "issuer"
+	ReasonBadAudience  Reason = "audience"
+	ReasonExpired      Reason = "expired"
+	ReasonNotYetValid  Reason = "nbf"
+	ReasonTooLarge     Reason = "size"
+	ReasonTooOld       Reason = "iat"
 )
+
+// Error is a refusal: the sentinel a caller matches with errors.Is and the
+// table row it belongs to. Every error below is one, so ReasonOf answers for
+// any of them; the sentinels are compared by identity, so a caller's
+// errors.Is and the text of Error are what they always were.
+type Error struct {
+	Reason Reason
+	msg    string
+}
+
+func (e *Error) Error() string { return e.msg }
+
+// refusal declares one sentinel of the table.
+func refusal(reason Reason, msg string) error { return &Error{Reason: reason, msg: msg} }
+
+var (
+	// ErrNoToken carries no reason: no token arrived, so nothing was refused.
+	ErrNoToken          = errors.New("authkit/jwt: missing bearer token")
+	ErrMalformedToken   = refusal(ReasonMalformed, "authkit/jwt: malformed token")
+	ErrInvalidSignature = refusal(ReasonBadSignature, "authkit/jwt: invalid signature")
+	ErrTokenExpired     = refusal(ReasonExpired, "authkit/jwt: token expired")
+	ErrTokenNotValidYet = refusal(ReasonNotYetValid, "authkit/jwt: token not valid yet")
+	ErrInvalidIssuer    = refusal(ReasonBadIssuer, "authkit/jwt: invalid issuer")
+	ErrInvalidAudience  = refusal(ReasonBadAudience, "authkit/jwt: invalid audience")
+	// ErrUnsupportedAlg is a signature refusal: the header names an algorithm
+	// no key of the set can answer, which the caller learns as a signature
+	// that did not check out. It is a row of its own only in Go.
+	ErrUnsupportedAlg = refusal(ReasonBadSignature, "authkit/jwt: unsupported algorithm")
+)
+
+// ReasonOf reports the table row err belongs to, reading through any number
+// of wraps. An error that is not a refusal, and a nil error, have no reason.
+func ReasonOf(err error) Reason {
+	var e *Error
+	if errors.As(err, &e) {
+		return e.Reason
+	}
+	return ""
+}
 
 // ── Config & Validator ──────────────────────────────────────────────────────
 
