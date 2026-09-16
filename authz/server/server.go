@@ -17,7 +17,10 @@
 //	                      max body, decode
 //	                      action and kind
 //	                      the probe id
-//	                      --------------------------->  Decider.Decide
+//	                      route: decision or page
+//	                      --------------------------->  Decider.Decide, or
+//	                                                    Lister.List for an
+//	                                                    action of PageActions
 //	                      <---------------------------  (Decision, error)
 //	                      ErrUnavailable -> 503
 //	                      write the decision, count it
@@ -31,6 +34,13 @@
 //	        Vocabulary: origoauthorizer.Vocabulary(),
 //	        Decider:    snapshots,
 //	}))
+//
+// Every action of the vocabulary is decided, one whose verb is list
+// included: its answer is a decision whose [authz.Decision.Filter]
+// narrows the core's own list. The exception is an action whose answer is
+// a page of the core's own shape — Origo's repo.list, a directory page
+// with fields and a cursor this contract does not fix — which a core
+// names in [Options.PageActions] and a [Lister] answers.
 //
 // Everything a decision reads — the tables, the roles, the plans, the
 // grants — stays with whoever wrote the [Decider]. Nothing here names a
@@ -57,16 +67,20 @@ import (
 	"latere.ai/x/pkg/httpjson"
 )
 
-// Decider answers one request from the control plane's own state. A deny
-// is an [authz.Decision] and never an error; an error is a call that
-// produced no decision.
+// Decider answers one request from the control plane's own state, every
+// action of the vocabulary but the ones [Options.PageActions] names. A
+// deny is an [authz.Decision] and never an error; an error is a call that
+// produced no decision. A list action is a decision like any other, and
+// [authz.Decision.Filter] is how the answer narrows the core's own list.
 type Decider interface {
 	Decide(ctx context.Context, req authz.Request) (authz.Decision, error)
 }
 
 // Lister answers an action whose reply has a shape of the core's own: a
 // directory page, with the fields and the cursor the core's spec names.
-// The handler writes what it returns and caches nothing.
+// The handler writes what it returns and caches nothing. Which actions
+// those are is [Options.PageActions] and never the action's verb: a page
+// is the exception a core declares, not what every list does.
 //
 // The return is untyped on purpose, and symmetric with the client half:
 // [authz.Client.Ask] returns the bytes of such an answer and leaves the
@@ -106,8 +120,9 @@ func Unavailable(reason string) error { return &unavailable{reason: reason} }
 // the token's claims; a body past this is not a core.
 const DefaultMaxBody = 64 << 10
 
-// The counter's attribute values. result is allow, deny, list — a page
-// whose own verdict is the core's to count — unavailable, or error.
+// The counter's attribute values. result is allow, deny, list — a page of
+// [Options.PageActions], whose own verdict is the core's to count —
+// unavailable, or error.
 const (
 	resultAllow       = "allow"
 	resultDeny        = "deny"
@@ -133,12 +148,22 @@ type Options struct {
 	Vocabulary authz.Vocabulary
 	// MaxBody bounds one envelope. DefaultMaxBody when zero.
 	MaxBody int64
-	// Decider answers every action but a list. Required.
+	// Decider answers every action the vocabulary names but the ones
+	// PageActions does. Required.
 	Decider Decider
-	// Lister answers the list actions of the vocabulary, the ones
-	// [authz.IsList] names. Optional: with none, a list action is a 400,
-	// because the endpoint cannot decide it and a 200 with no answer in
-	// it is worse than a refusal.
+	// PageActions are the actions whose answer is a page of the core's
+	// own shape rather than a decision — Origo's repo.list, which is a
+	// directory page. Each must be an action of the Vocabulary, and each
+	// is routed to the Lister. Empty is the ordinary case: every action,
+	// a list included, is decided.
+	//
+	// The verb is not the rule. An action named list answers a decision
+	// whose [authz.Decision.Filter] narrows the core's own list, which is
+	// what Cella's and Lux's list actions do; a page is what a core
+	// declares here.
+	PageActions []string
+	// Lister answers the PageActions. Required when PageActions names
+	// one, unused otherwise.
 	Lister Lister
 	// Logger records a decider that failed. Optional; nothing is logged
 	// without one, and no request field is ever logged.
@@ -189,25 +214,39 @@ type handler struct {
 	vocabulary         authz.Vocabulary
 	maxBody            int64
 	decider            Decider
+	pages              map[string]struct{}
 	lister             Lister
 	logger             *slog.Logger
 	decisions          metric.Int64Counter
 }
 
 // New builds the endpoint. It panics on a wiring mistake there is no
-// runtime answer to — no Decider, or no Vocabulary to validate against —
-// because either would turn every request into a fault and an authorizer
-// that faults is an outage of the core in front of it.
+// runtime answer to — no Decider, no Vocabulary to validate against, a
+// PageActions with no Lister to answer it, or a PageActions entry the
+// vocabulary does not name — because each would turn a request into a
+// fault or into a 400 nobody wrote, and an authorizer that faults is an
+// outage of the core in front of it.
 func New(o Options) http.Handler {
 	switch {
 	case o.Decider == nil:
 		panic("authz/server: New needs a Decider")
 	case len(o.Vocabulary.Actions) == 0:
 		panic("authz/server: New needs a Vocabulary; every action is validated against it")
+	case len(o.PageActions) > 0 && o.Lister == nil:
+		panic("authz/server: New needs a Lister; PageActions names " + strings.Join(o.PageActions, ", "))
+	}
+	for _, a := range o.PageActions {
+		if !o.Vocabulary.Known(a) {
+			panic("authz/server: PageActions names " + a + ", which is not one of " + o.Vocabulary.Core + "'s actions")
+		}
 	}
 	h := &handler{
 		bearer: o.Bearer, bearerNext: o.BearerNext, vocabulary: o.Vocabulary,
 		maxBody: o.MaxBody, decider: o.Decider, lister: o.Lister, logger: o.Logger,
+		pages: make(map[string]struct{}, len(o.PageActions)),
+	}
+	for _, a := range o.PageActions {
+		h.pages[a] = struct{}{}
 	}
 	if h.maxBody <= 0 {
 		h.maxBody = DefaultMaxBody
@@ -237,10 +276,10 @@ func New(o Options) http.Handler {
 //	an action outside the vocabulary     400
 //	a resource.kind that is not the action's  400
 //	the reserved probe id                200, denied
-//	a list action                        the Lister's page
+//	an action of PageActions             the Lister's page
 //	anything else                        the Decider's decision
 //
-// The probe is answered before the routing, so it is denied for a list
+// The probe is answered before the routing, so it is denied for a page
 // action too: a page carries no verdict, and a core's check command reads
 // a probe that is not denied as an endpoint that does not read the
 // request.
@@ -288,7 +327,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpjson.Write(w, http.StatusOK, answer{Reason: authz.ReasonProbe})
 		return
 	}
-	if authz.IsList(req.Action) {
+	if _, page := h.pages[req.Action]; page {
 		h.list(w, r, req)
 		return
 	}
@@ -305,15 +344,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	httpjson.Write(w, http.StatusOK, render(d))
 }
 
-// list answers an action whose reply is the core's own page. The verdict
-// inside it is the core's too, so the counter records that a list was
-// answered and a core that wants the split counts it in its Lister.
+// list answers an action of PageActions, whose reply is the core's own
+// page. The verdict inside it is the core's too, so the counter records
+// that a page was answered and a core that wants the split counts it in
+// its Lister. There is no nil-Lister case: New refuses that wiring.
 func (h *handler) list(w http.ResponseWriter, r *http.Request, req authz.Request) {
-	if h.lister == nil {
-		writeErr(w, http.StatusBadRequest, codeInvalid, msgInvalid,
-			"no directory is served here; "+req.Action+" is answered by a Lister")
-		return
-	}
 	page, err := h.lister.List(r.Context(), req)
 	if err != nil {
 		h.failed(w, r, req.Action, err)

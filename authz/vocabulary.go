@@ -94,9 +94,13 @@ func (v Vocabulary) Kinds() []string {
 	return out
 }
 
-// IsList reports whether an action's answer has a shape of the core's own
-// rather than a [Decision]: an action whose verb is list, such as
-// repo.list or provider.list. Such an action names no object, so the
-// answer is a page and not a verdict, and the contract fixes neither its
-// fields nor its cursor.
+// IsList reports whether an action's verb is list — repo.list,
+// provider.list — an action that names no object but the kind it ranges
+// over. It is the vocabulary's naming convention and not a routing rule:
+// a list action answers a [Decision] like every other, and
+// [Decision.Filter] is how an authorizer narrows the core's own list.
+//
+// An action whose answer is a page of the core's own shape instead, with
+// fields and a cursor the contract does not fix, is the exception a core
+// declares by name in authz/server's Options.PageActions.
 func IsList(action string) bool { return strings.HasSuffix(action, ".list") }

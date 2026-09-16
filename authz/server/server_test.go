@@ -125,6 +125,12 @@ func TestNewRefusesAWiringMistake(t *testing.T) {
 	}{
 		{"no decider", server.Options{Vocabulary: vocabulary(t)}, "needs a Decider"},
 		{"no vocabulary", server.Options{Decider: allows}, "needs a Vocabulary"},
+		{"a page action with no lister", server.Options{Vocabulary: vocabulary(t), Decider: allows,
+			PageActions: []string{"repo.list"}}, "needs a Lister; PageActions names repo.list"},
+		{"a page action outside the vocabulary", server.Options{Vocabulary: vocabulary(t), Decider: allows,
+			PageActions: []string{"repo.list", "repo.tree"},
+			Lister:      listerFunc(func(context.Context, authz.Request) (any, error) { return nil, nil })},
+			"PageActions names repo.tree, which is not one of origo's actions"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			defer func() {
@@ -265,7 +271,7 @@ func TestTheDefaultBodyBound(t *testing.T) {
 // rule rather than trusting a decider with it.
 func TestTheProbeIsDeniedBeforeTheDecider(t *testing.T) {
 	h := server.New(server.Options{Bearer: bearer, Vocabulary: vocabulary(t),
-		Decider: allows,
+		Decider: allows, PageActions: []string{"repo.list"},
 		Lister: listerFunc(func(context.Context, authz.Request) (any, error) {
 			t.Error("the probe reached the lister")
 			return nil, nil
@@ -382,10 +388,11 @@ func TestUnavailableCarriesAReasonAndStaysTheSentinel(t *testing.T) {
 	}
 }
 
-// TestAListIsTheCoresOwnPage: a list action routes to the Lister, whose
-// value is written as it is; with no Lister it is a 400, because the
-// endpoint cannot decide it and a 200 that is no answer is worse.
-func TestAListIsTheCoresOwnPage(t *testing.T) {
+// TestADeclaredPageIsTheCoresOwnShape: an action the core declared a page routes
+// to the Lister, whose value is written as it is — a page, a refusal in
+// the core's own shape, or an installation with no directory. What the
+// contract fixes about that body is nothing.
+func TestADeclaredPageIsTheCoresOwnShape(t *testing.T) {
 	v := vocabulary(t)
 	page := map[string]any{"repos": []any{map[string]any{"id": repoID, "owner": "acme", "slug": "app"}}, "next_cursor": "c2"}
 	for _, tc := range []struct {
@@ -433,18 +440,12 @@ func TestAListIsTheCoresOwnPage(t *testing.T) {
 					t.Fatalf("out = %v", out)
 				}
 			}},
-		{name: "no lister at all", status: http.StatusBadRequest, lister: nil,
-			check: func(t *testing.T, out map[string]any) {
-				detail, _ := out["detail"].(string)
-				if !strings.Contains(detail, "no directory is served here") {
-					t.Fatalf("detail = %q", detail)
-				}
-			}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := server.New(server.Options{Bearer: bearer, Vocabulary: v, Lister: tc.lister,
+				PageActions: []string{"repo.list"},
 				Decider: deciderFunc(func(context.Context, authz.Request) (authz.Decision, error) {
-					t.Error("a list action reached the decider")
+					t.Error("a page action reached the decider")
 					return authz.Decision{}, nil
 				})})
 			status, out := post(t, h, "Bearer "+bearer, envelope(alice, "repo.list", repoKnd, ""))
@@ -454,6 +455,80 @@ func TestAListIsTheCoresOwnPage(t *testing.T) {
 			tc.check(t, out)
 		})
 	}
+}
+
+// cella is a vocabulary of the other shape: a core whose list action
+// answers a decision the authorizer may have narrowed, and which
+// configures no Lister at all.
+func cella(t testing.TB) authz.Vocabulary {
+	t.Helper()
+	v, err := authz.NewVocabulary("cella",
+		authz.Action{Name: "sandbox.read", Kind: "Sandbox"},
+		authz.Action{Name: "sandbox.list", Kind: "Sandbox"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+// TestAListActionIsADecisionUnlessItIsDeclaredAPage: the verb is no
+// longer the routing. A core that names no PageActions gets its list
+// action decided like every other, filter included, with no Lister
+// anywhere; a core that names one gets the page.
+func TestAListActionIsADecisionUnlessItIsDeclaredAPage(t *testing.T) {
+	t.Run("a decider-only core decides its list", func(t *testing.T) {
+		filter := &authz.Filter{Owners: []string{alice}, Labels: map[string]string{"team": "a"}}
+		h := server.New(server.Options{Bearer: bearer, Vocabulary: cella(t),
+			Decider: deciderFunc(func(_ context.Context, req authz.Request) (authz.Decision, error) {
+				if req.Action != "sandbox.list" {
+					t.Errorf("the decider was handed %q", req.Action)
+				}
+				return authz.Decision{Allow: true, Reason: "member", TTL: 30 * time.Second, Filter: filter}, nil
+			})})
+		status, out := post(t, h, "Bearer "+bearer, envelope(alice, "sandbox.list", "Sandbox", ""))
+		if status != http.StatusOK {
+			t.Fatalf("status = %d (%v); a list action no core declared a page is a decision", status, out)
+		}
+		if out["allow"] != true || out["reason"] != "member" || out["ttl"] != float64(30) {
+			t.Fatalf("out = %v", out)
+		}
+		got, ok := out["filter"].(map[string]any)
+		if !ok {
+			t.Fatalf("the decision carries no filter: %v", out)
+		}
+		if owners, _ := got["owners"].([]any); len(owners) != 1 || owners[0] != alice {
+			t.Fatalf("filter = %v", got)
+		}
+	})
+	t.Run("a declared page is still the lister's", func(t *testing.T) {
+		h := server.New(server.Options{Bearer: bearer, Vocabulary: vocabulary(t),
+			PageActions: []string{"repo.list"},
+			Decider: deciderFunc(func(context.Context, authz.Request) (authz.Decision, error) {
+				t.Error("a page action reached the decider")
+				return authz.Decision{}, nil
+			}),
+			Lister: listerFunc(func(_ context.Context, req authz.Request) (any, error) {
+				if req.Action != "repo.list" {
+					t.Errorf("the lister was handed %q", req.Action)
+				}
+				return map[string]any{"repos": []any{}, "next_cursor": "c2"}, nil
+			})})
+		status, out := post(t, h, "Bearer "+bearer, envelope(alice, "repo.list", repoKnd, ""))
+		if status != http.StatusOK || out["next_cursor"] != "c2" {
+			t.Fatalf("status = %d, out = %v", status, out)
+		}
+	})
+	t.Run("an action outside PageActions is decided", func(t *testing.T) {
+		h := server.New(server.Options{Bearer: bearer, Vocabulary: vocabulary(t),
+			PageActions: []string{"repo.list"}, Decider: allows,
+			Lister: listerFunc(func(context.Context, authz.Request) (any, error) {
+				t.Error("repo.read reached the lister")
+				return nil, nil
+			})})
+		if status, out := post(t, h, "Bearer "+bearer, envelope(alice, "repo.read", repoKnd, repoID)); status != http.StatusOK || out["allow"] != true {
+			t.Fatalf("status = %d, out = %v", status, out)
+		}
+	})
 }
 
 // TestEveryAnswerPastValidationIsCounted: the counter carries the result
@@ -468,6 +543,7 @@ func TestEveryAnswerPastValidationIsCounted(t *testing.T) {
 		"repo.write": {Reason: "not_owner"},
 	}
 	h := server.New(server.Options{Bearer: bearer, Vocabulary: v, Meter: meter,
+		PageActions: []string{"repo.list"},
 		Decider: deciderFunc(func(_ context.Context, req authz.Request) (authz.Decision, error) {
 			if req.Action == "repo.admin" {
 				return authz.Decision{}, server.Unavailable("stale_snapshot")
@@ -565,8 +641,33 @@ func TestTheScaffoldConforms(t *testing.T) {
 			}
 			return authz.Decision{Allow: true, TTL: 30 * time.Second}, nil
 		}),
+		PageActions: []string{"repo.list"},
 		Lister: listerFunc(func(context.Context, authz.Request) (any, error) {
 			return map[string]any{"repos": []any{}}, nil
+		})})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	conformance.Run(t, srv.URL, "secret", conformance.WithVocabulary(v),
+		conformance.WithPageActions("repo.list"))
+}
+
+// TestTheScaffoldConformsDecidingEveryList: the other shape of core. The
+// vocabulary carries a list action, no Lister is wired, and the run
+// declares no page, so every answer including sandbox.list's is a
+// decision — which is what a Cella or Lux authorizer on this scaffold
+// answers.
+func TestTheScaffoldConformsDecidingEveryList(t *testing.T) {
+	v := cella(t)
+	h := server.New(server.Options{Bearer: "secret", Vocabulary: v,
+		Decider: deciderFunc(func(_ context.Context, req authz.Request) (authz.Decision, error) {
+			if req.Subject == "" {
+				return authz.Decision{Reason: authz.ReasonAnonymous}, nil
+			}
+			d := authz.Decision{Allow: true, TTL: 30 * time.Second}
+			if authz.IsList(req.Action) {
+				d.Filter = &authz.Filter{Owners: []string{req.Subject}}
+			}
+			return d, nil
 		})})
 	srv := httptest.NewServer(h)
 	defer srv.Close()
@@ -581,6 +682,7 @@ func TestTheScaffoldConforms(t *testing.T) {
 func FuzzTheEnvelopeIsValidatedBeforeTheDecider(f *testing.F) {
 	v := vocabulary(f)
 	h := server.New(server.Options{Bearer: bearer, Vocabulary: v, Decider: allows,
+		PageActions: []string{"repo.list"},
 		Lister: listerFunc(func(context.Context, authz.Request) (any, error) {
 			return map[string]any{"repos": []any{}}, nil
 		})})
