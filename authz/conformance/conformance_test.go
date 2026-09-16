@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -261,5 +262,81 @@ func TestWithActionsAfterWithVocabularyDropsTheTable(t *testing.T) {
 		WithVocabulary(theVocabulary(t)),
 		WithActions(Action{Name: "repo.read", Kind: "Repository"})); len(failures) != 0 {
 		t.Fatalf("the narrowed run failed: %q", failures)
+	}
+}
+
+// shaped is an authorizer over a vocabulary that denies the probe,
+// refuses an unknown action with a 400, answers `page` for each action in
+// pages, and a decision with a filter for every other. It is the two
+// shapes of list answer in one endpoint.
+func shaped(t *testing.T, v authz.Vocabulary, page string, pages ...string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer secret" {
+			http.Error(w, "bearer required", http.StatusUnauthorized)
+			return
+		}
+		var req authz.Request
+		_ = readJSON(r, &req)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case !v.Known(req.Action):
+			http.Error(w, "unknown action", http.StatusBadRequest)
+		case req.Resource.ID == authz.ProbeID:
+			_, _ = io.WriteString(w, `{"allow": false, "reason": "probe"}`)
+		case slices.Contains(pages, req.Action):
+			_, _ = io.WriteString(w, page)
+		default:
+			_, _ = io.WriteString(w, `{"allow": true, "filter": {"owners": ["a"]}}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// TestAListAnswersEitherShapeWhenNoneIsDeclared: told no page actions,
+// the run accepts a list action that answers a decision with a filter and
+// one that answers a page, because both conform and only the endpoint
+// knows which it serves.
+func TestAListAnswersEitherShapeWhenNoneIsDeclared(t *testing.T) {
+	v := theVocabulary(t)
+	decides := shaped(t, v, "")
+	if failures := run(t, decides.URL, "secret", WithVocabulary(v)); len(failures) != 0 {
+		t.Fatalf("a core that decides its list failed: %q", failures)
+	}
+	paging := shaped(t, v, `{"repos": [], "next_cursor": "c2"}`, "repo.list")
+	if failures := run(t, paging.URL, "secret", WithVocabulary(v)); len(failures) != 0 {
+		t.Fatalf("a core whose list is a directory page failed: %q", failures)
+	}
+}
+
+// TestWithPageActionsFixesTheShapePerAction: told which actions are
+// pages, the run requires a decision of every other action, a list
+// included, and of a page requires the 200 and a JSON object — the
+// contract fixes no field of a body whose shape is the core's own.
+func TestWithPageActionsFixesTheShapePerAction(t *testing.T) {
+	v := theVocabulary(t)
+	paging := shaped(t, v, `{"repos": [], "next_cursor": "c2"}`, "repo.list")
+	if failures := run(t, paging.URL, "secret", WithVocabulary(v), WithPageActions("repo.list")); len(failures) != 0 {
+		t.Fatalf("the declared page failed: %q", failures)
+	}
+	// A page action may answer a refusal in the core's own shape; that is
+	// a JSON object and passes.
+	decides := shaped(t, v, "")
+	if failures := run(t, decides.URL, "secret", WithVocabulary(v), WithPageActions("repo.list")); len(failures) != 0 {
+		t.Fatalf("a refusal in the core's own shape failed: %q", failures)
+	}
+	// Declared as pages, and no page: the run names the action.
+	if failures := run(t, decides.URL, "secret", WithVocabulary(v), WithPageActions()); len(failures) != 0 {
+		t.Fatalf("a core that decides every list failed under WithPageActions(): %q", failures)
+	}
+	failures := run(t, paging.URL, "secret", WithVocabulary(v), WithPageActions())
+	if !mentions(failures, "has no allow field") {
+		t.Fatalf("a page where a decision was declared passed: %q", failures)
+	}
+	broken := shaped(t, v, `{not json`, "repo.list")
+	failures = run(t, broken.URL, "secret", WithVocabulary(v), WithPageActions("repo.list"))
+	if !mentions(failures, "the body is not a JSON object") {
+		t.Fatalf("a page that is not JSON passed: %q", failures)
 	}
 }

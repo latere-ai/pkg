@@ -24,6 +24,13 @@
 // reads the request answers; a core names its own with WithSubjects and
 // WithVocabulary, which drives a case per row of the core's declared
 // table and adds the check that an action outside it is refused.
+//
+// An action whose answer is a page of the core's own shape rather than a
+// decision — Origo's repo.list, a directory page — is named with
+// WithPageActions. A run that names none accepts either shape for an
+// action whose verb is list and requires a decision for every other,
+// because both are conforming and only the endpoint knows which it
+// serves.
 package conformance
 
 import (
@@ -35,6 +42,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"testing"
 
 	"latere.ai/x/pkg/authz"
@@ -65,6 +73,23 @@ func WithVocabulary(v authz.Vocabulary) Option {
 	return func(s *suite) { s.actions, s.vocabulary = v.Actions, v }
 }
 
+// WithPageActions names the actions whose 200 is a page of the core's own
+// shape — its fields, its cursor — rather than a decision, which is what
+// authz/server's Options.PageActions routes to a Lister. An action named
+// here is checked as a page: the 200 and a JSON object, and no field,
+// because the contract fixes none. Every action not named is checked as a
+// decision, so a core that declares its table gets both halves checked.
+//
+// A run that does not call it accepts either shape for an action whose
+// verb is list, because the contract allows both: the ordinary list
+// answers a decision the authorizer may have narrowed with a filter, and
+// a directory page is the core's exception. WithPageActions() with no
+// action is a declaration too — every action, list included, answers a
+// decision.
+func WithPageActions(actions ...string) Option {
+	return func(s *suite) { s.pages, s.pagesSet = actions, true }
+}
+
 // WithSubjects names the rendered subjects the checks send. The anonymous
 // subject, the empty string, is always sent to the probe as well. The
 // default is two subjects of an example issuer.
@@ -89,8 +114,13 @@ type suite struct {
 	actions    []Action
 	vocabulary authz.Vocabulary
 	subjects   []string
+	pages      []string
+	pagesSet   bool
 	http       *http.Client
 }
+
+// isPage reports whether the run was told this action answers a page.
+func (s *suite) isPage(action string) bool { return slices.Contains(s.pages, action) }
 
 // Run runs every check against the authorizer at url, which requires the
 // bearer token, and fails t when any does not hold. It is the one call a
@@ -141,7 +171,10 @@ func (s *suite) refusesAnUnknownAction(t testing.TB) {
 }
 
 // deniesTheProbe: the reserved id is denied for every subject, the
-// anonymous one included, and every action, with a reason.
+// anonymous one included, and every action, with a reason. A page action
+// is no exception: an endpoint denies the probe before it routes, because
+// a page carries no verdict and a check command reads a probe that is not
+// denied as an endpoint that does not read the request.
 func (s *suite) deniesTheProbe(t testing.TB) {
 	t.Helper()
 	for _, subject := range append([]string{""}, s.subjects...) {
@@ -178,9 +211,11 @@ func (s *suite) refusesAWrongBearer(t testing.TB) {
 
 // answersAWellFormedRequest: a request from each subject for each action
 // on a fresh id is a 200 whose body has the contract's shape, and a deny
-// carries a reason. A list action is the exception: its answer is a page
-// with a shape of the core's own, which the contract does not fix, so the
-// check is the 200 alone.
+// carries a reason. An action WithPageActions named answers a page of the
+// core's own shape, which the contract fixes nothing about beyond the 200
+// and a JSON object. Told no page actions, the run accepts either shape
+// for an action whose verb is list — a body carrying allow is read as a
+// decision and checked as one — and requires a decision everywhere else.
 func (s *suite) answersAWellFormedRequest(t testing.TB) {
 	t.Helper()
 	for _, subject := range s.subjects {
@@ -198,10 +233,23 @@ func (s *suite) answersAWellFormedRequest(t testing.TB) {
 				t.Errorf("%s answered %d; a decision, allow or deny, is a 200", what, status)
 				continue
 			}
-			if authz.IsList(a.Name) {
-				continue
+			switch {
+			case s.pagesSet:
+				// The run was told which actions are pages, so each
+				// answer is held to the shape its action declares.
+				if s.isPage(a.Name) {
+					checkPage(t, what, raw)
+				} else {
+					checkShape(t, what, raw)
+				}
+			case authz.IsList(a.Name) && !carriesAllow(raw):
+				// Told none, a list that answers no verdict is the core's
+				// page; one that carries allow is a decision and is read
+				// as one.
+				checkPage(t, what, raw)
+			default:
+				checkShape(t, what, raw)
 			}
-			checkShape(t, what, raw)
 		}
 	}
 }
@@ -241,6 +289,29 @@ func (s *suite) post(t testing.TB, token string, req authz.Request, what string)
 		t.Fatalf("%s: reading the answer: %v", what, err)
 	}
 	return resp.StatusCode, raw
+}
+
+// checkPage reads a 200 body that is a page of the core's own shape. The
+// contract fixes no field of it: an endpoint answers a directory page, a
+// refusal in its own shape, or an object saying there is no directory. A
+// JSON object is all that is checked.
+func checkPage(t testing.TB, what string, raw []byte) {
+	t.Helper()
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		t.Errorf("%s: the body is not a JSON object: %v", what, err)
+	}
+}
+
+// carriesAllow reports whether a body is an object with an allow field,
+// which is a decision and is checked as one.
+func carriesAllow(raw []byte) bool {
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(raw, &obj) != nil {
+		return false
+	}
+	_, ok := obj["allow"]
+	return ok
 }
 
 // checkShape reads a 200 body against the contract: allow a boolean, ttl
