@@ -10,6 +10,50 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Fixed
+
+- `authz/server` routed every action whose name ends in `.list` to
+  `Options.Lister` and answered 400 where none was configured, so a core
+  whose list actions answer decisions could not use the scaffold without
+  a Lister that decides and renders. That rule was Origo's `repo.list` —
+  a directory page of repositories and a cursor — generalised from the
+  one core that has one. The contract's own rule is the opposite: a list
+  action answers a decision whose `Filter` narrows the core's list, which
+  is what Cella's five list actions and Lux's four do. The verb no longer
+  routes anything. Every action of the vocabulary reaches `Decider`, a
+  list included, and its decision is written as a decision, `filter` and
+  all; a page is what a core declares by name.
+- `server.Options.PageActions []string` is that declaration: the actions
+  whose answer is a page of the core's own shape. Each is routed to
+  `Options.Lister`, which is now required only when `PageActions` names
+  one. Origo keeps its directory with `PageActions: []string{"repo.list"}`;
+  a core whose lists are decisions sets neither field and drops the
+  Lister it only had to satisfy the routing. `New` panics on a
+  `PageActions` with no `Lister`, and on an entry the `Vocabulary` does
+  not name, beside the two wiring panics it already had.
+- `conformance.WithPageActions(actions ...string)` tells a run which
+  actions answer pages: those are checked for the 200 and a JSON object,
+  because the contract fixes no field of a body whose shape is the core's
+  own, and every other action is checked for a decision. A run that does
+  not call it accepts either shape for an action whose verb is list, so
+  an authorizer of either kind passes. `WithPageActions()` with no action
+  is a declaration too: every action, a list included, answers a
+  decision.
+
+### Changed
+
+- `authz.IsList` is a vocabulary helper and no longer a routing rule. It
+  still reports whether an action's verb is list, which the cores and the
+  conformance suite read; what an action answers is
+  `server.Options.PageActions`.
+- The `latere.authz.decisions` counter records `result=list` for an
+  action of `PageActions` alone. A list action that is decided is counted
+  `allow` or `deny` with its reason, like every other decision.
+- `stub.WithAction` is the stub's half of `PageActions`, and its
+  behaviour is unchanged: an action registered there answers a page, and
+  an action left unregistered answers from the rule table whatever its
+  verb, `Rule.Filter` included.
+
 ## v0.70.0 - 2026-09-16
 
 ### Added
