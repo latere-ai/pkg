@@ -94,6 +94,16 @@
 // bound, measured against this clock alone, nor a local token, stamped on
 // this clock already.
 //
+// # More than one issuer
+//
+// [Config.Issuers] is a list of issuer URLs to trust beside
+// [Config.Issuer]. A token's "iss" must name one of them; each issuer's key
+// set is discovered from the issuer itself, so no JWKS URL is configured
+// per issuer, and each answers for its own tokens alone. An "iss" naming
+// none of them is [ErrInvalidIssuer] before any key is read, because the
+// issuer is what selects the key set. With the list empty, Config.Issuer
+// decides alone against the one [Config.JWKSURL].
+//
 // # A local issuer
 //
 // [Config.LocalIssuer] is an issuer verified against a key the caller
@@ -261,6 +271,19 @@ type Config struct {
 	// "https://x/" are one issuer; the claim is handed back on [Claims]
 	// exactly as the token carried it.
 	Issuer string
+	// Issuers are further issuer URLs to trust, beside Issuer: a token's
+	// "iss" must name one of them, and each one's key set is discovered
+	// from the issuer itself, at
+	// "<issuer>/.well-known/openid-configuration", so no JWKS URL is
+	// configured per issuer. Issuer keeps its own JWKSURL and is trusted
+	// beside these. When this list is empty nothing changes: Issuer alone
+	// decides, against the one JWKSURL.
+	//
+	// With the list set, an "iss" naming none of the trusted issuers is
+	// [ErrInvalidIssuer] before any key is read, since the issuer is what
+	// selects the key set. Each issuer answers for its own tokens alone:
+	// trusting two issuers does not pool their keys.
+	Issuers []string
 	// Audiences is the set of acceptable "aud" values. Skipped if empty.
 	Audiences []string
 	// CacheTTL controls how long JWKS keys are cached. Defaults to 5 minutes.
@@ -329,6 +352,10 @@ const DefaultMaxTokenAge = 24 * time.Hour
 type Validator struct {
 	cfg   Config
 	cache *jwksCache
+	// issuers is the key set of each trusted issuer, by its trimmed URL,
+	// when Config.Issuers is configured. Empty otherwise, and Config.Issuer
+	// then decides alone against cache.
+	issuers map[string]*jwksCache
 	// local is the key set of Config.LocalIssuer: one key, or none when
 	// no local issuer is configured.
 	local []jwkEntry
@@ -350,10 +377,37 @@ func New(cfg Config) *Validator {
 		cache.get = cfg.HTTPClient.Get
 	}
 	return &Validator{
-		cfg:   cfg,
-		cache: cache,
-		local: localKeySet(cfg),
+		cfg:     cfg,
+		cache:   cache,
+		issuers: issuerKeySets(cfg, cache),
+		local:   localKeySet(cfg),
 	}
+}
+
+// issuerKeySets is one key set per trusted issuer, keyed by its trimmed
+// URL, or nil when Config.Issuers names none. An issuer on the list
+// discovers its own key set; Config.Issuer keeps the explicitly configured
+// JWKSURL, which wins for it even when the list names it too.
+func issuerKeySets(cfg Config, cache *jwksCache) map[string]*jwksCache {
+	if len(cfg.Issuers) == 0 {
+		return nil
+	}
+	var get func(string) (*http.Response, error)
+	if cfg.HTTPClient != nil {
+		get = cfg.HTTPClient.Get
+	}
+	sets := make(map[string]*jwksCache, len(cfg.Issuers)+1)
+	for _, iss := range cfg.Issuers {
+		key := trimIssuer(iss)
+		if key == "" || sets[key] != nil {
+			continue
+		}
+		sets[key] = &jwksCache{issuer: key, ttl: cfg.CacheTTL, get: get}
+	}
+	if cfg.Issuer != "" && cfg.JWKSURL != "" {
+		sets[trimIssuer(cfg.Issuer)] = cache
+	}
+	return sets
 }
 
 // localKeySet is the one-key set of Config.LocalIssuer, empty when none is
@@ -431,7 +485,7 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 	}
 
 	local := v.cfg.LocalIssuer != "" && sameIssuer(raw.Iss, v.cfg.LocalIssuer)
-	keys, err := v.keysFor(local, header.Kid)
+	keys, err := v.keysFor(local, raw.Iss, header.Kid)
 	if err != nil {
 		return nil, err
 	}
@@ -469,7 +523,7 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 
 	// Validate iss. A local token named its issuer to be routed there, so
 	// the Issuer of an issuer's tokens is not a second value it must carry.
-	if !local && v.cfg.Issuer != "" && !sameIssuer(raw.Iss, v.cfg.Issuer) {
+	if !local && len(v.issuers) == 0 && v.cfg.Issuer != "" && !sameIssuer(raw.Iss, v.cfg.Issuer) {
 		return nil, ErrInvalidIssuer
 	}
 
@@ -491,22 +545,32 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 // slashes are not part of the name: an issuer that publishes "https://x"
 // and stamps "https://x/" is one issuer, and no caller can reconcile that
 // from outside. Nothing else is normalised, so a path is still a path.
-func sameIssuer(a, b string) bool {
-	return strings.TrimRight(a, "/") == strings.TrimRight(b, "/")
-}
+func sameIssuer(a, b string) bool { return trimIssuer(a) == trimIssuer(b) }
+
+// trimIssuer is an issuer URL by the name it is matched under.
+func trimIssuer(s string) string { return strings.TrimRight(s, "/") }
 
 // keysFor is the set the token's signature is checked against: the local
 // key alone for a token of Config.LocalIssuer, which reaches no network,
 // and the issuer's set otherwise. A local token whose kid does not name the
 // local key is answered with an empty set, so it fails as a signature.
-func (v *Validator) keysFor(local bool, kid string) ([]jwkEntry, error) {
+func (v *Validator) keysFor(local bool, iss, kid string) ([]jwkEntry, error) {
 	if local {
 		if v.cfg.LocalKeyID != "" && kid != v.cfg.LocalKeyID {
 			return nil, nil
 		}
 		return v.local, nil
 	}
-	keys, err := v.cache.getKeysForKid(kid)
+	set := v.cache
+	if len(v.issuers) > 0 {
+		// The issuer selects the key set, so an issuer that is trusted by
+		// nothing is refused here rather than against another's keys.
+		set = v.issuers[trimIssuer(iss)]
+		if set == nil {
+			return nil, ErrInvalidIssuer
+		}
+	}
+	keys, err := set.getKeysForKid(kid)
 	if err != nil {
 		return nil, fmt.Errorf("authkit/jwt: fetch JWKS: %w", err)
 	}
@@ -700,7 +764,11 @@ func (k jwkEntry) verifies(alg string, digest, sig []byte) bool {
 const minForcedRefreshInterval = 15 * time.Second
 
 type jwksCache struct {
-	url        string
+	// url is the JWKS endpoint. Empty when the set was given an issuer to
+	// discover it from; the first fetch then resolves it and keeps it.
+	url string
+	// issuer is the trimmed issuer URL a discovered set belongs to.
+	issuer     string
 	ttl        time.Duration
 	get        func(string) (*http.Response, error)
 	mu         sync.Mutex // guards cachedAt, lastForced, keys; never held across I/O
@@ -765,7 +833,11 @@ func (c *jwksCache) load(force bool) ([]jwkEntry, error) {
 	if get == nil {
 		get = httpGet
 	}
-	resp, err := get(c.url)
+	url, err := c.resolve(get)
+	if err != nil {
+		return c.cachedOr(err)
+	}
+	resp, err := get(url)
 	if err != nil {
 		return c.cachedOr(err)
 	}
@@ -824,6 +896,49 @@ func (c *jwksCache) load(force bool) ([]jwkEntry, error) {
 	c.cachedAt = timeNow()
 	c.mu.Unlock()
 	return keys, nil
+}
+
+// resolve is the JWKS endpoint of this set: the configured one, or the
+// "jwks_uri" of the issuer's discovery document, read once and kept. It
+// runs under fetchMu, so one goroutine discovers and the rest read what it
+// found.
+func (c *jwksCache) resolve(get func(string) (*http.Response, error)) (string, error) {
+	c.mu.Lock()
+	url := c.url
+	c.mu.Unlock()
+	if url != "" {
+		return url, nil
+	}
+	if c.issuer == "" {
+		return "", errors.New("authkit/jwt: no JWKS URL and no issuer to discover one from")
+	}
+
+	resp, err := get(c.issuer + "/.well-known/openid-configuration")
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("authkit/jwt: discovery status %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	var doc struct {
+		JWKSURI string `json:"jwks_uri"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return "", err
+	}
+	if doc.JWKSURI == "" {
+		return "", fmt.Errorf("authkit/jwt: %s names no jwks_uri", c.issuer)
+	}
+
+	c.mu.Lock()
+	c.url = doc.JWKSURI
+	c.mu.Unlock()
+	return doc.JWKSURI, nil
 }
 
 // freshKeys returns the cached keys when they are still within TTL and force is

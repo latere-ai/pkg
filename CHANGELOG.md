@@ -10,6 +10,24 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `jwt.Config.Issuers []string` is a list of issuer URLs to trust beside
+  `Config.Issuer`, for a node whose deployment reads its trusted issuers as
+  a list. A token's `iss` must name one of them, trailing slashes aside.
+  Each issuer's key set is discovered from the issuer itself, at
+  `<issuer>/.well-known/openid-configuration`, so no JWKS URL is configured
+  per issuer, and each set is fetched and cached per issuer. Each issuer
+  answers for its own tokens alone: trusting two issuers does not pool
+  their keys, and a token naming one issuer and signed by another's key is
+  refused. `Config.Issuer` keeps its own `JWKSURL` and is trusted beside
+  the list; with the list empty nothing changes at all.
+
+  One order differs in this form, and only in it: an `iss` that names no
+  trusted issuer is refused as the issuer before the signature is weighed,
+  because the issuer is what selects the key set. The single-issuer form
+  still checks the signature first.
+
 ## v0.71.0 - 2026-09-16
 
 ### Added
