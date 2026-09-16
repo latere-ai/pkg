@@ -124,6 +124,7 @@ second service needed the same thing.
 | [`metrics`](metrics/) | Prometheus text-exposition registry with labeled counters, histograms, and scrape-time gauges, with no client-library dependency; initialize histogram series at zero without an observation |
 | [`ndjson`](ndjson/) | NDJSON file reading and appending, plus the terminal-result scan agent output parsers need |
 | [`pagination`](pagination/) | Cursor pagination helpers |
+| [`provenance`](provenance/) | Who the call is for, carried as W3C Baggage across every hop: the verified edge stamps `initiator.sub`, `initiator.iss` and `entry` once, downstream reads them for spans, log lines and audit records, and a hop that verifies the person again asserts they agree |
 | [`pubsub`](pubsub/) | In-process topic fanout with per-subscriber buffering |
 | [`ratelimit`](ratelimit/) | Keyed token buckets with refill, burst, rate overrides, retry delay, and safe idle eviction |
 | [`relpath`](relpath/) | Traversal-safe relative paths: validate, join under a base, and symlink-aware containment |

@@ -99,6 +99,24 @@ practice:
 Outbound HTTP follows the same rule: wrap `Transport` and build requests with
 `http.NewRequestWithContext`, otherwise the trace ends at the hop.
 
+## Who the call is for
+
+`Bootstrap` installs a composite `TraceContext` + `Baggage` propagator, so W3C
+Baggage rides every hop `Transport` makes and `Handler` receives. The producer
+is [`pkg/provenance`](../provenance): the first service that verifies a
+person's token calls `provenance.Stamp` once, and every service after it calls
+`provenance.From` and never sets.
+
+```go
+ctx = provenance.Stamp(ctx, id, issuer, "origo.latere.ai") // the edge, once
+logger.InfoContext(ctx, "clone", provenance.Attrs(ctx)...) // every hop after
+```
+
+`initiator.sub`, `initiator.iss` and `entry` name the person the call is for
+and the front door it came through, under the same three keys on a span, a log
+line and an audit record. They are unauthenticated metadata: they grant
+nothing, and a service still decides from the token it verified.
+
 ## Environment Variables
 
 | Variable | Description |
