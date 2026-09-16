@@ -17,7 +17,10 @@
 // The control API is HTTP as well as methods, so a stack run drives the
 // stub through a host port: PUT /rules, GET and DELETE /requests, PUT
 // /fail, POST /hang, POST /resume. A core adds an action with an answer
-// shape of its own through WithAction.
+// shape of its own through WithAction, which is the stub's half of
+// authz/server's Options.PageActions: an action registered there answers
+// a page and every other answers a decision from the rule table, a list
+// action included. The verb decides nothing.
 //
 // The outage modes are the forms of unavailability the contract names
 // (Lux spec 006): a status other than 200 (Fail), a 200 whose body is not
@@ -115,10 +118,17 @@ func WithVocabulary(v authz.Vocabulary) Option {
 	return func(s *Server) { s.vocabulary = v }
 }
 
-// WithAction registers an action whose 200 body is the core's own rather
-// than a decision. The rule table, the recording, and the outage modes
-// still apply: the answer is built only for a request that reached the
-// table, and never for the probe id, which is denied for every action.
+// WithAction registers an action whose 200 body is a page of the core's
+// own shape rather than a decision — the stub's half of authz/server's
+// Options.PageActions, and the one way an action here stops answering a
+// decision. An action left unregistered answers from the rule table
+// whatever its verb, so a list action answers the decision the table
+// names, Rule.Filter included, which is what a core whose lists are
+// decisions gets.
+//
+// The rule table, the recording, and the outage modes still apply: the
+// answer is built only for a request that reached the table, and never
+// for the probe id, which is denied for every action.
 func WithAction(action string, answer Answer) Option {
 	return func(s *Server) { s.actions[action] = answer }
 }
@@ -343,7 +353,8 @@ func (s *Server) decide(w http.ResponseWriter, r *http.Request) {
 	// that the reserved id is never allowed binds every action, and an
 	// action registered through WithAction answers a page that carries no
 	// verdict at all. The scaffold of latere.ai/x/pkg/authz/server denies
-	// it before it routes to a Lister for the same reason.
+	// it before it routes a PageActions to its Lister, for the same
+	// reason.
 	if answer != nil && !strings.EqualFold(req.Resource.ID, authz.ProbeID) {
 		writeJSON(w, answer(req))
 		return

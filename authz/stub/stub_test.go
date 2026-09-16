@@ -324,3 +324,31 @@ func TestTheProbeIsDeniedBeforeACoresOwnAnswer(t *testing.T) {
 		t.Fatalf("a real list answered %d %v; it is the core's page", status, out)
 	}
 }
+
+// TestAnUnregisteredListIsADecision: the verb is not the routing here
+// either. sandbox.list is registered through no WithAction, so it is
+// answered from the rule table like every other action, filter included,
+// which is the shape a core whose lists are decisions expects. The
+// registered repo.list beside it still answers its page.
+func TestAnUnregisteredListIsADecision(t *testing.T) {
+	s := stub.New(t, stub.WithAction("repo.list", func(authz.Request) any {
+		return map[string]any{"repos": []string{}, "next_cursor": "c2"}
+	}))
+	s.Allow(stub.Rule{Subject: "https://iss|alice", Action: "sandbox.list",
+		Filter: &authz.Filter{Owners: []string{"https://iss|alice"}, Labels: map[string]string{"team": "a"}}})
+	sandbox := `{"kind":"Sandbox"}`
+	status, out := call(t, s, s.Token(), body("https://iss|alice", "sandbox.list", sandbox))
+	if status != http.StatusOK || out["allow"] != true {
+		t.Fatalf("sandbox.list answered %d %v; an unregistered list is a decision", status, out)
+	}
+	filter, ok := out["filter"].(map[string]any)
+	if !ok {
+		t.Fatalf("the decision carries no filter: %v", out)
+	}
+	if owners, _ := filter["owners"].([]any); len(owners) != 1 || owners[0] != "https://iss|alice" {
+		t.Fatalf("filter = %v", filter)
+	}
+	if status, out := call(t, s, s.Token(), body("https://iss|alice", "repo.list", repoA)); status != http.StatusOK || out["next_cursor"] != "c2" {
+		t.Fatalf("repo.list answered %d %v; a registered action is the core's page", status, out)
+	}
+}
