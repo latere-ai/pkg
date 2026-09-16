@@ -23,6 +23,18 @@ under **Removed** or **Changed** with what to do about it.
   `Config.LocalIssuer`, which was stamped on this clock and has no second
   clock to reconcile.
 
+### Changed
+
+- An issuer's `iss` is compared with trailing slashes trimmed on both
+  sides, so an issuer that publishes `https://x` and stamps `https://x/`
+  is one issuer rather than two. A deployment could not reconcile that
+  from outside: the claim is the issuer's to stamp and the configuration
+  is the operator's to write. `Config.Issuer` and `Config.LocalIssuer` are
+  both matched this way, nothing else about the URL is normalised, and a
+  path is still a path, so `https://x/realm` is a different issuer.
+  `Claims.Iss` is unchanged: it is handed back exactly as the token
+  carried it.
+
 ### Added
 
 - `authkit/jwt` carries a reason table. Every refusal is a `*jwt.Error`

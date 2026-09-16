@@ -256,7 +256,10 @@ func ReasonOf(err error) Reason {
 type Config struct {
 	// JWKSURL is the JWKS endpoint, e.g. "https://auth.latere.ai/.well-known/jwks.json".
 	JWKSURL string
-	// Issuer is the expected "iss" claim. Skipped if empty.
+	// Issuer is the expected "iss" claim. Skipped if empty. Trailing
+	// slashes are not part of an issuer's name, so "https://x" and
+	// "https://x/" are one issuer; the claim is handed back on [Claims]
+	// exactly as the token carried it.
 	Issuer string
 	// Audiences is the set of acceptable "aud" values. Skipped if empty.
 	Audiences []string
@@ -284,8 +287,8 @@ type Config struct {
 	// fetch: the "iss" of the tokens the process mints for itself, and of
 	// a stub issuer a test stands up with no server. A token naming it is
 	// checked against LocalKey alone and is not checked against Issuer;
-	// every other token takes the JWKS path unchanged. The match is the
-	// exact string, as Issuer's is. Empty turns the mode off.
+	// every other token takes the JWKS path unchanged. It is matched like
+	// Issuer, trailing slashes aside. Empty turns the mode off.
 	LocalIssuer string
 	// LocalKey is the public half of the key LocalIssuer signs with, an
 	// *rsa.PublicKey or an *ecdsa.PublicKey on P-256. [New] panics when
@@ -427,7 +430,7 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 		return nil, ErrMalformedToken
 	}
 
-	local := v.cfg.LocalIssuer != "" && raw.Iss == v.cfg.LocalIssuer
+	local := v.cfg.LocalIssuer != "" && sameIssuer(raw.Iss, v.cfg.LocalIssuer)
 	keys, err := v.keysFor(local, header.Kid)
 	if err != nil {
 		return nil, err
@@ -466,7 +469,7 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 
 	// Validate iss. A local token named its issuer to be routed there, so
 	// the Issuer of an issuer's tokens is not a second value it must carry.
-	if !local && v.cfg.Issuer != "" && raw.Iss != v.cfg.Issuer {
+	if !local && v.cfg.Issuer != "" && !sameIssuer(raw.Iss, v.cfg.Issuer) {
 		return nil, ErrInvalidIssuer
 	}
 
@@ -482,6 +485,14 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 	}
 
 	return claimsFromRawPayload(raw), nil
+}
+
+// sameIssuer reports whether two issuer URLs name one issuer. Trailing
+// slashes are not part of the name: an issuer that publishes "https://x"
+// and stamps "https://x/" is one issuer, and no caller can reconcile that
+// from outside. Nothing else is normalised, so a path is still a path.
+func sameIssuer(a, b string) bool {
+	return strings.TrimRight(a, "/") == strings.TrimRight(b, "/")
 }
 
 // keysFor is the set the token's signature is checked against: the local
