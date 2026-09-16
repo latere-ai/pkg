@@ -10,6 +10,70 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `authz.Vocabulary`, a core's action table as data, read by the client,
+  the endpoint and the conformance suite instead of copied into each
+  (latere-ai/specs
+  `infrastructure/identity/id-11-one-authorizer-library.md`, design (c)).
+  A core declares `authz.NewVocabulary("origo", authz.Action{Name:
+  "repo.read", Kind: "Repository"}, ...)` once, in a package it publishes
+  at its module root, and gets `Known`, `Kind` and `Kinds` over it;
+  `NewVocabulary` refuses a table that is no map from action to kind, so
+  a duplicate name or a row with no kind is an error where the table is
+  written and never at run time. `authz.IsList` names the one action
+  whose answer is a page rather than a verdict. Set it as
+  `authz.Options.Vocabulary` and `Client.Authorize` refuses an action
+  outside it before the wire, as `*authz.UnknownAction` and never as an
+  `*Unavailable`: a typo in a core is caught by that core's own tests, it
+  is not retried, and no core fails closed on it. A client that sets none
+  behaves exactly as before.
+- `conformance.WithVocabulary(v)`, which drives a case per row of a
+  declared table rather than the rows somebody wrote out by hand, and
+  adds the one check a hand-written list cannot support: an action
+  outside the table answers 400 and never a deny. `WithActions` stays for
+  an endpoint that is not a core's, and a run that uses it is unchanged.
+  A list action's answer is a page of the core's own shape, so the check
+  there is the 200 alone.
+- `stub.WithVocabulary(v)`, so the stub authorizer a test tier runs
+  refuses an unknown action with the 400 the endpoint will, rather than
+  answering it from the rule table.
+- `authz/server`, the endpoint half of the contract, so an authorizer is
+  written once (same leaf, design (b)). `server.New(server.Options{...})`
+  is an `http.Handler` that owns the bearer — the current token or its
+  successor, compared in constant time, so a rotation is two deploys and
+  no outage — one body bound (`DefaultMaxBody`, 64 KiB, overridable), the
+  decode into `authz.Request`, the validation of the action and the
+  resource kind against the vocabulary, the probe rule, the failure
+  mapping and the `{result, reason}` counter. What you write is
+  `Decider.Decide(ctx, req) (authz.Decision, error)`, and
+  `server.ErrUnavailable` — or `server.Unavailable(reason)`, which names
+  the reason the 503 is counted with — for the answers your state cannot
+  give: no snapshot, a snapshot too stale for this action. The handler
+  renders it as the 503 a core reads as authorizer_unavailable and never
+  as an allow. `server.Lister` answers an action whose reply is a page of
+  your own shape; the handler writes what it returns and names nothing
+  about it. Two rules it owns rather than trusting a decider with: an
+  action outside the vocabulary is a 400, not a deny, and the reserved
+  probe id is denied before the routing, a list action included.
+  `conformance.Run` against a `server.New` over a four-line decider
+  passes every rule of the contract.
+
+### Changed
+
+- `conformance.Action` is an alias of `authz.Action` rather than a type
+  of its own, so a vocabulary declared once is passed to `WithActions`
+  unchanged. `go vet` now reports an unkeyed literal of it, because the
+  type is another package's: write `conformance.Action{Name: "repo.read",
+  Kind: "Repository"}` where you wrote `conformance.Action{"repo.read",
+  "Repository"}`. The fields, their order and the wire are unchanged.
+- The stub authorizer denies the reserved probe id before it builds an
+  answer registered with `stub.WithAction`. Such an answer is a page and
+  carries no verdict, and the rule that the probe is denied for every
+  subject and action binds every action. A test that asserted a page for
+  the probe id on a registered action now reads a deny; every other
+  request is answered as before.
+
 ## v0.69.0 - 2026-09-16
 
 ### Added
