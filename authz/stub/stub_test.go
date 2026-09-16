@@ -269,3 +269,58 @@ func TestBodyOutagesAreUnavailableToTheClient(t *testing.T) {
 		t.Fatalf("after an unknown mode: %d", status)
 	}
 }
+
+// TestVocabularyRefusesAnUnknownAction: told a core's table, the stub
+// answers a string outside it with a 400, the way the scaffold does, and
+// still records the request that arrived. A stub told no table answers
+// every action from the rule table, as before.
+func TestVocabularyRefusesAnUnknownAction(t *testing.T) {
+	v, err := authz.NewVocabulary("origo",
+		authz.Action{Name: "repo.read", Kind: "Repository"},
+		authz.Action{Name: "repo.list", Kind: "Repository"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name   string
+		opts   []stub.Option
+		action string
+		want   int
+	}{
+		{"an action of the table", []stub.Option{stub.WithVocabulary(v)}, "repo.read", http.StatusOK},
+		{"an action outside it", []stub.Option{stub.WithVocabulary(v)}, "repo.write", http.StatusBadRequest},
+		{"no table validates nothing", nil, "repo.write", http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := stub.New(t, tc.opts...)
+			status, _ := call(t, s, s.Token(), body("https://iss|alice", tc.action, repoA))
+			if status != tc.want {
+				t.Fatalf("%s answered %d; want %d", tc.action, status, tc.want)
+			}
+			if reqs := s.Requests(); len(reqs) != 1 || reqs[0].Action != tc.action {
+				t.Fatalf("Requests = %+v; a request that arrived is recorded whatever the answer", reqs)
+			}
+		})
+	}
+}
+
+// TestTheProbeIsDeniedBeforeACoresOwnAnswer: an action registered through
+// WithAction answers a page that carries no verdict, so the reserved id
+// must not reach it — the rule binds every action.
+func TestTheProbeIsDeniedBeforeACoresOwnAnswer(t *testing.T) {
+	s := stub.New(t, stub.WithAction("repo.list", func(authz.Request) any {
+		return map[string]any{"repos": []string{}}
+	}))
+	probe := `{"kind":"Repository","id":"` + authz.ProbeID + `"}`
+	status, out := call(t, s, s.Token(), body("https://iss|alice", "repo.list", probe))
+	if status != http.StatusOK || out["allow"] != false {
+		t.Fatalf("the probe on a registered action answered %d %v; it is denied", status, out)
+	}
+	if _, page := out["repos"]; page {
+		t.Fatalf("the probe was answered with a page: %v", out)
+	}
+	status, out = call(t, s, s.Token(), body("https://iss|alice", "repo.list", repoA))
+	if status != http.StatusOK || out["repos"] == nil {
+		t.Fatalf("a real list answered %d %v; it is the core's page", status, out)
+	}
+}

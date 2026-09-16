@@ -383,3 +383,76 @@ func (t *handlerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	t.h.ServeHTTP(rec, r)
 	return rec.Result(), nil
 }
+
+// TestAnUnknownActionNeverReachesTheWire: with a vocabulary configured,
+// an action outside it is refused before the call, as an *UnknownAction
+// and never an *Unavailable, so a core tells its own typo from an
+// authorizer that is down.
+func TestAnUnknownActionNeverReachesTheWire(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		_, _ = io.WriteString(w, `{"allow": true}`)
+	}))
+	t.Cleanup(srv.Close)
+	vocabulary, err := authz.NewVocabulary("origo",
+		authz.Action{Name: "repo.read", Kind: "Repository"},
+		authz.Action{Name: "repo.write", Kind: "Repository"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name       string
+		vocabulary authz.Vocabulary
+		action     string
+		refused    bool
+	}{
+		{"an action of the table", vocabulary, "repo.read", false},
+		{"a typo", vocabulary, "repo.raed", true},
+		{"the empty action", vocabulary, "", true},
+		{"no vocabulary validates nothing", authz.Vocabulary{}, "repo.raed", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls = 0
+			var observed int
+			c, err := authz.NewClient(authz.Options{URL: srv.URL, HTTP: srv.Client(), Vocabulary: tc.vocabulary,
+				Observe: func(string, float64) { observed++ }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = c.Authorize(t.Context(), authz.Request{Action: tc.action, Resource: authz.NewResource("Repository", "r1", nil)})
+			if !tc.refused {
+				if err != nil {
+					t.Fatalf("Authorize = %v; the action is answered", err)
+				}
+				if calls != 1 {
+					t.Fatalf("the endpoint saw %d calls; want 1", calls)
+				}
+				return
+			}
+			var unknown *authz.UnknownAction
+			if !errors.As(err, &unknown) {
+				t.Fatalf("Authorize = %v; want an *UnknownAction", err)
+			}
+			if unknown.Core != "origo" || unknown.Action != tc.action {
+				t.Fatalf("UnknownAction = %+v", unknown)
+			}
+			if !strings.Contains(unknown.Error(), "origo") {
+				t.Fatalf("the message does not name the core: %q", unknown.Error())
+			}
+			var unavailable *authz.Unavailable
+			if errors.As(err, &unavailable) {
+				t.Fatal("a typo reads as an outage; a core would fail closed on its own mistake")
+			}
+			if authz.Retryable(err) {
+				t.Fatal("a typo is retryable")
+			}
+			if calls != 0 || observed != 0 {
+				t.Fatalf("the endpoint saw %d calls and the metric %d results; the request never leaves", calls, observed)
+			}
+			if c.CacheLen() != 0 {
+				t.Fatalf("a refused action reached the cache")
+			}
+		})
+	}
+}

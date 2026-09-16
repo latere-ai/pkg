@@ -22,7 +22,8 @@
 // when present owners and labels, and a deny carrying a reason. The
 // subjects and the action vocabulary have defaults an authorizer that
 // reads the request answers; a core names its own with WithSubjects and
-// WithActions.
+// WithVocabulary, which drives a case per row of the core's declared
+// table and adds the check that an action outside it is refused.
 package conformance
 
 import (
@@ -40,20 +41,28 @@ import (
 	"latere.ai/x/pkg/otel"
 )
 
-// Action is one entry of a core's vocabulary: the action name and the
-// resource kind it acts on.
-type Action struct {
-	Name string
-	Kind string
-}
+// Action is one entry of a core's vocabulary, latere.ai/x/pkg/authz's
+// type: the action name and the resource kind it acts on.
+type Action = authz.Action
 
 // Option configures a run.
 type Option func(*suite)
 
-// WithActions names the vocabulary the checks send. The default is two
-// actions on one kind an authorizer that reads the request answers.
+// WithActions names the actions the checks send, for an endpoint that is
+// not a core's and declares no table. The default is two actions on one
+// kind an authorizer that reads the request answers. A core passes
+// WithVocabulary instead.
 func WithActions(actions ...Action) Option {
-	return func(s *suite) { s.actions = actions }
+	return func(s *suite) { s.actions, s.vocabulary = actions, authz.Vocabulary{} }
+}
+
+// WithVocabulary drives the checks from a core's declared table: a case
+// per row, so the run covers the whole vocabulary rather than the rows
+// somebody wrote out by hand. It also turns on the check that an action
+// outside the table is refused with a 400, which only a complete table
+// makes meaningful.
+func WithVocabulary(v authz.Vocabulary) Option {
+	return func(s *suite) { s.actions, s.vocabulary = v.Actions, v }
 }
 
 // WithSubjects names the rendered subjects the checks send. The anonymous
@@ -71,13 +80,14 @@ func WithHTTPClient(c *http.Client) Option {
 
 // The defaults a run sends when a core names none.
 var (
-	defaultActions  = []Action{{"resource.read", "Resource"}, {"resource.write", "Resource"}}
+	defaultActions  = []Action{{Name: "resource.read", Kind: "Resource"}, {Name: "resource.write", Kind: "Resource"}}
 	defaultSubjects = []string{"https://issuer.example|alice", "https://issuer.example|bob"}
 )
 
 type suite struct {
 	url, token string
 	actions    []Action
+	vocabulary authz.Vocabulary
 	subjects   []string
 	http       *http.Client
 }
@@ -101,7 +111,33 @@ func Run(t testing.TB, url, token string, opts ...Option) {
 	}
 	s.deniesTheProbe(t)
 	s.refusesAWrongBearer(t)
+	s.refusesAnUnknownAction(t)
 	s.answersAWellFormedRequest(t)
+}
+
+// refusesAnUnknownAction: an action the core's table does not name is a
+// malformed request and answers 400, not a deny. A reason is for a
+// decision a core can act on, and there is no decision to be had about a
+// string the vocabulary does not carry. The check runs only under
+// WithVocabulary: with a hand-written list the suite cannot tell an
+// action the core omitted from one it does not have.
+func (s *suite) refusesAnUnknownAction(t testing.TB) {
+	t.Helper()
+	if len(s.vocabulary.Actions) == 0 {
+		return
+	}
+	action := "conformance.unknown." + freshID()
+	req := authz.Request{
+		Action:   action,
+		Resource: authz.NewResource(s.actions[0].Kind, freshID(), map[string]any{}),
+		Request:  authz.Caller{ID: "conformance-" + freshID(), IP: "203.0.113.4", UserAgent: "authz/conformance"},
+		Claims:   map[string]any{},
+	}
+	setSubject(&req, s.subjects[0])
+	what := fmt.Sprintf("the unknown action %q", action)
+	if status, _ := s.post(t, s.token, req, what); status != http.StatusBadRequest {
+		t.Errorf("%s answered %d; an action outside %s's vocabulary is a malformed request and answers 400, never a deny", what, status, s.vocabulary.Core)
+	}
 }
 
 // deniesTheProbe: the reserved id is denied for every subject, the
@@ -142,7 +178,9 @@ func (s *suite) refusesAWrongBearer(t testing.TB) {
 
 // answersAWellFormedRequest: a request from each subject for each action
 // on a fresh id is a 200 whose body has the contract's shape, and a deny
-// carries a reason.
+// carries a reason. A list action is the exception: its answer is a page
+// with a shape of the core's own, which the contract does not fix, so the
+// check is the 200 alone.
 func (s *suite) answersAWellFormedRequest(t testing.TB) {
 	t.Helper()
 	for _, subject := range s.subjects {
@@ -158,6 +196,9 @@ func (s *suite) answersAWellFormedRequest(t testing.TB) {
 			status, raw := s.post(t, s.token, req, what)
 			if status != http.StatusOK {
 				t.Errorf("%s answered %d; a decision, allow or deny, is a 200", what, status)
+				continue
+			}
+			if authz.IsList(a.Name) {
 				continue
 			}
 			checkShape(t, what, raw)

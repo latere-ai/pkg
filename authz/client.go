@@ -59,6 +59,25 @@ type Options struct {
 	// Observe receives every call's result, allow, deny, or error, and
 	// its duration in seconds, for the core's metric. Optional.
 	Observe func(result string, seconds float64)
+	// Vocabulary is the core's action table. When it names an action,
+	// Authorize refuses one outside it before the wire, so a typo is
+	// caught by a core's own tests rather than by a round trip in
+	// production. Optional: the zero vocabulary validates nothing, which
+	// is how a client with no table declared behaves.
+	Vocabulary Vocabulary
+}
+
+// UnknownAction is a request whose action the client's vocabulary does
+// not name. It is a mistake in the core, not an outage at the endpoint:
+// it is no *Unavailable, [Retryable] reports false for it, and no call
+// was made.
+type UnknownAction struct {
+	Core   string
+	Action string
+}
+
+func (e *UnknownAction) Error() string {
+	return fmt.Sprintf("authz: %q is not one of %s's actions", e.Action, e.Core)
 }
 
 // Client is the authorizer client: one call per decision, one retry when
@@ -71,6 +90,7 @@ type Client struct {
 	timeout time.Duration
 	now     func() time.Time
 	observe func(string, float64)
+	vocab   Vocabulary
 	cache   *cache.TTLCache[cacheKey, cached]
 }
 
@@ -91,7 +111,7 @@ func NewClient(o Options) (*Client, error) {
 	if o.URL == "" {
 		return nil, errors.New("authz: the client needs a URL")
 	}
-	c := &Client{url: o.URL, token: o.Token, http: o.HTTP, timeout: o.Timeout, now: o.Now, observe: o.Observe}
+	c := &Client{url: o.URL, token: o.Token, http: o.HTTP, timeout: o.Timeout, now: o.Now, observe: o.Observe, vocab: o.Vocabulary}
 	if c.timeout == 0 {
 		c.timeout = Timeout
 	}
@@ -112,7 +132,16 @@ func (c *Client) URL() string { return c.url }
 // cached for its ttl, a deny for DenyTTL, an unavailable answer never. An
 // answer about a resource with no id is never cached: it is a creation or
 // an unresolved name, and neither names a key to remember it by.
+//
+// An action outside the configured vocabulary is an *UnknownAction before
+// anything is sent, read from the cache, or observed. [Client.Ask] does
+// not validate: it carries the actions whose answer is the core's own,
+// and a core that wants them checked names them in the vocabulary and
+// asks through Authorize.
 func (c *Client) Authorize(ctx context.Context, req Request) (Decision, error) {
+	if len(c.vocab.Actions) > 0 && !c.vocab.Known(req.Action) {
+		return Decision{}, &UnknownAction{Core: c.vocab.Core, Action: req.Action}
+	}
 	key := cacheKey{req.Subject, req.Action, req.Resource.ID}
 	now := c.now()
 	if req.Resource.ID != "" {

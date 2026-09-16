@@ -10,6 +10,10 @@
 // probe id is denied for every subject and action, because a core's check
 // command treats an allow on it as a misconfigured authorizer.
 //
+// Told a core's vocabulary through WithVocabulary, the stub refuses an
+// action outside it with a 400, the one answer the contract gives an
+// unknown action.
+//
 // The control API is HTTP as well as methods, so a stack run drives the
 // stub through a host port: PUT /rules, GET and DELETE /requests, PUT
 // /fail, POST /hang, POST /resume. A core adds an action with an answer
@@ -103,29 +107,38 @@ func WithResourceName(name func(authz.Resource) string) Option {
 	return func(s *Server) { s.name = name }
 }
 
+// WithVocabulary gives the stub the core's action table, so an action
+// outside it is refused with a 400 the way latere.ai/x/pkg/authz/server
+// refuses one, rather than answered from the rule table. A stub told no
+// vocabulary answers every action, which is how it behaved before.
+func WithVocabulary(v authz.Vocabulary) Option {
+	return func(s *Server) { s.vocabulary = v }
+}
+
 // WithAction registers an action whose 200 body is the core's own rather
 // than a decision. The rule table, the recording, and the outage modes
 // still apply: the answer is built only for a request that reached the
-// table.
+// table, and never for the probe id, which is denied for every action.
 func WithAction(action string, answer Answer) Option {
 	return func(s *Server) { s.actions[action] = answer }
 }
 
 // Server is one stub authorizer.
 type Server struct {
-	mu       sync.Mutex
-	token    string
-	allow    []string
-	name     func(authz.Resource) string
-	actions  map[string]Answer
-	rules    []Rule
-	requests []authz.Request
-	fail     int
-	failBody Body
-	hung     chan struct{}
-	closed   chan struct{}
-	srv      *httptest.Server
-	mux      *http.ServeMux
+	mu         sync.Mutex
+	token      string
+	allow      []string
+	name       func(authz.Resource) string
+	vocabulary authz.Vocabulary
+	actions    map[string]Answer
+	rules      []Rule
+	requests   []authz.Request
+	fail       int
+	failBody   Body
+	hung       chan struct{}
+	closed     chan struct{}
+	srv        *httptest.Server
+	mux        *http.ServeMux
 }
 
 // New starts a stub for the test and stops it with the test.
@@ -299,8 +312,16 @@ func (s *Server) decide(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	s.requests = append(s.requests, req)
-	fail, failBody, hung, answer := s.fail, s.failBody, s.hung, s.actions[req.Action]
+	fail, failBody, hung, answer, vocabulary := s.fail, s.failBody, s.hung, s.actions[req.Action], s.vocabulary
 	s.mu.Unlock()
+	// Validation precedes the outage modes, the way the scaffold validates
+	// before it reaches a decider: a request the endpoint refuses to read
+	// is refused whatever else is in force. It is recorded first, so
+	// Requests still lists every request that arrived.
+	if len(vocabulary.Actions) > 0 && !vocabulary.Known(req.Action) {
+		http.Error(w, req.Action+" is not one of "+vocabulary.Core+"'s actions", http.StatusBadRequest)
+		return
+	}
 	if hung != nil {
 		select {
 		case <-hung:
@@ -318,7 +339,12 @@ func (s *Server) decide(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, bodies[failBody])
 		return
 	}
-	if answer != nil {
+	// The probe is denied before a core's own answer is built: the rule
+	// that the reserved id is never allowed binds every action, and an
+	// action registered through WithAction answers a page that carries no
+	// verdict at all. The scaffold of latere.ai/x/pkg/authz/server denies
+	// it before it routes to a Lister for the same reason.
+	if answer != nil && !strings.EqualFold(req.Resource.ID, authz.ProbeID) {
 		writeJSON(w, answer(req))
 		return
 	}

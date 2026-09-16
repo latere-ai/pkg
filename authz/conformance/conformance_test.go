@@ -27,7 +27,7 @@ func TestTheStubConforms(t *testing.T) {
 	Run(t, s.URL(), "secret")
 	// A core's own vocabulary and subjects.
 	Run(t, s.URL(), "secret",
-		WithActions(Action{"model.use", "Model"}, Action{"key.create", "Key"}),
+		WithActions(Action{Name: "model.use", Kind: "Model"}, Action{Name: "key.create", Kind: "Key"}),
 		WithSubjects("https://auth.latere.ai|0f5c1d2e"),
 		WithHTTPClient(&http.Client{}))
 }
@@ -189,4 +189,77 @@ func mentions(failures []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// theVocabulary is a four-row table with a list action, the shape Origo
+// spec 028 declares.
+func theVocabulary(t *testing.T) authz.Vocabulary {
+	t.Helper()
+	v, err := authz.NewVocabulary("origo",
+		authz.Action{Name: "repo.read", Kind: "Repository"},
+		authz.Action{Name: "repo.write", Kind: "Repository"},
+		authz.Action{Name: "repo.admin", Kind: "Repository"},
+		authz.Action{Name: "repo.list", Kind: "Repository"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+// TestWithVocabularyDrivesTheWholeTable: the run covers a case per row,
+// answers a list action's page without asking it to be a decision, and
+// adds the check that an action outside the table is a 400.
+func TestWithVocabularyDrivesTheWholeTable(t *testing.T) {
+	v := theVocabulary(t)
+	s := stub.New(t, stub.WithToken("secret"), stub.WithVocabulary(v),
+		stub.WithAction("repo.list", func(authz.Request) any {
+			return map[string]any{"repos": []any{}, "next_cursor": ""}
+		}))
+	if failures := run(t, s.URL(), "secret", WithVocabulary(v)); len(failures) != 0 {
+		t.Fatalf("the stub under its own vocabulary failed: %q", failures)
+	}
+	seen := map[string]int{}
+	for _, req := range s.Requests() {
+		seen[req.Action]++
+	}
+	for _, a := range v.Actions {
+		if seen[a.Name] == 0 {
+			t.Fatalf("no case sent %q; WithVocabulary drives every row: %v", a.Name, seen)
+		}
+	}
+	if seen["repo.list"] < 2 {
+		t.Fatalf("the list action was sent %d times; the probe and a well-formed request both carry it", seen["repo.list"])
+	}
+}
+
+// TestAnUnknownActionMustBeRefused: an endpoint that answers a string
+// outside the table with a deny fails the run, and the check is silent
+// without a vocabulary, where the suite cannot know the table is whole.
+func TestAnUnknownActionMustBeRefused(t *testing.T) {
+	v := theVocabulary(t)
+	lenient := stub.New(t, stub.WithToken("secret"),
+		stub.WithAction("repo.list", func(authz.Request) any { return map[string]any{"repos": []any{}} }))
+	failures := run(t, lenient.URL(), "secret", WithVocabulary(v))
+	if !mentions(failures, "is a malformed request and answers 400, never a deny") {
+		t.Fatalf("an endpoint that decides about an unknown action passed: %q", failures)
+	}
+	if !mentions(failures, "origo") {
+		t.Fatalf("the failure does not name the core: %q", failures)
+	}
+	if failures := run(t, lenient.URL(), "secret",
+		WithActions(Action{Name: "repo.read", Kind: "Repository"})); len(failures) != 0 {
+		t.Fatalf("WithActions ran the unknown-action check: %q", failures)
+	}
+}
+
+// TestWithActionsAfterWithVocabularyDropsTheTable: the last option wins,
+// so a caller that narrows to a hand-written list also drops the check
+// that list cannot support.
+func TestWithActionsAfterWithVocabularyDropsTheTable(t *testing.T) {
+	lenient := stub.New(t, stub.WithToken("secret"))
+	if failures := run(t, lenient.URL(), "secret",
+		WithVocabulary(theVocabulary(t)),
+		WithActions(Action{Name: "repo.read", Kind: "Repository"})); len(failures) != 0 {
+		t.Fatalf("the narrowed run failed: %q", failures)
+	}
 }
