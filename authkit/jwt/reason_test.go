@@ -6,6 +6,7 @@ package jwt
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -54,6 +55,10 @@ func TestReasonOfNamesEveryRefusal(t *testing.T) {
 			name: "bad issuer", want: ReasonBadIssuer, wire: "issuer", sen: ErrInvalidIssuer,
 			token: token(func(p map[string]any) { p["iss"] = "https://elsewhere.example" }),
 			opts:  []func(*Config){func(c *Config) { c.Issuer = "https://auth.latere.ai" }},
+		},
+		{
+			name: "too large", want: ReasonTooLarge, wire: "size", sen: ErrTokenTooLarge,
+			token: token(func(p map[string]any) { p["filler"] = strings.Repeat("x", DefaultMaxTokenBytes) }),
 		},
 		{
 			name: "malformed", want: ReasonMalformed, wire: "malformed", sen: ErrMalformedToken,

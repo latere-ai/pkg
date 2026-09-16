@@ -184,6 +184,7 @@ var (
 	// no key of the set can answer, which the caller learns as a signature
 	// that did not check out. It is a row of its own only in Go.
 	ErrUnsupportedAlg = refusal(ReasonBadSignature, "authkit/jwt: unsupported algorithm")
+	ErrTokenTooLarge  = refusal(ReasonTooLarge, "authkit/jwt: token too large")
 )
 
 // ReasonOf reports the table row err belongs to, reading through any number
@@ -211,7 +212,17 @@ type Config struct {
 	// HTTPClient fetches JWKS documents. Defaults to a client with a 10-second
 	// timeout. Supply it for custom trust roots, proxies, or mTLS.
 	HTTPClient *http.Client
+	// MaxTokenBytes is the size above which a token is [ErrTokenTooLarge],
+	// refused before it is parsed. Zero is [DefaultMaxTokenBytes]; a
+	// negative value is no bound, for a caller whose tokens are larger.
+	MaxTokenBytes int
 }
+
+// DefaultMaxTokenBytes is the size bound a caller that configures none
+// gets. A bearer token is a credential, not a document: 8 KiB is past
+// every token the family's issuers mint and short of a payload worth
+// parsing to reject.
+const DefaultMaxTokenBytes = 8 << 10
 
 // Validator validates RS256 and ES256 JWTs using keys fetched from a JWKS
 // endpoint.
@@ -224,6 +235,9 @@ type Validator struct {
 func New(cfg Config) *Validator {
 	if cfg.CacheTTL == 0 {
 		cfg.CacheTTL = 5 * time.Minute
+	}
+	if cfg.MaxTokenBytes == 0 {
+		cfg.MaxTokenBytes = DefaultMaxTokenBytes
 	}
 	cache := &jwksCache{url: cfg.JWKSURL, ttl: cfg.CacheTTL}
 	if cfg.HTTPClient != nil {
@@ -248,6 +262,10 @@ var timeNow = time.Now
 
 // Validate parses and validates a raw JWT string.
 func (v *Validator) Validate(rawToken string) (*Claims, error) {
+	if v.cfg.MaxTokenBytes > 0 && len(rawToken) > v.cfg.MaxTokenBytes {
+		return nil, ErrTokenTooLarge
+	}
+
 	parts := strings.Split(rawToken, ".")
 	if len(parts) != 3 {
 		return nil, ErrMalformedToken
