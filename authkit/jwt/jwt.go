@@ -228,6 +228,22 @@ type Config struct {
 	// that a token with no age cannot slip past MaxTokenAge. Off by
 	// default: an issuer that stamps only "sub" still verifies.
 	RequireIssuedAt bool
+	// LocalIssuer is an issuer verified against LocalKey with no JWKS
+	// fetch: the "iss" of the tokens the process mints for itself, and of
+	// a stub issuer a test stands up with no server. A token naming it is
+	// checked against LocalKey alone and is not checked against Issuer;
+	// every other token takes the JWKS path unchanged. The match is the
+	// exact string, as Issuer's is. Empty turns the mode off.
+	LocalIssuer string
+	// LocalKey is the public half of the key LocalIssuer signs with, an
+	// *rsa.PublicKey or an *ecdsa.PublicKey on P-256. [New] panics when
+	// LocalIssuer is set without one: a local issuer with no key would
+	// refuse every one of its tokens as a bad signature, which is a wiring
+	// mistake and not a verdict.
+	LocalKey crypto.PublicKey
+	// LocalKeyID is the "kid" a token of LocalIssuer must name. Empty
+	// accepts any kid, since the set holds one key either way.
+	LocalKeyID string
 }
 
 // DefaultMaxTokenBytes is the size bound a caller that configures none
@@ -243,10 +259,14 @@ const DefaultMaxTokenBytes = 8 << 10
 const DefaultMaxTokenAge = 24 * time.Hour
 
 // Validator validates RS256 and ES256 JWTs using keys fetched from a JWKS
-// endpoint.
+// endpoint, and the tokens of [Config.LocalIssuer] against the key it was
+// configured with.
 type Validator struct {
 	cfg   Config
 	cache *jwksCache
+	// local is the key set of Config.LocalIssuer: one key, or none when
+	// no local issuer is configured.
+	local []jwkEntry
 }
 
 // New creates a Validator.
@@ -267,7 +287,27 @@ func New(cfg Config) *Validator {
 	return &Validator{
 		cfg:   cfg,
 		cache: cache,
+		local: localKeySet(cfg),
 	}
+}
+
+// localKeySet is the one-key set of Config.LocalIssuer, empty when none is
+// configured. It panics on a local issuer whose key is missing or of a kind
+// no algorithm here verifies with.
+func localKeySet(cfg Config) []jwkEntry {
+	if cfg.LocalIssuer == "" {
+		return nil
+	}
+	e := jwkEntry{kid: cfg.LocalKeyID}
+	switch k := cfg.LocalKey.(type) {
+	case *rsa.PublicKey:
+		e.rsa = k
+	case *ecdsa.PublicKey:
+		e.ec = k
+	default:
+		panic("authkit/jwt: Config.LocalIssuer needs a LocalKey of *rsa.PublicKey or *ecdsa.PublicKey")
+	}
+	return []jwkEntry{e}
 }
 
 // ── Package-level vars for testability ──────────────────────────────────────
@@ -314,19 +354,8 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 		return nil, ErrMalformedToken
 	}
 
-	keys, err := v.cache.getKeysForKid(header.Kid)
-	if err != nil {
-		return nil, fmt.Errorf("authkit/jwt: fetch JWKS: %w", err)
-	}
-
-	sigInput := parts[0] + "." + parts[1]
-	digest := hashSHA256([]byte(sigInput))
-
-	if !verifySignature(keys, header.Kid, header.Alg, digest, sig) {
-		return nil, ErrInvalidSignature
-	}
-
-	// Decode payload.
+	// Decode the payload: the issuer it names selects the keys, the local
+	// set or the issuer's.
 	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
 		return nil, ErrMalformedToken
@@ -334,6 +363,19 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 	var raw rawPayload
 	if err := json.Unmarshal(payloadBytes, &raw); err != nil {
 		return nil, ErrMalformedToken
+	}
+
+	local := v.cfg.LocalIssuer != "" && raw.Iss == v.cfg.LocalIssuer
+	keys, err := v.keysFor(local, header.Kid)
+	if err != nil {
+		return nil, err
+	}
+
+	sigInput := parts[0] + "." + parts[1]
+	digest := hashSHA256([]byte(sigInput))
+
+	if !verifySignature(keys, header.Kid, header.Alg, digest, sig) {
+		return nil, ErrInvalidSignature
 	}
 
 	// Validate exp.
@@ -354,8 +396,9 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 		return nil, err
 	}
 
-	// Validate iss.
-	if v.cfg.Issuer != "" && raw.Iss != v.cfg.Issuer {
+	// Validate iss. A local token named its issuer to be routed there, so
+	// the Issuer of an issuer's tokens is not a second value it must carry.
+	if !local && v.cfg.Issuer != "" && raw.Iss != v.cfg.Issuer {
 		return nil, ErrInvalidIssuer
 	}
 
@@ -371,6 +414,24 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 	}
 
 	return claimsFromRawPayload(raw), nil
+}
+
+// keysFor is the set the token's signature is checked against: the local
+// key alone for a token of Config.LocalIssuer, which reaches no network,
+// and the issuer's set otherwise. A local token whose kid does not name the
+// local key is answered with an empty set, so it fails as a signature.
+func (v *Validator) keysFor(local bool, kid string) ([]jwkEntry, error) {
+	if local {
+		if v.cfg.LocalKeyID != "" && kid != v.cfg.LocalKeyID {
+			return nil, nil
+		}
+		return v.local, nil
+	}
+	keys, err := v.cache.getKeysForKid(kid)
+	if err != nil {
+		return nil, fmt.Errorf("authkit/jwt: fetch JWKS: %w", err)
+	}
+	return keys, nil
 }
 
 // validateAge checks the age the "iat" claim gives the token: none when the
