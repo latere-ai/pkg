@@ -27,6 +27,16 @@ under **Removed** or **Changed** with what to do about it.
   trusted issuer is refused as the issuer before the signature is weighed,
   because the issuer is what selects the key set. The single-issuer form
   still checks the signature first.
+- `jwt.Config.LocalKeys []jwt.LocalKey`, each a `{KeyID, Key}`, holds more
+  than one key for `Config.LocalIssuer`. That is what a rotation needs: the
+  newer key signs while the older still verifies, so tokens minted before
+  the rotation are read until they expire rather than refused the moment
+  the key changes. A token's `kid` selects the key that must verify it, so
+  a kid the set does not hold is refused rather than tried against every
+  key the node holds; a key that declares no `KeyID` answers whatever kid a
+  token names, as the one-key form does. `Config.LocalKey` and
+  `Config.LocalKeyID` are that one-key form, unchanged, and the two may be
+  given together.
 
 ## v0.71.0 - 2026-09-16
 

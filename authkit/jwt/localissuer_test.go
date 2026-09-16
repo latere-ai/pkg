@@ -180,3 +180,122 @@ func TestLocalIssuerUnsetChangesNothing(t *testing.T) {
 		t.Fatalf("err = %v, want ErrInvalidIssuer", err)
 	}
 }
+
+// TestLocalKeysHoldARotation: a rotation holds two keys at once, the newer
+// signing and the older still verifying, so tokens minted before the
+// rotation are read until they expire. A kid that names neither is refused.
+func TestLocalKeysHoldARotation(t *testing.T) {
+	remote := genKey(t)
+	var hits atomic.Int64
+	srv := countingJWKS(t, remote, &hits)
+	older, newer := localKey(t), localKey(t)
+	v := New(Config{
+		JWKSURL: srv.URL, CacheTTL: time.Hour, LocalIssuer: localIssuer,
+		LocalKeys: []LocalKey{{KeyID: "old", Key: &older.PublicKey}, {KeyID: "new", Key: &newer.PublicKey}},
+	})
+
+	for _, tc := range []struct {
+		name string
+		key  *ecdsa.PrivateKey
+		kid  string
+	}{
+		{"the key that signs now", newer, "new"},
+		{"the key it replaced", older, "old"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := v.Validate(localToken(t, tc.key, tc.kid)); err != nil {
+				t.Fatalf("a token under %q was refused: %v", tc.kid, err)
+			}
+		})
+	}
+
+	for _, tc := range []struct {
+		name  string
+		token string
+	}{
+		{"a kid naming neither key", localToken(t, newer, "third")},
+		{"the older key under the newer kid", localToken(t, older, "new")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := v.Validate(tc.token); !errors.Is(err, ErrInvalidSignature) {
+				t.Fatalf("err = %v, want ErrInvalidSignature", err)
+			}
+		})
+	}
+	if n := hits.Load(); n != 0 {
+		t.Fatalf("a local token fetched the key set %d times", n)
+	}
+}
+
+// TestLocalKeysBesideTheOneKeyForm: LocalKey and LocalKeyID are the
+// one-key form of the same set, and the two may be given together.
+func TestLocalKeysBesideTheOneKeyForm(t *testing.T) {
+	remote := genKey(t)
+	var hits atomic.Int64
+	srv := countingJWKS(t, remote, &hits)
+	one, two := localKey(t), localKey(t)
+	v := New(Config{
+		JWKSURL: srv.URL, CacheTTL: time.Hour, LocalIssuer: localIssuer,
+		LocalKey: &one.PublicKey, LocalKeyID: "one",
+		LocalKeys: []LocalKey{{KeyID: "two", Key: &two.PublicKey}},
+	})
+
+	if _, err := v.Validate(localToken(t, one, "one")); err != nil {
+		t.Fatalf("the one-key form was refused: %v", err)
+	}
+	if _, err := v.Validate(localToken(t, two, "two")); err != nil {
+		t.Fatalf("the listed key was refused: %v", err)
+	}
+}
+
+// TestLocalKeysWithNoKeyIDAnswerAnyKID: a set whose keys declare no kid
+// accepts a token whatever kid it names, as the one-key form does.
+func TestLocalKeysWithNoKeyIDAnswerAnyKID(t *testing.T) {
+	remote := genKey(t)
+	var hits atomic.Int64
+	srv := countingJWKS(t, remote, &hits)
+	key := localKey(t)
+	v := New(Config{
+		JWKSURL: srv.URL, CacheTTL: time.Hour, LocalIssuer: localIssuer,
+		LocalKeys: []LocalKey{{Key: &key.PublicKey}},
+	})
+
+	if _, err := v.Validate(localToken(t, key, "anything")); err != nil {
+		t.Fatalf("a key that declares no kid refused a token: %v", err)
+	}
+}
+
+// TestLocalKeysRejectAKeyOfNoUsableKind: the list is wired at New like the
+// one-key form.
+func TestLocalKeysRejectAKeyOfNoUsableKind(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("New did not panic")
+		}
+	}()
+	New(Config{LocalIssuer: localIssuer, LocalKeys: []LocalKey{{KeyID: "x", Key: "not a key"}}})
+}
+
+// TestLocalKeyMayBeRSA: a local issuer signs with either kind of key the
+// package verifies with, not only a P-256 one.
+func TestLocalKeyMayBeRSA(t *testing.T) {
+	key := genKey(t)
+	v := New(Config{LocalIssuer: localIssuer, LocalKey: &key.PublicKey, LocalKeyID: "rsa-1"})
+	p := defaultPayload()
+	p["iss"] = localIssuer
+	tok := signToken(t, key, map[string]any{"alg": "RS256", "typ": "JWT", "kid": "rsa-1"}, p)
+
+	if _, err := v.Validate(tok); err != nil {
+		t.Fatalf("an RSA local key refused its own token: %v", err)
+	}
+}
+
+// TestNoKeySetConfiguredAtAll: a validator given neither a JWKS URL nor an
+// issuer to discover one from has no key to verify with, and says so.
+func TestNoKeySetConfiguredAtAll(t *testing.T) {
+	key := genKey(t)
+	_, err := New(Config{CacheTTL: time.Hour}).Validate(signToken(t, key, defaultHeader(key), defaultPayload()))
+	if err == nil {
+		t.Fatal("a token was admitted with no key set configured")
+	}
+}

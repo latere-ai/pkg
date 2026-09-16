@@ -142,3 +142,91 @@ func TestIssuersBesideTheSingleIssuerForm(t *testing.T) {
 		t.Fatalf("err = %v, want ErrInvalidIssuer", err)
 	}
 }
+
+// TestIssuersDiscoveryFailures: an issuer that does not name a key set is
+// an issuer whose tokens cannot be verified, and each way it can fail to
+// name one surfaces as a fetch error rather than a verdict on the token.
+func TestIssuersDiscoveryFailures(t *testing.T) {
+	key := genKey(t)
+	for _, tc := range []struct {
+		name    string
+		handler http.HandlerFunc
+	}{
+		{"the document is a 404", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}},
+		{"the document is not JSON", func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte("not json"))
+		}},
+		{"the document names no jwks_uri", func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"issuer":"https://x"}`))
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(tc.handler)
+			t.Cleanup(srv.Close)
+			v := New(Config{Issuers: []string{srv.URL}, CacheTTL: time.Hour})
+
+			_, err := v.Validate(issuerToken(t, key, srv.URL))
+			if err == nil {
+				t.Fatal("a token from an issuer that names no key set was admitted")
+			}
+			if errors.Is(err, ErrInvalidIssuer) {
+				t.Fatalf("err = %v: the issuer is trusted, its key set is what could not be read", err)
+			}
+		})
+	}
+
+	// The issuer does not answer at all.
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	url := srv.URL
+	srv.Close()
+	v := New(Config{Issuers: []string{url}, CacheTTL: time.Hour})
+	if _, err := v.Validate(issuerToken(t, key, url)); err == nil {
+		t.Fatal("a token from an unreachable issuer was admitted")
+	}
+}
+
+// TestIssuersSkipEmptyAndRepeatedEntries: a list written by an operator may
+// carry a blank entry or name one issuer twice; both are one key set.
+func TestIssuersSkipEmptyAndRepeatedEntries(t *testing.T) {
+	var hits atomic.Int64
+	key := genKey(t)
+	a := serveIssuer(t, key, &hits)
+	v := New(Config{Issuers: []string{"", a.URL, a.URL + "/", "/"}, CacheTTL: time.Hour})
+
+	for range 2 {
+		if _, err := v.Validate(issuerToken(t, key, a.URL)); err != nil {
+			t.Fatalf("refused: %v", err)
+		}
+	}
+	if hits.Load() != 1 {
+		t.Fatalf("the key set was fetched %d times, want 1", hits.Load())
+	}
+}
+
+// TestIssuersUseTheConfiguredHTTPClient: the client a caller supplies for
+// trust roots or a proxy is the one that reaches every listed issuer.
+func TestIssuersUseTheConfiguredHTTPClient(t *testing.T) {
+	var hits atomic.Int64
+	key := genKey(t)
+	a := serveIssuer(t, key)
+	client := &http.Client{Transport: countingTransport{&hits}}
+	v := New(Config{Issuers: []string{a.URL}, CacheTTL: time.Hour, HTTPClient: client})
+
+	if _, err := v.Validate(issuerToken(t, key, a.URL)); err != nil {
+		t.Fatalf("refused: %v", err)
+	}
+	// Discovery and the key set, both through the caller's client.
+	if hits.Load() != 2 {
+		t.Fatalf("the configured client made %d requests, want 2", hits.Load())
+	}
+}
+
+// countingTransport counts the requests that go through it.
+type countingTransport struct{ n *atomic.Int64 }
+
+func (c countingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	c.n.Add(1)
+	return http.DefaultTransport.RoundTrip(r)
+}

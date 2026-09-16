@@ -113,6 +113,12 @@
 // and is not checked against [Config.Issuer]; every other token takes the
 // JWKS path unchanged.
 //
+// [Config.LocalKeys] holds more than one such key, which is what a rotation
+// needs: the newer key signs while the older still verifies, until the
+// tokens it signed expire. A token's "kid" selects the key that must verify
+// it, so a kid the set does not hold is refused rather than tried against
+// every key; a key that declares no kid answers whatever kid a token names.
+//
 // # Authentication is local
 //
 // Nothing in this package calls the issuer while a request is served: the
@@ -315,13 +321,21 @@ type Config struct {
 	LocalIssuer string
 	// LocalKey is the public half of the key LocalIssuer signs with, an
 	// *rsa.PublicKey or an *ecdsa.PublicKey on P-256. [New] panics when
-	// LocalIssuer is set without one: a local issuer with no key would
+	// LocalIssuer is set with neither this nor LocalKeys: a local issuer
+	// with no key would
 	// refuse every one of its tokens as a bad signature, which is a wiring
 	// mistake and not a verdict.
 	LocalKey crypto.PublicKey
 	// LocalKeyID is the "kid" a token of LocalIssuer must name. Empty
 	// accepts any kid, since the set holds one key either way.
 	LocalKeyID string
+	// LocalKeys are further keys of LocalIssuer, beside LocalKey: the form
+	// a rotation needs, where the newer key signs and the older still
+	// verifies until the tokens it signed expire. A token's "kid" selects
+	// the key that must verify it, so a kid naming none of them is refused
+	// rather than tried against every key. A key that declares no KeyID
+	// answers whatever kid a token names, as the one-key form does.
+	LocalKeys []LocalKey
 	// ClockSkew is the tolerance on "exp" and "nbf" for the difference
 	// between the issuer's clock and this node's: a token is read until
 	// ClockSkew past its "exp", and from ClockSkew before its "nbf". Zero
@@ -332,6 +346,14 @@ type Config struct {
 	// alone, nor a token of [Config.LocalIssuer], which was stamped on
 	// this clock and has no second clock to reconcile.
 	ClockSkew time.Duration
+}
+
+// LocalKey is one key of [Config.LocalIssuer]: the "kid" a token names it
+// by, and the public half it is verified with, an *rsa.PublicKey or an
+// *ecdsa.PublicKey on P-256.
+type LocalKey struct {
+	KeyID string
+	Key   crypto.PublicKey
 }
 
 // DefaultMaxTokenBytes is the size bound a caller that configures none
@@ -410,23 +432,39 @@ func issuerKeySets(cfg Config, cache *jwksCache) map[string]*jwksCache {
 	return sets
 }
 
-// localKeySet is the one-key set of Config.LocalIssuer, empty when none is
-// configured. It panics on a local issuer whose key is missing or of a kind
-// no algorithm here verifies with.
+// localKeySet is the key set of Config.LocalIssuer, the one-key form and
+// the list together, and nil when no local issuer is configured. It panics
+// on a local issuer with no key, or a key of a kind no algorithm here
+// verifies with.
 func localKeySet(cfg Config) []jwkEntry {
 	if cfg.LocalIssuer == "" {
 		return nil
 	}
-	e := jwkEntry{kid: cfg.LocalKeyID}
-	switch k := cfg.LocalKey.(type) {
+	var set []jwkEntry
+	if cfg.LocalKey != nil {
+		set = append(set, localEntry(cfg.LocalKeyID, cfg.LocalKey))
+	}
+	for _, k := range cfg.LocalKeys {
+		set = append(set, localEntry(k.KeyID, k.Key))
+	}
+	if len(set) == 0 {
+		panic("authkit/jwt: Config.LocalIssuer needs a LocalKey or LocalKeys")
+	}
+	return set
+}
+
+// localEntry is one local key as a set entry.
+func localEntry(kid string, key crypto.PublicKey) jwkEntry {
+	e := jwkEntry{kid: kid}
+	switch k := key.(type) {
 	case *rsa.PublicKey:
 		e.rsa = k
 	case *ecdsa.PublicKey:
 		e.ec = k
 	default:
-		panic("authkit/jwt: Config.LocalIssuer needs a LocalKey of *rsa.PublicKey or *ecdsa.PublicKey")
+		panic("authkit/jwt: a local key must be an *rsa.PublicKey or an *ecdsa.PublicKey")
 	}
-	return []jwkEntry{e}
+	return e
 }
 
 // ── Package-level vars for testability ──────────────────────────────────────
@@ -541,6 +579,20 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 	return claimsFromRawPayload(raw), nil
 }
 
+// localKeysFor is the local keys that may answer a token naming kid: the
+// key that declares it, and any key that declares no kid at all. A kid the
+// set does not hold matches nothing, so such a token fails as a signature
+// rather than being tried against every key the node holds.
+func localKeysFor(set []jwkEntry, kid string) []jwkEntry {
+	var match []jwkEntry
+	for _, e := range set {
+		if e.kid == kid || e.kid == "" {
+			match = append(match, e)
+		}
+	}
+	return match
+}
+
 // sameIssuer reports whether two issuer URLs name one issuer. Trailing
 // slashes are not part of the name: an issuer that publishes "https://x"
 // and stamps "https://x/" is one issuer, and no caller can reconcile that
@@ -556,10 +608,7 @@ func trimIssuer(s string) string { return strings.TrimRight(s, "/") }
 // local key is answered with an empty set, so it fails as a signature.
 func (v *Validator) keysFor(local bool, iss, kid string) ([]jwkEntry, error) {
 	if local {
-		if v.cfg.LocalKeyID != "" && kid != v.cfg.LocalKeyID {
-			return nil, nil
-		}
-		return v.local, nil
+		return localKeysFor(v.local, kid), nil
 	}
 	set := v.cache
 	if len(v.issuers) > 0 {
