@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.71.0 - 2026-09-16
+
 ### Added
 
 - `jwt.Config.ClockSkew` is the tolerance on `exp` and `nbf` for the
