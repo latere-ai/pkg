@@ -10,6 +10,62 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `pkg/provenance`, the family's answer to "on whose behalf did this service
+  act, and by what path did the call arrive" (latere-ai/specs
+  `infrastructure/provenance.md`). The verified edge — the first service that
+  validated the person's token — calls `provenance.Stamp` once, which puts
+  three members in the W3C Baggage header that already rides every hop:
+  `initiator.sub` (the issuer-qualified subject `<iss>|<sub>`, rendered by
+  `authz.Subject`), `initiator.iss` and `entry` (the front door's host).
+  Every service after it calls `provenance.From`, and never sets. The carrier
+  needed no work: `otel.Bootstrap` has installed a composite
+  `TraceContext`+`Baggage` propagator all along, so what was missing was a
+  producer.
+
+  `provenance.Attrs(ctx)` and `provenance.SpanAttrs(ctx)` emit the same three
+  keys on a log line and on a span, so a reader who learns the vocabulary in
+  one place finds it in the other. `provenance.Audit` and
+  `provenance.AuditAttrs` write the durable record: one `slog` record at info
+  with a fixed `audit=true` attribute, plus `action`, `resource` and
+  `outcome`. `at`, `service`, `trace_id` and `span_id` are already on every
+  record from `otel.SetupLogs`, so the helper adds nothing that exists.
+
+  `provenance.Assert(ctx, id, issuer)` is for a hop that verifies a person's
+  token behind an edge that already stamped: it returns a `*MismatchError`
+  wrapping `ErrInitiatorMismatch` when the two subjects disagree, which the
+  caller answers with `400 invalid_request` and one security event naming both
+  values. It never overwrites and never silently accepts. A service, agent or
+  dev principal asserts nothing: unattended work has no initiator, and the
+  absence of the members is the correct record of it.
+
+  Nothing here is authority. Baggage is unauthenticated, it grants nothing,
+  and forging it buys a misleading log line and no access. So nothing here
+  fails a call either: `Stamp` returns `ctx` unchanged and logs at warn when a
+  value cannot be encoded or the edge passed no issuer — `authz.Subject`
+  renders an empty issuer as `|<sub>`, and half an initiator is not an
+  initiator — and `From` reports `ok` false rather than an error.
+
+  Two notes for readers of the spec:
+
+  - `Stamp` and `Assert` take the `issuer` as an argument, which the spec's
+    sketch does not show. `authkit.Identity` carries no issuer — the claim is
+    verified by `jwt.Validator` and stops there, since
+    `Claims.authenticated()` copies only the embedded `Identity`. The spec's
+    own member table names two sources for `initiator.sub`, the identity's
+    `Sub` *and* the issuer, so the edge supplies the issuer it verified
+    against. `Assert` needs it for the same reason: comparing bare subs alone
+    would accept a same-sub, different-issuer contradiction, which is the one
+    thing the rule exists to catch.
+  - The fields are `initiator.*`, not `pkg/audit`'s `Actor{Type, PrincipalID,
+    OwnerSub}`. `pkg/audit` is untouched and unimported: the spec calls the
+    two layers rather than two standards, and leaves re-expressing `Actor` to
+    whoever next touches that package. `actor` stays the family's name for
+    the one-hop token kind, so `initiator` is the word for metadata that
+    grants nothing.
+
+
 ## v0.69.0 - 2026-09-16
 
 ### Added
