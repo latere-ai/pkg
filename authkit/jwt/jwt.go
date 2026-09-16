@@ -185,6 +185,7 @@ var (
 	// that did not check out. It is a row of its own only in Go.
 	ErrUnsupportedAlg = refusal(ReasonBadSignature, "authkit/jwt: unsupported algorithm")
 	ErrTokenTooLarge  = refusal(ReasonTooLarge, "authkit/jwt: token too large")
+	ErrTokenTooOld    = refusal(ReasonTooOld, "authkit/jwt: token too old")
 )
 
 // ReasonOf reports the table row err belongs to, reading through any number
@@ -216,6 +217,17 @@ type Config struct {
 	// refused before it is parsed. Zero is [DefaultMaxTokenBytes]; a
 	// negative value is no bound, for a caller whose tokens are larger.
 	MaxTokenBytes int
+	// MaxTokenAge is how old "iat" may be before the token is
+	// [ErrTokenTooOld], whatever "exp" it carries. Zero is
+	// [DefaultMaxTokenAge]; a negative value is no bound, and "exp" alone
+	// decides. A token that carries no "iat" has no age and is unaffected
+	// unless RequireIssuedAt is set.
+	MaxTokenAge time.Duration
+	// RequireIssuedAt refuses a token that carries no "iat" as
+	// [ErrTokenTooOld]. Set it where every trusted issuer stamps one, so
+	// that a token with no age cannot slip past MaxTokenAge. Off by
+	// default: an issuer that stamps only "sub" still verifies.
+	RequireIssuedAt bool
 }
 
 // DefaultMaxTokenBytes is the size bound a caller that configures none
@@ -223,6 +235,12 @@ type Config struct {
 // every token the family's issuers mint and short of a payload worth
 // parsing to reject.
 const DefaultMaxTokenBytes = 8 << 10
+
+// DefaultMaxTokenAge is the age bound a caller that configures none gets.
+// It is a second ceiling under "exp": an issuer that mints a long-lived
+// token does not thereby mint a credential that outlives the day it was
+// issued in.
+const DefaultMaxTokenAge = 24 * time.Hour
 
 // Validator validates RS256 and ES256 JWTs using keys fetched from a JWKS
 // endpoint.
@@ -238,6 +256,9 @@ func New(cfg Config) *Validator {
 	}
 	if cfg.MaxTokenBytes == 0 {
 		cfg.MaxTokenBytes = DefaultMaxTokenBytes
+	}
+	if cfg.MaxTokenAge == 0 {
+		cfg.MaxTokenAge = DefaultMaxTokenAge
 	}
 	cache := &jwksCache{url: cfg.JWKSURL, ttl: cfg.CacheTTL}
 	if cfg.HTTPClient != nil {
@@ -327,6 +348,12 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 		return nil, ErrTokenNotValidYet
 	}
 
+	// Validate the age (iat). A token is a credential for as long as the
+	// bound, whatever exp it carries; one that stamps no iat has no age.
+	if err := v.validateAge(raw.Iat); err != nil {
+		return nil, err
+	}
+
 	// Validate iss.
 	if v.cfg.Issuer != "" && raw.Iss != v.cfg.Issuer {
 		return nil, ErrInvalidIssuer
@@ -344,6 +371,21 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 	}
 
 	return claimsFromRawPayload(raw), nil
+}
+
+// validateAge checks the age the "iat" claim gives the token: none when the
+// claim is absent, unless the caller declared that its issuers stamp one.
+func (v *Validator) validateAge(iat float64) error {
+	if iat == 0 {
+		if v.cfg.RequireIssuedAt {
+			return ErrTokenTooOld
+		}
+		return nil
+	}
+	if v.cfg.MaxTokenAge > 0 && timeNow().Sub(time.Unix(int64(iat), 0)) > v.cfg.MaxTokenAge {
+		return ErrTokenTooOld
+	}
+	return nil
 }
 
 // claimsFromRawPayload maps a decoded JWT payload onto Claims. It is
@@ -752,6 +794,7 @@ type rawPayload struct {
 	Aud             jsonAud  `json:"aud"`
 	Exp             float64  `json:"exp"`
 	Nbf             float64  `json:"nbf"`
+	Iat             float64  `json:"iat"`
 	PrincipalType   string   `json:"principal_type"`
 	Email           string   `json:"email"`
 	OrgID           string   `json:"org_id"`

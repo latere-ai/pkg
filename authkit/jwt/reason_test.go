@@ -61,6 +61,12 @@ func TestReasonOfNamesEveryRefusal(t *testing.T) {
 			token: token(func(p map[string]any) { p["filler"] = strings.Repeat("x", DefaultMaxTokenBytes) }),
 		},
 		{
+			name: "too old", want: ReasonTooOld, wire: "iat", sen: ErrTokenTooOld,
+			token: token(func(p map[string]any) {
+				p["iat"] = float64(time.Now().Add(-25 * time.Hour).Unix())
+			}),
+		},
+		{
 			name: "malformed", want: ReasonMalformed, wire: "malformed", sen: ErrMalformedToken,
 			token: "one.two",
 		},
