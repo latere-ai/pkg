@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.70.1 - 2026-09-16
+
 ### Fixed
 
 - `authz/server` routed every action whose name ends in `.list` to
