@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.72.0 - 2026-09-17
+
 ### Added
 
 - `jwt.Config.Issuers []string` is a list of issuer URLs to trust beside
