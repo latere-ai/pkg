@@ -10,6 +10,22 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Fixed
+
+- The egress gateway no longer refuses a sandbox whose token was minted more
+  than a day ago. Since v0.71.0 `egress.TokenAuth` applied the family's
+  24-hour age bound to the tokens it verifies, so a sandbox running longer
+  than a day was answered `407 Proxy Authentication Required` on every
+  request it proxied, until the next re-mint replaced its token. The token
+  was valid: it was days from its expiry, and nothing but its issue time was
+  wrong with it.
+
+  A token the gateway verifies is a workload credential, and the plane that
+  issued it re-mints it on that plane's own schedule, so its `exp` is its
+  bound and its age is not. The gateway now reads `exp` alone.
+  `egress.TokenAuthOptions.MaxTokenAge` puts an age bound back for a
+  deployment that wants one; zero, the default, is no bound.
+
 ## v0.75.0 - 2026-09-17
 
 ### Added
