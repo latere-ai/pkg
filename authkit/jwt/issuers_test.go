@@ -157,22 +157,43 @@ func TestIssuersBesideTheSingleIssuerForm(t *testing.T) {
 // name one surfaces as a fetch error rather than a verdict on the token.
 func TestIssuersDiscoveryFailures(t *testing.T) {
 	key := genKey(t)
+	// Each handler is built around the URL it is served under, because a
+	// document that names a key set must first name its own issuer.
 	for _, tc := range []struct {
 		name    string
-		handler http.HandlerFunc
+		handler func(url string) http.HandlerFunc
 	}{
-		{"the document is a 404", func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusNotFound)
+		{"the document is a 404", func(string) http.HandlerFunc {
+			return func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusNotFound)
+			}
 		}},
-		{"the document is not JSON", func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = w.Write([]byte("not json"))
+		{"the document is not JSON", func(string) http.HandlerFunc {
+			return func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte("not json"))
+			}
 		}},
-		{"the document names no jwks_uri", func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = w.Write([]byte(`{"issuer":"https://x"}`))
+		{"the document breaks off mid-body", func(string) http.HandlerFunc {
+			return func(w http.ResponseWriter, _ *http.Request) {
+				conn, _, err := w.(http.Hijacker).Hijack()
+				if err != nil {
+					return
+				}
+				_, _ = conn.Write([]byte("HTTP/1.1 200 OK\r\nContent-Length: 512\r\n\r\n{"))
+				_ = conn.Close()
+			}
+		}},
+		{"the document names no jwks_uri", func(url string) http.HandlerFunc {
+			return func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = fmt.Fprintf(w, `{"issuer":%q}`, url)
+			}
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := httptest.NewServer(tc.handler)
+			var srv *httptest.Server
+			srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				tc.handler(srv.URL)(w, r)
+			}))
 			t.Cleanup(srv.Close)
 			v := New(Config{Issuers: []string{srv.URL}, CacheTTL: time.Hour})
 
@@ -182,6 +203,10 @@ func TestIssuersDiscoveryFailures(t *testing.T) {
 			}
 			if errors.Is(err, ErrInvalidIssuer) {
 				t.Fatalf("err = %v: the issuer is trusted, its key set is what could not be read", err)
+			}
+			// The issuer is out of reach, which is its own row.
+			if !errors.Is(err, ErrIssuerUnavailable) {
+				t.Fatalf("err = %v, want ErrIssuerUnavailable", err)
 			}
 		})
 	}
