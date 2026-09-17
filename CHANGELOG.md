@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.76.0 - 2026-09-18
+
 ### Fixed
 
 - The egress gateway no longer refuses a sandbox whose token was minted more
