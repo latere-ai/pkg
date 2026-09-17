@@ -53,6 +53,30 @@ under **Removed** or **Changed** with what to do about it.
   vocabulary that declares no label renders as its kind, and
   `NewVocabulary`'s signature does not change.
 
+### Changed
+
+- `authz/conformance` drives one more case under `WithVocabulary`, so a
+  suite that passed on the previous version can go red on this one. The
+  case sends a personal access token granted one action on one resource
+  and requires a deny for every other action on it and for that action
+  anywhere else. An authorizer that answers `allow: true` to those fails.
+
+  What to do about it depends on how the authorizer is written. An
+  endpoint on `authz/server` needs nothing: bump the package and the
+  narrowing is applied for you. An authorizer written by hand calls
+  `authz.Restrict(vocabulary.Core, decision, request, grants)` on its own
+  answer, with the grants from `authz.ParseGrants(request.Claims)`. A
+  core that decides locally with `authz.Policy` does the same, and must
+  fill `Request.Claims` from its verified token: a request built with
+  empty claims restricts nothing.
+
+  The case is silent without `WithVocabulary`, because the grants name an
+  action qualified by its core and there is no core to qualify with.
+
+- `authz/stub`, told a vocabulary, now narrows an allow by the grants the
+  request carries, the way a conforming endpoint does. A stub told no
+  vocabulary answers its rule table alone, unchanged.
+
 ## v0.74.0 - 2026-09-17
 
 ### Added
