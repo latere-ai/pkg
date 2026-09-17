@@ -186,6 +186,11 @@
 // back to stale cached keys, so a transient auth-service outage does not break
 // verification for a key already seen.
 //
+// [Validator.Warm] reads every configured issuer's key set once, for a
+// process that wants the fetch paid at start-up rather than by the first
+// request. It is optional and idempotent, and a validator that was never
+// warmed behaves exactly as it always did.
+//
 // When no cached set answers either, the refusal is
 // [ErrIssuerUnavailable], reason "issuer_unavailable": the discovery
 // document or the JWKS endpoint did not answer, so nothing is known about
@@ -224,6 +229,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math/big"
 	"net/http"
 	"slices"
@@ -542,6 +548,61 @@ func New(cfg Config) *Validator {
 		local:   localKeySet(cfg),
 		now:     clockOf(cfg.Now),
 	}
+}
+
+// Warm reads every configured issuer's key set once, so a process that
+// probes its own readiness at start-up and the first request that follows
+// do not each pay for the fetch. It is what a start-up hook calls, and
+// calling it is optional: a validator that was never warmed fetches on
+// the first token it is handed, exactly as before.
+//
+// It is idempotent. Warming again inside [Config.CacheTTL] reads the
+// cache and reaches no network, so a probe on a schedule costs one fetch
+// per TTL and not one per probe.
+//
+// Which sets are read is which issuers are configured: each of
+// [Config.Issuers], and [Config.Issuer] beside them when it names its own
+// [Config.JWKSURL]. [Config.LocalIssuer] is verified against a key the
+// caller already holds, so there is nothing of it to warm, and a
+// validator that reaches no network at all warms nothing and reports
+// nothing.
+//
+// The return is a report and not a verdict: an issuer that did not answer
+// is named, every other issuer is still warm, and the validator verifies
+// either way, retrying the fetch when a token of that issuer arrives.
+// More than one failure is joined, so a probe names every issuer it could
+// not reach rather than the first. ctx bounds the walk, and a cancelled
+// one stops it before the next fetch.
+func (v *Validator) Warm(ctx context.Context) error {
+	var errs []error
+	for _, iss := range slices.Sorted(maps.Keys(v.keySets())) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if _, err := v.keySets()[iss].getKeys(); err != nil {
+			errs = append(errs, fmt.Errorf("authkit/jwt: warm %s: %w", iss, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// keySets is every key set a token could send this validator to, by the
+// name it is warmed and reported under. It is the issuer list when one is
+// configured, since Config.Issuer is folded into it, and the one
+// configured JWKS endpoint otherwise. A validator with neither has no set
+// to fetch.
+func (v *Validator) keySets() map[string]*jwksCache {
+	if len(v.issuers) > 0 {
+		return v.issuers
+	}
+	if v.cfg.JWKSURL == "" {
+		return nil
+	}
+	name := v.cfg.Issuer
+	if name == "" {
+		name = v.cfg.JWKSURL
+	}
+	return map[string]*jwksCache{trimIssuer(name): v.cache}
 }
 
 // clockOf is the clock a validator reads: the caller's when Config.Now is

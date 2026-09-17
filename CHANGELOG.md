@@ -46,6 +46,18 @@ under **Removed** or **Changed** with what to do about it.
   claim says, and a service that never sets the flag keeps verifying
   every token it verified before.
 
+- `jwt.Validator.Warm(ctx) error` reads every configured issuer's key set
+  once, for a process that would rather pay for the fetch at start-up
+  than have the first request pay for it. Call it from a start-up hook or
+  a readiness probe; calling it is optional, and a validator that was
+  never warmed fetches on the first token exactly as before.
+
+  It is idempotent: warming again inside `CacheTTL` reads the cache and
+  reaches no network, so a probe on a schedule costs one fetch per TTL.
+  The return is a report and not a verdict — an issuer that did not
+  answer is named, every other issuer is still warm, and the validator
+  verifies either way.
+
 - `authz.Vocabulary.WithLabels(map[string]string)` and
   `Vocabulary.Label(kind)` give a resource kind the name a person reads,
   so a picker can group by function without anybody hard-coding the
