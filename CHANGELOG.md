@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.73.0 - 2026-09-17
+
 ### Changed
 
 - One rule decides which key verifies a token, on every path, and one
