@@ -117,16 +117,27 @@ func TestParseGrantsReadsTheEnvelope(t *testing.T) {
 	}
 }
 
+// verified takes the grants a verifier yields off a token. It is the
+// whole of the next test: the call compiles only while authz's type and
+// the verifier's are one type.
+func verified(g authkit.Grants) int { return len(g) }
+
 // TestParseGrantsIsTheSameTypeTheVerifierReads: one declaration, so the
 // shape a token is verified against and the shape a decision applies
-// cannot drift.
+// cannot drift, and the wire words are one set of words.
 func TestParseGrantsIsTheSameTypeTheVerifierReads(t *testing.T) {
-	var g authz.Grant = authkit.Grant{Type: authz.GrantType, Actions: []string{"origo:repo.read"}}
-	if g.Actions[0] != "origo:repo.read" {
-		t.Fatalf("authz.Grant is not authkit.Grant")
+	got, err := authz.ParseGrants(patClaims(t, readOnlyOnOneRepository))
+	if err != nil {
+		t.Fatalf("ParseGrants: %v", err)
+	}
+	if verified(got) != 1 {
+		t.Fatalf("a verifier reads %d grants off what a decision point parsed", verified(got))
 	}
 	if authz.GrantType != authkit.GrantType {
 		t.Fatalf("GrantType = %q, want %q", authz.GrantType, authkit.GrantType)
+	}
+	if authz.TokenUsePAT != authkit.TokenUsePAT {
+		t.Fatalf("TokenUsePAT = %q, want %q", authz.TokenUsePAT, authkit.TokenUsePAT)
 	}
 }
 
