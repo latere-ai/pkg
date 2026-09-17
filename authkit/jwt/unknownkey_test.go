@@ -4,6 +4,7 @@
 package jwt
 
 import (
+	"crypto/ecdsa"
 	"crypto/rsa"
 	"errors"
 	"net/http"
@@ -105,10 +106,10 @@ func TestUnknownKIDOnTheIssuersPath(t *testing.T) {
 	}
 }
 
-// TestLocalKIDMismatchStaysASignature: the local path answers its own way
-// and is not changed here. A token naming a kid the local set does not hold
-// is refused as a signature, as it has been.
-func TestLocalKIDMismatchStaysASignature(t *testing.T) {
+// TestLocalKIDMismatchIsAnUnknownKey: the rule is one rule. A token naming
+// a kid the local set does not hold is an unknown key there too, not a
+// signature that failed to check out, because no key was ever asked.
+func TestLocalKIDMismatchIsAnUnknownKey(t *testing.T) {
 	remote := genKey(t)
 	srv := serveJWKS(t, remote)
 	key := localKey(t)
@@ -117,9 +118,24 @@ func TestLocalKIDMismatchStaysASignature(t *testing.T) {
 		LocalIssuer: localIssuer, LocalKey: &key.PublicKey, LocalKeyID: "node-1",
 	})
 
-	if _, err := v.Validate(localToken(t, key, "node-2")); !errors.Is(err, ErrInvalidSignature) {
-		t.Fatalf("err = %v, want ErrInvalidSignature", err)
+	if _, err := v.Validate(localToken(t, key, "node-2")); !errors.Is(err, ErrUnknownKey) {
+		t.Fatalf("err = %v, want ErrUnknownKey", err)
 	}
+	if got := ReasonOf(errUnknownLocalKID(t, v, key)); got != ReasonUnknownKey {
+		t.Fatalf("ReasonOf = %q, want %q", got, ReasonUnknownKey)
+	}
+	// The kid the node does hold still reaches its key, and that key's own
+	// verdict is what a bad signature reports.
+	if _, err := v.Validate(localToken(t, key, "node-1")); err != nil {
+		t.Fatalf("the local key refused its own token: %v", err)
+	}
+}
+
+// errUnknownLocalKID is the refusal of a local token naming an absent kid.
+func errUnknownLocalKID(t *testing.T, v *Validator, key *ecdsa.PrivateKey) error {
+	t.Helper()
+	_, err := v.Validate(localToken(t, key, "node-3"))
+	return err
 }
 
 // signedByEach is a token per key of a two-key set, each naming its own

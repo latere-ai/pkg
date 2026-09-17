@@ -131,14 +131,17 @@ func TestLocalIssuerRefusesAnotherKeyAndAnotherKID(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		token string
+		want  error
 	}{
-		{"another key under the right kid", localToken(t, other, "node-1")},
-		{"the right key under another kid", localToken(t, key, "node-2")},
+		// The kid names the local key, so that key answers and refuses it.
+		{"another key under the right kid", localToken(t, other, "node-1"), ErrInvalidSignature},
+		// The kid names no key the node holds, so no key answers at all.
+		{"the right key under another kid", localToken(t, key, "node-2"), ErrUnknownKey},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := v.Validate(tc.token)
-			if !errors.Is(err, ErrInvalidSignature) {
-				t.Fatalf("err = %v, want ErrInvalidSignature", err)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("err = %v, want %v", err, tc.want)
 			}
 		})
 	}
@@ -212,13 +215,17 @@ func TestLocalKeysHoldARotation(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		token string
+		want  error
 	}{
-		{"a kid naming neither key", localToken(t, newer, "third")},
-		{"the older key under the newer kid", localToken(t, older, "new")},
+		// Neither key of the rotation is named, so none answers.
+		{"a kid naming neither key", localToken(t, newer, "third"), ErrUnknownKey},
+		// The newer key is named and is the only one that may answer, so
+		// the key it replaced does not get to verify in its place.
+		{"the older key under the newer kid", localToken(t, older, "new"), ErrInvalidSignature},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := v.Validate(tc.token); !errors.Is(err, ErrInvalidSignature) {
-				t.Fatalf("err = %v, want ErrInvalidSignature", err)
+			if _, err := v.Validate(tc.token); !errors.Is(err, tc.want) {
+				t.Fatalf("err = %v, want %v", err, tc.want)
 			}
 		})
 	}

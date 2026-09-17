@@ -12,27 +12,33 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Changed
 
-- On the JWKS path, a token whose `kid` names no key of the issuer's set is
-  now `jwt.ErrUnknownKey`, reason `unknown_key`, and no other key of the set
-  is tried. Before, a kid that matched nothing fell back to trying every key
-  in turn, so a token could name one key and be admitted by another: a claim
-  about the issuer's set that the issuer never made. The fallback is gone.
-  A kid miss still forces one refresh of the set first, so a key just
-  rotated in at the issuer is picked up rather than refused.
+- One rule decides which key verifies a token, on every path, and one
+  reason says when no key does. The `kid` names the key: the key declaring
+  it, or a key declaring no kid at all, since a key published without a name
+  can be reached no other way. A token carrying no `kid` leaves the choice
+  to the set, which only a set holding exactly one key can make. Anything
+  else, a kid the set does not hold or a choice between keys, is
+  `jwt.ErrUnknownKey`, reason `unknown_key`.
 
-  A token that carries no `kid` leaves the choice to the set, which only a
-  set holding exactly one key can make; against a larger set it is
-  `ErrUnknownKey` too. A single-key set, which is what the family's issuers
-  serve, is unchanged.
+  On the JWKS path this removes a fallback. A kid that matched nothing was
+  tried against every key of the set in turn, so a token could name one key
+  and be admitted by another: a claim about the issuer's set that the issuer
+  never made. A kid miss still forces one refresh of the set first, so a key
+  just rotated in at the issuer is picked up rather than refused. A
+  single-key set, which is what the family's issuers serve, is otherwise
+  unchanged.
 
-  A caller that relied on the fallback sees `unknown_key` where it saw
-  `invalid signature`. Both are refusals, so nothing that was admitted
-  before is refused now except a token naming a key nobody published, and
-  nothing that was refused is admitted.
+  On the local path this changes a reason. A token of `Config.LocalIssuer`
+  naming a kid the local set does not hold was `ErrInvalidSignature`, which
+  said a signature had failed when no key had been asked.
 
-  `Config.LocalIssuer` keeps its own rule and is unchanged: its candidates
-  are the key declaring the kid and any key declaring none, and an empty
-  choice is a bad signature.
+  Once the key is chosen, only its own verdict counts: a signature that does
+  not check out against it is `ErrInvalidSignature` and not the other
+  refusal, so the key a rotation replaced does not get to verify in the
+  newer key's place. A caller that relied on the fallback sees `unknown_key`
+  where it saw `invalid signature`. Both are refusals, so nothing that was
+  admitted before is refused now except a token naming a key nobody
+  published, and nothing that was refused is admitted.
 
 ## v0.72.0 - 2026-09-17
 

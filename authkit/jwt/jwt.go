@@ -97,14 +97,18 @@
 //
 // # Which key verifies a token
 //
-// On the JWKS path the issuer's set answers by "kid": the key a token names
-// is the only key that may verify it, and a kid the set does not hold is
-// [ErrUnknownKey], after one forced refresh of the set so that a key just
-// rotated in is still picked up. No other key of the set is tried, because
-// admitting a token under a key it did not name is a claim about the
-// issuer's set that the issuer never made. A token that carries no kid
-// leaves the choice to the set, which only a set holding exactly one key
-// can make; against a larger set it is [ErrUnknownKey] too.
+// One rule, on every path. The "kid" names the key that must verify the
+// token: the key declaring it, or a key declaring no kid at all, since a
+// key published without a name can be reached no other way. A token
+// carrying no kid leaves the choice to the set, which only a set holding
+// exactly one key can make. Anything else, a kid the set does not hold or a
+// choice between keys, is [ErrUnknownKey], and no second key is ever tried:
+// admitting a token under a key it did not name is a claim about the set
+// that whoever published it never made. On the JWKS path a kid miss forces
+// one refresh of the set first, so a key just rotated in at the issuer is
+// still picked up. Once the key is chosen only its own verdict counts, so a
+// signature that does not check out against it is [ErrInvalidSignature] and
+// not the other refusal.
 //
 // # More than one issuer
 //
@@ -127,9 +131,7 @@
 //
 // [Config.LocalKeys] holds more than one such key, which is what a rotation
 // needs: the newer key signs while the older still verifies, until the
-// tokens it signed expire. A token's "kid" selects the key that must verify
-// it, so a kid the set does not hold is refused rather than tried against
-// every key; a key that declares no kid answers whatever kid a token names.
+// tokens it signed expire. Which key answers is the one rule above.
 //
 // # Authentication is local
 //
@@ -349,9 +351,10 @@ type Config struct {
 	// LocalKeys are further keys of LocalIssuer, beside LocalKey: the form
 	// a rotation needs, where the newer key signs and the older still
 	// verifies until the tokens it signed expire. A token's "kid" selects
-	// the key that must verify it, so a kid naming none of them is refused
-	// rather than tried against every key. A key that declares no KeyID
-	// answers whatever kid a token names, as the one-key form does.
+	// the key that must verify it, so a kid naming none of them is
+	// [ErrUnknownKey] rather than tried against every key. A key that
+	// declares no KeyID answers whatever kid a token names, as the one-key
+	// form does.
 	LocalKeys []LocalKey
 	// ClockSkew is the tolerance on "exp" and "nbf" for the difference
 	// between the issuer's clock and this node's: a token is read until
@@ -548,7 +551,7 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 	sigInput := parts[0] + "." + parts[1]
 	digest := hashSHA256([]byte(sigInput))
 
-	if err := verifyAgainst(keys, local, header.Kid, header.Alg, digest, sig); err != nil {
+	if err := verifyAgainst(keys, header.Kid, header.Alg, digest, sig); err != nil {
 		return nil, err
 	}
 
@@ -596,20 +599,6 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 	return claimsFromRawPayload(raw), nil
 }
 
-// localKeysFor is the local keys that may answer a token naming kid: the
-// key that declares it, and any key that declares no kid at all. A kid the
-// set does not hold matches nothing, so such a token fails as a signature
-// rather than being tried against every key the node holds.
-func localKeysFor(set []jwkEntry, kid string) []jwkEntry {
-	var match []jwkEntry
-	for _, e := range set {
-		if e.kid == kid || e.kid == "" {
-			match = append(match, e)
-		}
-	}
-	return match
-}
-
 // sameIssuer reports whether two issuer URLs name one issuer. Trailing
 // slashes are not part of the name: an issuer that publishes "https://x"
 // and stamps "https://x/" is one issuer, and no caller can reconcile that
@@ -625,7 +614,7 @@ func trimIssuer(s string) string { return strings.TrimRight(s, "/") }
 // local key is answered with an empty set, so it fails as a signature.
 func (v *Validator) keysFor(local bool, iss, kid string) ([]jwkEntry, error) {
 	if local {
-		return localKeysFor(v.local, kid), nil
+		return v.local, nil
 	}
 	set := v.cache
 	if len(v.issuers) > 0 {
@@ -1093,35 +1082,24 @@ func hashSHA256(data []byte) []byte {
 	return h.Sum(nil)
 }
 
-// verifyAgainst checks sig against the set under the rule of the path the
-// token came in on.
+// verifyAgainst checks sig against the one key of the set that may answer
+// the token, by the same rule on every path.
 //
-// On the JWKS path the set answers by "kid": the key the token names is the
-// only key that may verify it, and a kid the set does not hold is
-// [ErrUnknownKey] rather than an invitation to try the rest. A token that
-// names no kid leaves the choice to the set, which only a set of exactly
-// one key can make; a larger set answers it the same way. Trying every key
-// would let a token name one key and be admitted by another, which is a
-// claim about the issuer's set that the issuer never made.
-//
-// The local path keeps its own rule, since localKeysFor has already chosen
-// the candidates: a key that declares the kid, or any key that declares
-// none, and an empty choice is a signature that did not check out.
-func verifyAgainst(keys []jwkEntry, local bool, kid, alg string, digest, sig []byte) error {
-	if local {
-		for _, k := range keys {
-			if k.verifies(alg, digest, sig) {
-				return nil
-			}
-		}
-		return ErrInvalidSignature
-	}
-
+// The "kid" names that key: a key declaring it, or a key declaring no kid
+// at all, since a key the issuer published without a name can be reached no
+// other way. A token naming no kid leaves the choice to the set, which only
+// a set of exactly one key can make. Anything else, a kid the set does not
+// hold or a choice between keys, is [ErrUnknownKey], and no second key is
+// ever tried: admitting a token under a key it did not name is a claim
+// about the set that whoever published it never made. Once the key is
+// chosen, only its own verdict counts, so a signature that does not check
+// out against it is [ErrInvalidSignature].
+func verifyAgainst(keys []jwkEntry, kid, alg string, digest, sig []byte) error {
 	named := keys
 	if kid != "" {
 		named = nil
 		for _, k := range keys {
-			if k.kid == kid {
+			if k.kid == kid || k.kid == "" {
 				named = append(named, k)
 			}
 		}
