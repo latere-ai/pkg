@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.75.0 - 2026-09-17
+
 ### Added
 
 - A personal access token can now be narrower than the person who holds
