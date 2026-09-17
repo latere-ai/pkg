@@ -10,6 +10,49 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- A personal access token can now be narrower than the person who holds
+  it. The key's holder chooses what it may do when they create it, the
+  grants ride on every token it mints as RFC 9396's
+  `authorization_details`, and a service that takes this version enforces
+  them.
+
+  What a service gets:
+
+  - `jwt.Config.ReadsGrants` turns the reading on. A verified token then
+    hands back `Identity.TokenUse` and `Identity.Grants`, beside the
+    subject and the roles it always carried.
+  - `authz.Restrict(core, decision, request, grants)` narrows one
+    decision by them: an allow becomes a deny with reason `grant` when no
+    grant covers the request, and a deny is never turned into an allow. A
+    grant is a restriction and never authority, so a grant on a resource
+    the person cannot reach still reaches nothing.
+  - An endpoint written on `authz/server` applies it already. Bump the
+    package and the narrowing is there, with no option to switch it off.
+  - `authz/conformance` runs one more case under `WithVocabulary`: a
+    token granted one action on one resource is refused every other
+    action on it and that action anywhere else.
+
+  **A scoped token is refused until the service sets `ReadsGrants`.** The
+  flag is off by default, and a token carrying grants is answered with a
+  401 whose reason is `grants_unread`. That is deliberate: the claim says
+  what the credential may *not* do, so a service that reads the token and
+  applies nothing grants more than its holder asked for, and silently. A
+  refusal is visible; an ignored restriction is not. Set the flag once
+  the conformance run passes.
+
+  A token that is not a personal access token is unaffected, whatever the
+  claim says, and a service that never sets the flag keeps verifying
+  every token it verified before.
+
+- `authz.Vocabulary.WithLabels(map[string]string)` and
+  `Vocabulary.Label(kind)` give a resource kind the name a person reads,
+  so a picker can group by function without anybody hard-coding the
+  headings. `SandboxSet` is a type name; `Sandbox sets` is a heading. A
+  vocabulary that declares no label renders as its kind, and
+  `NewVocabulary`'s signature does not change.
+
 ## v0.74.0 - 2026-09-17
 
 ### Added
