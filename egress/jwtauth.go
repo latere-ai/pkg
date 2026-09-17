@@ -42,6 +42,12 @@ type TokenAuthOptions struct {
 	// and keys its substitution map. Empty means [DefaultSubjectClaim]. A token
 	// without a non-empty string under this claim is rejected.
 	SubjectClaim string
+	// MaxTokenAge bounds how old a token's "iat" may be, whatever "exp" it
+	// carries. Zero is this package's rule, no bound: the token is a workload
+	// credential, so its "exp" decides alone. A positive value bounds the age,
+	// for a deployment whose issuer re-mints sooner than its tokens expire and
+	// wants a token older than that refused.
+	MaxTokenAge time.Duration
 	// HTTPClient fetches the JWKS. nil uses a traced client with a 10-second
 	// timeout.
 	HTTPClient *http.Client
@@ -68,6 +74,16 @@ type TokenAuth struct {
 // NewTokenAuth builds an authenticator that fetches keys from opts.JWKSURL.
 // It fails when JWKSURL or Audience is empty.
 //
+// A token reaching the gateway is a workload credential, so it is bounded by
+// its "exp" and never by its age: the validator runs with
+// [jwt.Config.MaxTokenAge] of -1 unless [TokenAuthOptions.MaxTokenAge] names a
+// bound. The two classes of token differ in what ages. A person's token is
+// bounded by age at the family's 24 hours, because the session behind it is
+// what goes stale. A workload's token is re-minted in place by the plane that
+// issued it, on that plane's own schedule and against its own lifetime, so an
+// age bound here refuses a workload whose issuer still vouches for it: the
+// token is days old by design and its "exp" is still in the future.
+//
 // The JWKS fetch is the gateway's only outbound call of its own, and it is the
 // one safe to trace: a first-party GET to a fixed keys endpoint with no query
 // and no credential. The token being validated never travels on it;
@@ -93,11 +109,19 @@ func NewTokenAuth(opts TokenAuthOptions) (*TokenAuth, error) {
 	if subject == "" {
 		subject = DefaultSubjectClaim
 	}
+	// Zero is this package's rule, not the validator's default: no age bound,
+	// "exp" alone. A negative value reaches the validator as the same no
+	// bound, so only a positive one changes the verdict.
+	maxAge := opts.MaxTokenAge
+	if maxAge == 0 {
+		maxAge = -1
+	}
 	return &TokenAuth{
 		v: jwt.New(jwt.Config{
-			JWKSURL:    opts.JWKSURL,
-			Issuer:     opts.Issuer,
-			HTTPClient: client,
+			JWKSURL:     opts.JWKSURL,
+			Issuer:      opts.Issuer,
+			HTTPClient:  client,
+			MaxTokenAge: maxAge,
 		}),
 		scope:   opts.Scope,
 		aud:     opts.Audience,

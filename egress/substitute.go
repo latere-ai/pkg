@@ -22,6 +22,9 @@
 //     control-plane API that fills it; [Client] is the matching caller.
 //   - [MintPlaceholder] and [IsPlaceholder] define the placeholder shape.
 //   - [TokenAuth] verifies a principal's JWT presented as proxy credentials.
+//     That token is a workload credential, so its "exp" bounds it and its
+//     age does not: a workload whose plane re-mints on its own schedule is
+//     not refused for presenting a token issued days ago.
 //   - [Gateway] and [CA] are the TLS-terminating CONNECT proxy on top.
 //
 // The security property is destination scoping: a placeholder is replaced
