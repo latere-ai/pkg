@@ -23,6 +23,20 @@ under **Removed** or **Changed** with what to do about it.
   the clock past its `exp` and see it refused, and move the clock past
   `CacheTTL` and see the refetch a node would make.
 
+- `jwt.ErrIssuerUnavailable`, reason `jwt.ReasonIssuerUnavailable`
+  (`issuer_unavailable`), is an issuer whose key set could not be read: its
+  discovery document or its JWKS endpoint did not answer, and no cached set
+  was held to answer in their place. The fetch failure was unclassified
+  before, so `jwt.ReasonOf` read the empty string and a caller could not
+  tell an unreachable issuer from anything else; it now carries the
+  family's word for the row.
+
+  The stale-on-error fallback is unchanged: a cached set is an answer,
+  however stale, and is still served, so this refusal is the one a node
+  holding nothing gives. A discovery document refused under OIDC 4.3 keeps
+  its own row rather than reading as the issuer being out of reach: the
+  issuer answered, and what it said was refused.
+
 ### Fixed
 
 - Security: a discovery document must name the issuer it was fetched from.

@@ -71,6 +71,7 @@
 //	ErrTokenTooOld       ReasonTooOld        iat
 //	ErrUnknownKey        ReasonUnknownKey    unknown_key
 //	ErrBadDiscovery      ReasonBadIssuer     issuer
+//	ErrIssuerUnavailable ReasonIssuerUnavailable  issuer_unavailable
 //
 // The word is not the Go identifier and two errors may share one, as the
 // two signature refusals do: an algorithm no key of the set can answer is
@@ -163,6 +164,13 @@
 // back to stale cached keys, so a transient auth-service outage does not break
 // verification for a key already seen.
 //
+// When no cached set answers either, the refusal is
+// [ErrIssuerUnavailable], reason "issuer_unavailable": the discovery
+// document or the JWKS endpoint did not answer, so nothing is known about
+// the token. It is the issuer that is out of reach and not the token that
+// is wrong, which is why it is a row of its own rather than a signature
+// that failed.
+//
 // # Usage
 //
 //	v := jwt.New(jwt.Config{
@@ -254,6 +262,10 @@ const (
 	ReasonTooLarge     Reason = "size"
 	ReasonTooOld       Reason = "iat"
 	ReasonUnknownKey   Reason = "unknown_key"
+	// ReasonIssuerUnavailable is the issuer being out of reach rather than
+	// the token being wrong: nothing is known about the token because the
+	// keys that would decide it could not be read.
+	ReasonIssuerUnavailable Reason = "issuer_unavailable"
 )
 
 // Error is a refusal: the sentinel a caller matches with errors.Is and the
@@ -296,6 +308,14 @@ var (
 	// issuer's set, and no key of it is read. Its reason is the issuer:
 	// what failed is the issuer this node was told to trust.
 	ErrBadDiscovery = refusal(ReasonBadIssuer, "authkit/jwt: discovery document names another issuer")
+	// ErrIssuerUnavailable is an issuer whose key set could not be read:
+	// its discovery document or its JWKS endpoint did not answer, and no
+	// cached set was held to answer in their place. It says nothing about
+	// the token, which is why it is a row of its own: a node that cannot
+	// reach an issuer refuses that issuer's tokens until one fetch
+	// succeeds, and a cached set, however stale, is still an answer and is
+	// still served.
+	ErrIssuerUnavailable = refusal(ReasonIssuerUnavailable, "authkit/jwt: issuer unavailable")
 )
 
 // ReasonOf reports the table row err belongs to, reading through any number
@@ -681,9 +701,21 @@ func (v *Validator) keysFor(local bool, iss, kid string) ([]jwkEntry, error) {
 	}
 	keys, err := set.getKeysForKid(kid)
 	if err != nil {
-		return nil, fmt.Errorf("authkit/jwt: fetch JWKS: %w", err)
+		return nil, unreachable(err)
 	}
 	return keys, nil
+}
+
+// unreachable classifies a failure to read an issuer's key set. A failure
+// the fetch already named keeps its own row, as a discovery document that
+// names another issuer does; anything else is the issuer being out of
+// reach, which is [ErrIssuerUnavailable]. A cached set never reaches here:
+// it is an answer, and load serves it in place of the error.
+func unreachable(err error) error {
+	if ReasonOf(err) != "" {
+		return fmt.Errorf("authkit/jwt: fetch JWKS: %w", err)
+	}
+	return fmt.Errorf("%w: fetch JWKS: %w", ErrIssuerUnavailable, err)
 }
 
 // validateAge checks the age the "iat" claim gives the token: none when the
