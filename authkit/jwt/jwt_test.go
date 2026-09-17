@@ -288,7 +288,10 @@ func TestValidateInvalidSignature(t *testing.T) {
 	key := genKey(t)
 	wrongKey := genKey(t)
 	v := testValidator(t, key)
-	token := signToken(t, wrongKey, defaultHeader(wrongKey), defaultPayload())
+	// The header names the kid the set holds, so the set's own key is the
+	// one that checks the signature and fails it. A token naming a kid the
+	// set does not hold is ErrUnknownKey instead, which is its own test.
+	token := signToken(t, wrongKey, defaultHeader(key), defaultPayload())
 
 	_, err := v.Validate(token)
 	if !errors.Is(err, ErrInvalidSignature) {

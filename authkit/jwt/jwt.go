@@ -69,6 +69,7 @@
 //	ErrTokenNotValidYet  ReasonNotYetValid   nbf
 //	ErrTokenTooLarge     ReasonTooLarge      size
 //	ErrTokenTooOld       ReasonTooOld        iat
+//	ErrUnknownKey        ReasonUnknownKey    unknown_key
 //
 // The word is not the Go identifier and two errors may share one, as the
 // two signature refusals do: an algorithm no key of the set can answer is
@@ -93,6 +94,17 @@
 // widens those two claims and nothing else, so it reaches neither the age
 // bound, measured against this clock alone, nor a local token, stamped on
 // this clock already.
+//
+// # Which key verifies a token
+//
+// On the JWKS path the issuer's set answers by "kid": the key a token names
+// is the only key that may verify it, and a kid the set does not hold is
+// [ErrUnknownKey], after one forced refresh of the set so that a key just
+// rotated in is still picked up. No other key of the set is tried, because
+// admitting a token under a key it did not name is a claim about the
+// issuer's set that the issuer never made. A token that carries no kid
+// leaves the choice to the set, which only a set holding exactly one key
+// can make; against a larger set it is [ErrUnknownKey] too.
 //
 // # More than one issuer
 //
@@ -223,6 +235,7 @@ const (
 	ReasonNotYetValid  Reason = "nbf"
 	ReasonTooLarge     Reason = "size"
 	ReasonTooOld       Reason = "iat"
+	ReasonUnknownKey   Reason = "unknown_key"
 )
 
 // Error is a refusal: the sentinel a caller matches with errors.Is and the
@@ -254,6 +267,10 @@ var (
 	ErrUnsupportedAlg = refusal(ReasonBadSignature, "authkit/jwt: unsupported algorithm")
 	ErrTokenTooLarge  = refusal(ReasonTooLarge, "authkit/jwt: token too large")
 	ErrTokenTooOld    = refusal(ReasonTooOld, "authkit/jwt: token too old")
+	// ErrUnknownKey is a token whose "kid" names no key of the issuer's
+	// set, after one refresh of that set. It is not a bad signature: the
+	// token named a key nobody published, and no other key was tried.
+	ErrUnknownKey = refusal(ReasonUnknownKey, "authkit/jwt: unknown key")
 )
 
 // ReasonOf reports the table row err belongs to, reading through any number
@@ -531,8 +548,8 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 	sigInput := parts[0] + "." + parts[1]
 	digest := hashSHA256([]byte(sigInput))
 
-	if !verifySignature(keys, header.Kid, header.Alg, digest, sig) {
-		return nil, ErrInvalidSignature
+	if err := verifyAgainst(keys, local, header.Kid, header.Alg, digest, sig); err != nil {
+		return nil, err
 	}
 
 	// Validate exp and nbf, each widened by the skew between the issuer's
@@ -1076,21 +1093,46 @@ func hashSHA256(data []byte) []byte {
 	return h.Sum(nil)
 }
 
-func verifySignature(keys []jwkEntry, kid, alg string, digest, sig []byte) bool {
+// verifyAgainst checks sig against the set under the rule of the path the
+// token came in on.
+//
+// On the JWKS path the set answers by "kid": the key the token names is the
+// only key that may verify it, and a kid the set does not hold is
+// [ErrUnknownKey] rather than an invitation to try the rest. A token that
+// names no kid leaves the choice to the set, which only a set of exactly
+// one key can make; a larger set answers it the same way. Trying every key
+// would let a token name one key and be admitted by another, which is a
+// claim about the issuer's set that the issuer never made.
+//
+// The local path keeps its own rule, since localKeysFor has already chosen
+// the candidates: a key that declares the kid, or any key that declares
+// none, and an empty choice is a signature that did not check out.
+func verifyAgainst(keys []jwkEntry, local bool, kid, alg string, digest, sig []byte) error {
+	if local {
+		for _, k := range keys {
+			if k.verifies(alg, digest, sig) {
+				return nil
+			}
+		}
+		return ErrInvalidSignature
+	}
+
+	named := keys
 	if kid != "" {
+		named = nil
 		for _, k := range keys {
 			if k.kid == kid {
-				return k.verifies(alg, digest, sig)
+				named = append(named, k)
 			}
 		}
 	}
-	// Fallback: try all keys.
-	for _, k := range keys {
-		if k.verifies(alg, digest, sig) {
-			return true
-		}
+	if len(named) != 1 {
+		return ErrUnknownKey
 	}
-	return false
+	if !named[0].verifies(alg, digest, sig) {
+		return ErrInvalidSignature
+	}
+	return nil
 }
 
 // rawPayload is the JWT payload as emitted by the auth service.

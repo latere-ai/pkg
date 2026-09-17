@@ -83,14 +83,23 @@ func TestIssuersAdmitsEachAndRefusesAnyOther(t *testing.T) {
 }
 
 // TestIssuersKeepTheirKeySetsApart: each issuer answers for its own tokens
-// only. A token naming one issuer and signed by another's key is refused,
-// so trusting two issuers is not pooling their keys.
+// only, so trusting two issuers is not pooling their keys. A token naming
+// one issuer and signed by another's key is refused whichever kid it
+// carries: its own, which that issuer's set does not hold, or the set's,
+// which does not check out against it.
 func TestIssuersKeepTheirKeySetsApart(t *testing.T) {
 	ka, kb := genKey(t), genKey(t)
 	a, b := serveIssuer(t, ka), serveIssuer(t, kb)
 	v := New(Config{Issuers: []string{a.URL, b.URL}, CacheTTL: time.Hour})
+	p := defaultPayload()
+	p["iss"] = a.URL
 
-	if _, err := v.Validate(issuerToken(t, kb, a.URL)); !errors.Is(err, ErrInvalidSignature) {
+	// Signed by the other issuer's key, under that key's own kid.
+	if _, err := v.Validate(signToken(t, kb, defaultHeader(kb), p)); !errors.Is(err, ErrUnknownKey) {
+		t.Fatalf("err = %v, want ErrUnknownKey", err)
+	}
+	// Signed by the other issuer's key, under a kid this issuer does hold.
+	if _, err := v.Validate(signToken(t, kb, defaultHeader(ka), p)); !errors.Is(err, ErrInvalidSignature) {
 		t.Fatalf("err = %v, want ErrInvalidSignature", err)
 	}
 }

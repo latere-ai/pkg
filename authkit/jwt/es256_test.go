@@ -52,20 +52,24 @@ func TestValidateRefusesAMismatchedAlgAndKey(t *testing.T) {
 		name  string
 		iss   *issuertest.Server
 		token string
+		want  error
 	}{
-		// Signed by the P-256 key, header says RS256: the set holds no RSA key.
-		{"an EC signature under an RS256 header", ec, ec.Mint(issuertest.Claims{Aud: aud, Alg: "RS256"})},
-		// Signed by the RSA key, header says ES256: the set holds no EC key.
-		{"an RSA signature under an ES256 header", rs, rs.Mint(issuertest.Claims{Aud: aud, Alg: "ES256"})},
-		// A genuine ES256 token presented to an issuer that serves RSA keys.
-		{"an ES256 token against an RSA key set", rs, ec.Mint(issuertest.Claims{Aud: aud})},
+		// Signed by the P-256 key, header says RS256: the kid is the set's,
+		// so that key answers, and an RS256 header over an EC key does not
+		// check out.
+		{"an EC signature under an RS256 header", ec, ec.Mint(issuertest.Claims{Aud: aud, Alg: "RS256"}), ErrInvalidSignature},
+		// Signed by the RSA key, header says ES256: likewise.
+		{"an RSA signature under an ES256 header", rs, rs.Mint(issuertest.Claims{Aud: aud, Alg: "ES256"}), ErrInvalidSignature},
+		// A genuine ES256 token presented to an issuer that serves RSA keys:
+		// it names its own issuer's kid, which this set does not hold.
+		{"an ES256 token against an RSA key set", rs, ec.Mint(issuertest.Claims{Aud: aud}), ErrUnknownKey},
 		// A genuine RS256 token presented to an issuer that serves EC keys.
-		{"an RS256 token against an EC key set", ec, rs.Mint(issuertest.Claims{Aud: aud})},
+		{"an RS256 token against an EC key set", ec, rs.Mint(issuertest.Claims{Aud: aud}), ErrUnknownKey},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := familyValidator(tc.iss).Validate(tc.token)
-			if !errors.Is(err, ErrInvalidSignature) {
-				t.Fatalf("err = %v, want ErrInvalidSignature", err)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("err = %v, want %v", err, tc.want)
 			}
 		})
 	}

@@ -67,6 +67,10 @@ func TestReasonOfNamesEveryRefusal(t *testing.T) {
 			}),
 		},
 		{
+			name: "unknown key", want: ReasonUnknownKey, wire: "unknown_key", sen: ErrUnknownKey,
+			token: signToken(t, key, map[string]any{"alg": "RS256", "typ": "JWT", "kid": "absent"}, defaultPayload()),
+		},
+		{
 			name: "malformed", want: ReasonMalformed, wire: "malformed", sen: ErrMalformedToken,
 			token: "one.two",
 		},

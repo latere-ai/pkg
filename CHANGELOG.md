@@ -10,6 +10,30 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Changed
+
+- On the JWKS path, a token whose `kid` names no key of the issuer's set is
+  now `jwt.ErrUnknownKey`, reason `unknown_key`, and no other key of the set
+  is tried. Before, a kid that matched nothing fell back to trying every key
+  in turn, so a token could name one key and be admitted by another: a claim
+  about the issuer's set that the issuer never made. The fallback is gone.
+  A kid miss still forces one refresh of the set first, so a key just
+  rotated in at the issuer is picked up rather than refused.
+
+  A token that carries no `kid` leaves the choice to the set, which only a
+  set holding exactly one key can make; against a larger set it is
+  `ErrUnknownKey` too. A single-key set, which is what the family's issuers
+  serve, is unchanged.
+
+  A caller that relied on the fallback sees `unknown_key` where it saw
+  `invalid signature`. Both are refusals, so nothing that was admitted
+  before is refused now except a token naming a key nobody published, and
+  nothing that was refused is admitted.
+
+  `Config.LocalIssuer` keeps its own rule and is unchanged: its candidates
+  are the key declaring the kid and any key declaring none, and an empty
+  choice is a bad signature.
+
 ## v0.72.0 - 2026-09-17
 
 ### Added
