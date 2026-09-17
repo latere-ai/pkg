@@ -34,6 +34,8 @@
 //	kind, actor_id      Kind, ActorID          a non-principal actor a token is bound to
 //	preferred_username  PreferredUsername      the person's handle; absent until they claim one
 //	org_slug, org_name  OrgSlug, OrgName       the slug and display name of org_id; absent with it
+//	token_use           TokenUse               the credential class that minted it; "pat" is a personal access token
+//	authorization_details  Grants              what that credential may do; read on a "pat" token alone
 //	iss, aud, exp       Iss, Aud, Exp          the envelope
 //
 // An issuer that stamps only "sub" still verifies; the Identity that results
@@ -72,11 +74,28 @@
 //	ErrUnknownKey         ReasonUnknownKey         unknown_key
 //	ErrBadDiscovery       ReasonBadIssuer          issuer
 //	ErrIssuerUnavailable  ReasonIssuerUnavailable  issuer_unavailable
+//	ErrGrantsUnread       ReasonGrantsUnread       grants_unread
 //
 // The word is not the Go identifier and two errors may share one, as the
 // two signature refusals do: an algorithm no key of the set can answer is
 // what a caller learns as a signature that did not check out. [ErrNoToken]
 // carries no reason, because nothing arrived to refuse.
+//
+// # Grants
+//
+// A personal access token is the person who holds it, narrowed by what
+// that person said the key may do: the grants, carried as RFC 9396's
+// "authorization_details" claim (identity id-13). A verified token hands
+// them back on [Claims] as an [authkit.Grants], beside the "token_use"
+// that says which credential minted it, and the [authkit.Identity] an
+// [Authenticator] yields carries both.
+//
+// Reading them is a promise, and [Config.ReadsGrants] is where a service
+// makes it. Off, which is the default, a token that carries grants is
+// [ErrGrantsUnread]: the claim is a restriction, so a service that reads
+// the token and applies nothing grants more than the person asked for,
+// and the closed failure is to refuse. What a grant means at a decision
+// is latere.ai/x/pkg/authz's, not this package's; nothing here decides.
 //
 // # Bounds
 //
@@ -194,6 +213,7 @@
 package jwt
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/ecdsa"
@@ -269,6 +289,11 @@ const (
 	// the token being wrong: nothing is known about the token because the
 	// keys that would decide it could not be read.
 	ReasonIssuerUnavailable Reason = "issuer_unavailable"
+	// ReasonGrantsUnread is a token that carries grants and a validator
+	// that does not read them. The token is well formed and the refusal
+	// is about this node: it would admit a credential narrower than it
+	// can enforce.
+	ReasonGrantsUnread Reason = "grants_unread"
 )
 
 // Error is a refusal: the sentinel a caller matches with errors.Is and the
@@ -319,6 +344,14 @@ var (
 	// succeeds, and a cached set, however stale, is still an answer and is
 	// still served.
 	ErrIssuerUnavailable = refusal(ReasonIssuerUnavailable, "authkit/jwt: issuer unavailable")
+	// ErrGrantsUnread is a token whose "token_use" is a personal access
+	// token and which carries an "authorization_details" claim, presented
+	// to a validator whose [Config.ReadsGrants] is false. The claim is a
+	// restriction, so a reader that ignores it grants more than the person
+	// asked for, silently, at the one place nobody is looking: a refusal
+	// is visible in a 401 with a named reason, and an ignored restriction
+	// is visible nowhere.
+	ErrGrantsUnread = refusal(ReasonGrantsUnread, "authkit/jwt: the token carries grants this validator does not read")
 )
 
 // ReasonOf reports the table row err belongs to, reading through any number
@@ -381,6 +414,25 @@ type Config struct {
 	// that a token with no age cannot slip past MaxTokenAge. Off by
 	// default: an issuer that stamps only "sub" still verifies.
 	RequireIssuedAt bool
+	// ReadsGrants is this validator's promise that whoever holds the
+	// Identity it yields applies the grants a token carries: the
+	// "authorization_details" claim of RFC 9396, which narrows a personal
+	// access token to the actions and resources its holder chose
+	// (identity id-13).
+	//
+	// It is off by default and a token that carries grants is then
+	// [ErrGrantsUnread], reason "grants_unread". That is the closed
+	// failure: the claim is a restriction, so a service that reads the
+	// token and ignores it grants more than the person asked for, and an
+	// ignored restriction is visible nowhere. A refusal is visible in a
+	// 401 with a named reason.
+	//
+	// A service sets it once its own authz/conformance run passes the
+	// grant rows, which is what turns the flag from a promise into
+	// evidence. It reaches [Validator.Validate] alone: [ParseUnverified]
+	// and [DecodePayload] take no Config and read a token already trusted
+	// by transport.
+	ReadsGrants bool
 	// LocalIssuer is an issuer verified against LocalKey with no JWKS
 	// fetch: the "iss" of the tokens the process mints for itself, and of
 	// a stub issuer a test stands up with no server. A token naming it is
@@ -666,7 +718,15 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 		return nil, ErrMalformedToken
 	}
 
-	return claimsFromRawPayload(raw), nil
+	// The grants are read last, after the signature and the envelope, so
+	// that a tampered token is refused as a signature and never as an
+	// unread grant: the reason a service writes names what was actually
+	// wrong with the token.
+	if raw.carriesGrants() && !v.cfg.ReadsGrants {
+		return nil, ErrGrantsUnread
+	}
+
+	return claimsFromRawPayload(raw)
 }
 
 // sameIssuer reports whether two issuer URLs name one issuer. Trailing
@@ -735,7 +795,16 @@ func (v *Validator) validateAge(iat *float64) error {
 // the single mapping site shared by Validate (after full verification)
 // and ParseUnverified (transport-trusted, no verification) so the two
 // paths can never disagree on which JSON claim feeds which field.
-func claimsFromRawPayload(raw rawPayload) *Claims {
+//
+// One claim can fail to map: a grants claim that cannot be read as a set
+// of grants is [ErrMalformedToken], the row a non-string "org_id" already
+// lands in. It is refused on both paths, so a token trusted by transport
+// cannot carry what a verified token could not.
+func claimsFromRawPayload(raw rawPayload) (*Claims, error) {
+	grants, err := raw.grants()
+	if err != nil {
+		return nil, err
+	}
 	clientID := raw.ClientID
 	if clientID == "" {
 		clientID = raw.AuthorizedParty
@@ -754,10 +823,39 @@ func claimsFromRawPayload(raw rawPayload) *Claims {
 		OrgSlug:           raw.OrgSlug,
 		OrgName:           raw.OrgName,
 
+		TokenUse: raw.TokenUse,
+		Grants:   grants,
+
 		Iss: raw.Iss,
 		Aud: []string(raw.Aud),
 		Exp: time.Unix(int64(raw.Exp), 0),
+	}, nil
+}
+
+// grants reads the "authorization_details" claim off the payload. Only a
+// personal access token carries one, so a token of any other credential
+// class carries no grant whatever the claim says, which is also why a
+// malformed claim on such a token refuses nothing: nothing would read it.
+func (raw rawPayload) grants() (authkit.Grants, error) {
+	if !raw.carriesGrants() {
+		return nil, nil
 	}
+	g, err := authkit.ParseGrants(raw.AuthorizationDetails)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrMalformedToken, err)
+	}
+	return g, nil
+}
+
+// carriesGrants reports whether this payload is a personal access token
+// with a grants claim to read. A claim written as JSON null carries
+// nothing, the same as an absent one.
+func (raw rawPayload) carriesGrants() bool {
+	if raw.TokenUse != authkit.TokenUsePAT {
+		return false
+	}
+	trimmed := bytes.TrimSpace(raw.AuthorizationDetails)
+	return len(trimmed) > 0 && !bytes.Equal(trimmed, []byte("null"))
 }
 
 // ParseUnverified decodes a JWT's payload into Claims WITHOUT
@@ -781,7 +879,7 @@ func ParseUnverified(rawToken string) (*Claims, error) {
 	if raw.Sub == "" {
 		return nil, ErrMalformedToken
 	}
-	return claimsFromRawPayload(raw), nil
+	return claimsFromRawPayload(raw)
 }
 
 // DecodePayload unmarshals the payload segment of a compact JWT into v
@@ -1278,6 +1376,13 @@ type rawPayload struct {
 	Kind            string   `json:"kind"`
 	ActorID         string   `json:"actor_id"`
 	AuthorizedParty string   `json:"azp"`
+
+	// The credential class that minted the token, and what the person who
+	// created it said it may do. Both are read only together: the grants
+	// claim belongs to a personal access token and to no other token the
+	// family mints, so token_use is what selects it.
+	TokenUse             string          `json:"token_use"`
+	AuthorizationDetails json.RawMessage `json:"authorization_details"`
 
 	// The issuer's display labels. Each is a plain string like the claims
 	// above it, so a non-string value fails the payload unmarshal and the

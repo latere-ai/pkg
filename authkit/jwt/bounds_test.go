@@ -5,6 +5,7 @@ package jwt
 
 import (
 	"crypto/rsa"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -53,6 +54,64 @@ func TestMaxTokenBytesDefault(t *testing.T) {
 	}
 	if _, err := v.Validate(tok); !errors.Is(err, ErrTokenTooLarge) {
 		t.Fatalf("err = %v, want ErrTokenTooLarge", err)
+	}
+}
+
+// grantsCapBytes is the bound infrastructure/identity id-13 puts on the
+// serialised authorization_details array: 4096 bytes of compact JSON,
+// computed and refused where the key is created, so the failure lands on
+// the person creating it and never on a token nobody can spend.
+const grantsCapBytes = 4096
+
+// TestAGrantsClaimAtTheCapFitsTheTokenBound: the size arithmetic id-13
+// writes out, as an assertion rather than a table. A PAT token carrying a
+// grants array at the cap is under DefaultMaxTokenBytes, so the byte bound
+// auth enforces at creation cannot mint a token this package refuses as
+// too large.
+//
+// The figure is not pinned: a kid and an issuer are as long as a
+// deployment makes them, and what must hold is the headroom, not one
+// arithmetic.
+func TestAGrantsClaimAtTheCapFitsTheTokenBound(t *testing.T) {
+	key := genKey(t)
+	details, compact := grantsAtTheCap(t)
+	if compact < grantsCapBytes {
+		t.Fatalf("the grants array is %d bytes of compact JSON, want at least the %d byte cap", compact, grantsCapBytes)
+	}
+	tok := signToken(t, key, defaultHeader(key), patPayload(details))
+	if len(tok) >= DefaultMaxTokenBytes {
+		t.Fatalf("a token carrying %d bytes of grants is %d bytes, at or past the %d byte default", compact, len(tok), DefaultMaxTokenBytes)
+	}
+	claims, err := testValidator(t, key, readsGrants).Validate(tok)
+	if err != nil {
+		t.Fatalf("a token at the grants cap was refused: %v", err)
+	}
+	if len(claims.Grants) == 0 {
+		t.Fatal("a token at the grants cap parsed no grant")
+	}
+}
+
+// grantsAtTheCap builds an authorization_details array just past id-13's
+// 4096 byte bound out of entries of a realistic width, and returns it with
+// the size of its compact JSON.
+func grantsAtTheCap(t *testing.T) ([]any, int) {
+	t.Helper()
+	var details []any
+	for {
+		details = append(details, map[string]any{
+			"type":       "latere-authz",
+			"actions":    []string{"origo:repo.read", "origo:repo.write"},
+			"datatypes":  []string{"Repository"},
+			"locations":  []string{"https://api.latere.ai"},
+			"identifier": "7c6b5d4e-3f21-4a90-b8e2-1d0c9b8a7f65",
+		})
+		raw, err := json.Marshal(details)
+		if err != nil {
+			t.Fatalf("marshal the grants array: %v", err)
+		}
+		if len(raw) >= grantsCapBytes {
+			return details, len(raw)
+		}
 	}
 }
 

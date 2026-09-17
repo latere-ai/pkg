@@ -82,6 +82,17 @@ func TestReasonOfNamesEveryRefusal(t *testing.T) {
 			token: token(func(map[string]any) {}),
 			opts:  []func(*Config){func(c *Config) { c.JWKSURL = "http://127.0.0.1:1" }},
 		},
+		{
+			// The token carries grants and this validator does not read
+			// them, so admitting it would grant more than the person
+			// asked for. ReadsGrants is left off, which is the default.
+			name: "grants unread", want: ReasonGrantsUnread, wire: "grants_unread",
+			sen: ErrGrantsUnread,
+			token: token(func(p map[string]any) {
+				p["token_use"] = "pat"
+				p["authorization_details"] = oneRepositoryRead()
+			}),
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := testValidator(t, key, tc.opts...).Validate(tc.token)
