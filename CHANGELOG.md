@@ -77,6 +77,24 @@ under **Removed** or **Changed** with what to do about it.
   request carries, the way a conforming endpoint does. A stub told no
   vocabulary answers its rule table alone, unchanged.
 
+### Removed
+
+- `authkit.Identity.AgentID`, and its `agent_id` JSON tag. The auth
+  service stopped issuing a delegated-agent claim when the identity work
+  settled what an agent is: an agent is a service account, and the acting
+  agent is a column a product keeps beside the bearer, not something a
+  verifier hands out. The field had no reader anywhere in the family,
+  checked by grep across every repository, so nothing to do: a service
+  that never read it is unaffected, and one that set it deletes the
+  assignment.
+
+  A test now reads every non-test Go file of this module and fails on a
+  word the identity work retired: `agent_id`, `grantor_id`, `"act"`,
+  `actor: true`, `/tokeninfo`, `/userinfo/permissions` and
+  `/v1/tokens/exchange`. Test files are exempt, because a test that mints
+  a token carrying a retired claim is how a package proves it refuses
+  one.
+
 ## v0.74.0 - 2026-09-17
 
 ### Added

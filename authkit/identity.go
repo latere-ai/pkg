@@ -115,16 +115,6 @@ type Identity struct {
 	// (OrgID, Sub).
 	Kind    string `json:"kind,omitempty"`
 	ActorID string `json:"actor_id,omitempty"`
-	// AgentID is the acting agent's id, set by whichever Authenticator
-	// resolved this Identity. It is a REPORTING and flow-gating dimension
-	// only and does NOT affect tenancy (attribution stays (OrgID, Sub)).
-	// Empty for ordinary identities.
-	//
-	// Its source is the authenticator's concern, not this package's. The
-	// auth service no longer issues a delegated-agent JWT claim, so the
-	// remaining producers set it from an agent-kind catalog token's own
-	// binding claim.
-	AgentID string `json:"agent_id,omitempty"`
 	// AuthMethod records which Authenticator resolved this Identity, for
 	// observability and conditional handler logic. Standard values are
 	// MethodBearer, MethodCookie, MethodStatic. Consumers may declare
