@@ -121,6 +121,9 @@
 // signature that does not check out against it is [ErrInvalidSignature] and
 // not the other refusal.
 //
+// [ParseHeader] hands that same header back, so a caller holding its own
+// key sets can make the choice itself. It verifies nothing.
+//
 // # More than one issuer
 //
 // [Config.Issuers] is a list of issuer URLs to trust beside
@@ -584,16 +587,9 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 	}
 
 	// Decode header.
-	headerBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	header, err := parseHeaderSegment(parts[0])
 	if err != nil {
-		return nil, ErrMalformedToken
-	}
-	var header struct {
-		Alg string `json:"alg"`
-		Kid string `json:"kid"`
-	}
-	if err := json.Unmarshal(headerBytes, &header); err != nil {
-		return nil, ErrMalformedToken
+		return nil, err
 	}
 	if header.Alg != algRS256 && header.Alg != algES256 {
 		return nil, ErrUnsupportedAlg
@@ -617,7 +613,7 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 	}
 
 	local := v.cfg.LocalIssuer != "" && sameIssuer(raw.Iss, v.cfg.LocalIssuer)
-	keys, err := v.keysFor(local, raw.Iss, header.Kid)
+	keys, err := v.keysFor(local, raw.Iss, header.KID)
 	if err != nil {
 		return nil, err
 	}
@@ -625,7 +621,7 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 	sigInput := parts[0] + "." + parts[1]
 	digest := hashSHA256([]byte(sigInput))
 
-	if err := verifyAgainst(keys, header.Kid, header.Alg, digest, sig); err != nil {
+	if err := verifyAgainst(keys, header.KID, header.Alg, digest, sig); err != nil {
 		return nil, err
 	}
 
@@ -807,6 +803,53 @@ func DecodePayload(rawToken string, v any) error {
 		return ErrMalformedToken
 	}
 	return nil
+}
+
+// Header is the JOSE header of a compact JWT: what a caller needs to pick
+// the key that must verify the token.
+type Header struct {
+	// Alg is the "alg" the token is signed under: "RS256" or "ES256" for a
+	// token this package verifies.
+	Alg string
+	// KID is the "kid" the header names, and empty when it names none. It
+	// is the name the key is published under at the issuer.
+	KID string
+	// Typ is the "typ" the header declares, and empty when it declares
+	// none. Nothing here reads it.
+	Typ string
+}
+
+// ParseHeader decodes the JOSE header of a compact JWT. It verifies
+// nothing and reaches no network: it is for a caller that holds its own
+// key sets and needs the "kid" to choose the key, which is the choice
+// [Validator.Validate] makes for itself and has no other way to hand back.
+// A token that is not three segments, or whose header is not base64url
+// JSON, is [ErrMalformedToken].
+func ParseHeader(rawToken string) (Header, error) {
+	parts := strings.Split(rawToken, ".")
+	if len(parts) != 3 {
+		return Header{}, ErrMalformedToken
+	}
+	return parseHeaderSegment(parts[0])
+}
+
+// parseHeaderSegment decodes one JOSE header segment. It is the one place
+// a header is read, shared by ParseHeader and Validate, so the two can
+// never disagree on what a header says.
+func parseHeaderSegment(seg string) (Header, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(seg)
+	if err != nil {
+		return Header{}, ErrMalformedToken
+	}
+	var h struct {
+		Alg string `json:"alg"`
+		Kid string `json:"kid"`
+		Typ string `json:"typ"`
+	}
+	if err := json.Unmarshal(raw, &h); err != nil {
+		return Header{}, ErrMalformedToken
+	}
+	return Header{Alg: h.Alg, KID: h.Kid, Typ: h.Typ}, nil
 }
 
 // Scopes decodes the "scp" claim of a compact JWT: a product-local token's

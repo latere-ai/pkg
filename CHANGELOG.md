@@ -37,6 +37,14 @@ under **Removed** or **Changed** with what to do about it.
   its own row rather than reading as the issuer being out of reach: the
   issuer answered, and what it said was refused.
 
+- `jwt.ParseHeader(token) (jwt.Header, error)` reads a compact JWT's JOSE
+  header: `Alg`, `KID` and `Typ`. It verifies nothing and reaches no
+  network, and it is the header `jwt.Validator.Validate` reads for itself,
+  so a caller holding its own key sets can select a key by the `kid` the
+  token names rather than trying every key it holds. A token that is not
+  three segments, or whose header is not base64url JSON, is
+  `jwt.ErrMalformedToken`.
+
 ### Fixed
 
 - Security: a discovery document must name the issuer it was fetched from.
