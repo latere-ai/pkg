@@ -10,6 +10,28 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Fixed
+
+- Security: a discovery document must name the issuer it was fetched from.
+  `Config.Issuers` discovers each issuer's key set at
+  `<issuer>/.well-known/openid-configuration` and followed the document's
+  `jwks_uri` whatever issuer the document named. A document served under a
+  trusted issuer's URL could therefore name another party and hand this
+  node that party's key set, and that set then verified tokens minted in
+  the trusted issuer's name: key substitution, with the trusted URL as the
+  only thing an operator had checked.
+
+  The document's `issuer` is now compared to the configured issuer,
+  trailing slashes aside, before anything else in the document is read
+  (OpenID Connect Discovery 4.3). A mismatch, and a document that names no
+  issuer at all, is `jwt.ErrBadDiscovery`, reason `issuer`, and no key of
+  that document's `jwks_uri` is ever fetched.
+
+  This reaches the `Config.Issuers` path alone, which is the only path that
+  discovers: `Config.Issuer` is configured with its `Config.JWKSURL`
+  directly and never read a discovery document. An issuer whose document
+  names itself, which is what the family's issuers publish, is unchanged.
+
 ## v0.73.0 - 2026-09-17
 
 ### Changed

@@ -70,6 +70,7 @@
 //	ErrTokenTooLarge     ReasonTooLarge      size
 //	ErrTokenTooOld       ReasonTooOld        iat
 //	ErrUnknownKey        ReasonUnknownKey    unknown_key
+//	ErrBadDiscovery      ReasonBadIssuer     issuer
 //
 // The word is not the Go identifier and two errors may share one, as the
 // two signature refusals do: an algorithm no key of the set can answer is
@@ -119,6 +120,12 @@
 // none of them is [ErrInvalidIssuer] before any key is read, because the
 // issuer is what selects the key set. With the list empty, Config.Issuer
 // decides alone against the one [Config.JWKSURL].
+//
+// Discovery follows OpenID Connect Discovery 4.3: the "issuer" the
+// document names must be the issuer it was fetched from, trailing slashes
+// aside, and a document naming another issuer or naming none is
+// [ErrBadDiscovery] before its "jwks_uri" is read. The check runs on the
+// one discovery per issuer, since the "jwks_uri" it yields is kept.
 //
 // # A local issuer
 //
@@ -273,6 +280,13 @@ var (
 	// set, after one refresh of that set. It is not a bad signature: the
 	// token named a key nobody published, and no other key was tried.
 	ErrUnknownKey = refusal(ReasonUnknownKey, "authkit/jwt: unknown key")
+	// ErrBadDiscovery is a discovery document that names an issuer other
+	// than the one it was fetched from, or names none at all (OpenID
+	// Connect Discovery 4.3). Such a document is not the issuer's own
+	// statement about itself, so the key set it points at is not the
+	// issuer's set, and no key of it is read. Its reason is the issuer:
+	// what failed is the issuer this node was told to trust.
+	ErrBadDiscovery = refusal(ReasonBadIssuer, "authkit/jwt: discovery document names another issuer")
 )
 
 // ReasonOf reports the table row err belongs to, reading through any number
@@ -308,6 +322,10 @@ type Config struct {
 	// [ErrInvalidIssuer] before any key is read, since the issuer is what
 	// selects the key set. Each issuer answers for its own tokens alone:
 	// trusting two issuers does not pool their keys.
+	//
+	// Each discovery document must name the issuer it was fetched from
+	// (OpenID Connect Discovery 4.3); one that names another issuer, or
+	// names none, is [ErrBadDiscovery] and its "jwks_uri" is not read.
 	Issuers []string
 	// Audiences is the set of acceptable "aud" values. Skipped if empty.
 	Audiences []string
@@ -981,10 +999,19 @@ func (c *jwksCache) resolve(get func(string) (*http.Response, error)) (string, e
 		return "", err
 	}
 	var doc struct {
+		Issuer  string `json:"issuer"`
 		JWKSURI string `json:"jwks_uri"`
 	}
 	if err := json.Unmarshal(body, &doc); err != nil {
 		return "", err
+	}
+	// OpenID Connect Discovery 4.3, weighed before the document is read
+	// for anything else: the issuer a document names must be the issuer it
+	// was fetched from. A document naming another issuer, or naming none,
+	// is somebody else's statement served under this URL, and following
+	// its jwks_uri would let its keys verify this issuer's tokens.
+	if !sameIssuer(doc.Issuer, c.issuer) {
+		return "", fmt.Errorf("%w: %s names issuer %q", ErrBadDiscovery, c.issuer, doc.Issuer)
 	}
 	if doc.JWKSURI == "" {
 		return "", fmt.Errorf("authkit/jwt: %s names no jwks_uri", c.issuer)
