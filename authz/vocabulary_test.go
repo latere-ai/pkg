@@ -184,3 +184,70 @@ func FuzzVocabularyKind(f *testing.F) {
 		}
 	})
 }
+
+// TestLabelIsTheKindUntilACoreNamesOne: the picker groups by resource
+// kind, and a type name is not a heading a person reads. A vocabulary
+// that sets no label renders as its kind, so no core is forced to move.
+func TestLabelIsTheKindUntilACoreNamesOne(t *testing.T) {
+	v, err := authz.NewVocabulary("cella",
+		authz.Action{Name: "sandbox.read", Kind: "Sandbox"},
+		authz.Action{Name: "set.read", Kind: "SandboxSet"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := v.Label("SandboxSet"); got != "SandboxSet" {
+		t.Fatalf("Label with no labels declared = %q, want the kind", got)
+	}
+
+	labelled := v.WithLabels(map[string]string{"SandboxSet": "Sandbox sets"})
+	if got := labelled.Label("SandboxSet"); got != "Sandbox sets" {
+		t.Fatalf("Label = %q, want %q", got, "Sandbox sets")
+	}
+	if got := labelled.Label("Sandbox"); got != "Sandbox" {
+		t.Fatalf("a kind the core labelled nothing for = %q, want the kind", got)
+	}
+	if got := labelled.Label("Volume"); got != "Volume" {
+		t.Fatalf("a kind the table does not name = %q, want the string back", got)
+	}
+}
+
+// TestWithLabelsReturnsACopy: the setter does not reach the vocabulary a
+// core published, so one consumer's labels are not another's.
+func TestWithLabelsReturnsACopy(t *testing.T) {
+	v, err := authz.NewVocabulary("origo", authz.Action{Name: "repo.read", Kind: "Repository"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	labels := map[string]string{"Repository": "Repositories"}
+	labelled := v.WithLabels(labels)
+	if got := v.Label("Repository"); got != "Repository" {
+		t.Fatalf("the original vocabulary now labels %q; WithLabels returns a copy", got)
+	}
+	// The map the caller handed in is not the one the copy reads either.
+	labels["Repository"] = "Something else"
+	if got := labelled.Label("Repository"); got != "Repositories" {
+		t.Fatalf("Label = %q; a later write to the caller's map reached the vocabulary", got)
+	}
+	// Labels travel with a copy: a vocabulary passed by value keeps them.
+	if got := labelled.WithLabels(nil).Label("Repository"); got != "Repository" {
+		t.Fatalf("WithLabels(nil) left %q; it declares no label", got)
+	}
+}
+
+// TestNewVocabularySignatureIsUnchanged: a core declares its table the
+// way it always did, and the labels are the one thing added beside it.
+func TestNewVocabularySignatureIsUnchanged(t *testing.T) {
+	v, err := authz.NewVocabulary("origo", authz.Action{Name: "repo.read", Kind: "Repository"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Core != "origo" || len(v.Actions) != 1 {
+		t.Fatalf("NewVocabulary built %#v", v)
+	}
+	// A vocabulary written as a literal, which is how id-11 shows a core
+	// declaring one, reads its labels as its kinds.
+	lit := authz.Vocabulary{Core: "origo", Actions: []authz.Action{{Name: "repo.read", Kind: "Repository"}}}
+	if got := lit.Label("Repository"); got != "Repository" {
+		t.Fatalf("a vocabulary written as a literal labels %q", got)
+	}
+}

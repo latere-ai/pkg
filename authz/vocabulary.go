@@ -6,6 +6,7 @@ package authz
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 )
@@ -33,6 +34,39 @@ type Vocabulary struct {
 	Core string
 	// Actions is the table in the order the core's spec writes it.
 	Actions []Action
+	// labels is the human name of each resource kind, set by
+	// [Vocabulary.WithLabels] and read by [Vocabulary.Label]. It is not a
+	// field a core fills in a literal, so declaring a vocabulary is what
+	// it always was.
+	labels map[string]string
+}
+
+// WithLabels returns a copy of the vocabulary carrying the labels: the
+// name a person reads for one resource kind, where the kind is a type
+// name and not a heading. Cella declares {"SandboxSet": "Sandbox sets"}.
+//
+// A core declares them beside its table, and a consumer that wants none
+// reads the kind. The copy is the vocabulary's own map, so a later write
+// to the caller's map reaches nothing and one consumer's labels are never
+// another's.
+func (v Vocabulary) WithLabels(labels map[string]string) Vocabulary {
+	v.labels = maps.Clone(labels)
+	return v
+}
+
+// Label is the name to show for one resource kind: what
+// [Vocabulary.WithLabels] declared for it, and the kind itself when the
+// vocabulary declares none.
+//
+// It is the grouping a grant picker reads, because the kind is the
+// function: a repository, a sandbox, a budget. Grouping by anything else
+// would split Cella's set.* actions from the kind they act on and invent
+// a second grouping beside a correct one.
+func (v Vocabulary) Label(kind string) string {
+	if l := v.labels[kind]; l != "" {
+		return l
+	}
+	return kind
 }
 
 // NewVocabulary builds a core's table and refuses one that cannot be read
