@@ -23,6 +23,7 @@
 //	                                                    action of PageActions
 //	                      <---------------------------  (Decision, error)
 //	                      ErrUnavailable -> 503
+//	                      intersect with the token's grants
 //	                      write the decision, count it
 //	<---- 200 / 400 / 401 / 405 / 500 / 503
 //
@@ -42,11 +43,18 @@
 // with fields and a cursor this contract does not fix — which a core
 // names in [Options.PageActions] and a [Lister] answers.
 //
-// Everything a decision reads — the tables, the roles, the plans, the
-// grants — stays with whoever wrote the [Decider]. Nothing here names a
-// product, and a self-hoster writing a twenty-line authorizer for one
-// core gets the bearer, the envelope, the validation and the failure
-// rules right by construction.
+// Everything a decision reads — the tables, the roles, the plans — stays
+// with whoever wrote the [Decider]. What the scaffold adds to the answer
+// is one thing: the grants the caller's own credential carries
+// (infrastructure/identity id-13). A personal access token is narrowed by
+// what its holder chose, and [authz.Restrict] intersects the decider's
+// answer with that set before it is written and before it is counted. It
+// is not an option and there is no way to switch it off, so an endpoint
+// on this scaffold enforces grants by construction.
+//
+// Nothing here names a product, and a self-hoster writing a twenty-line
+// authorizer for one core gets the bearer, the envelope, the validation,
+// the grants and the failure rules right by construction.
 package server
 
 import (
@@ -336,6 +344,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.failed(w, r, req.Action, err)
 		return
 	}
+	// The grants the caller's token carries narrow the answer, before it
+	// is written and before it is counted, so the counter records the
+	// answer the core actually got.
+	d = h.restrict(req, d)
 	result := resultDeny
 	if d.Allow {
 		result = resultAllow
@@ -344,8 +356,32 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	httpjson.Write(w, http.StatusOK, render(d))
 }
 
+// restrict intersects one decision with the grants the caller's token
+// carries (infrastructure/identity id-13). It is not an option and there
+// is no way to switch it off: an endpoint on this scaffold enforces
+// grants by construction, and a core that bumps this package gets the
+// intersection with no code of its own.
+//
+// The core the actions are qualified by is the vocabulary's, which the
+// handler already holds. A claim that cannot be read as grants is a deny:
+// the verifier at the core's own door refuses such a token, so one that
+// reached here arrived another way, and the closed answer is the only
+// safe one.
+func (h *handler) restrict(req authz.Request, d authz.Decision) authz.Decision {
+	if !d.Allow {
+		return d
+	}
+	grants, err := authz.ParseGrants(req.Claims)
+	if err != nil {
+		return authz.Decision{Reason: authz.ReasonGrant}
+	}
+	return authz.Restrict(h.vocabulary.Core, d, req, grants)
+}
+
 // list answers an action of PageActions, whose reply is the core's own
-// page. The verdict inside it is the core's too, so the counter records
+// page. A page carries no verdict, so there is nothing for the grants to
+// narrow: a core whose directory listing must be narrowed narrows it in
+// its own Lister, where the page is built. The verdict inside it is the core's too, so the counter records
 // that a page was answered and a core that wants the split counts it in
 // its Lister. There is no nil-Lister case: New refuses that wiring.
 func (h *handler) list(w http.ResponseWriter, r *http.Request, req authz.Request) {

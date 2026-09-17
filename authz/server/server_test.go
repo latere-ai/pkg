@@ -736,3 +736,103 @@ func FuzzTheEnvelopeIsValidatedBeforeTheDecider(f *testing.F) {
 		}
 	})
 }
+
+// patEnvelope is one envelope whose claims are a personal access token's:
+// the token_use that names the credential class and, when details is not
+// empty, the RFC 9396 grants claim as the PEP forwarded it.
+func patEnvelope(action, id, details string) string {
+	claims := `{"token_use":"pat"`
+	if details != "" {
+		claims += `,"authorization_details":` + details
+	}
+	claims += `}`
+	res := `{"kind":"` + repoKnd + `"`
+	if id != "" {
+		res += `,"id":"` + id + `"`
+	}
+	res += `}`
+	return `{"subject":"` + alice + `","issuer":"https://issuer.example","sub":"alice","claims":` + claims +
+		`,"action":"` + action + `","resource":` + res + `,"request":{"id":"r1","ip":"203.0.113.4","user_agent":"t"}}`
+}
+
+// readOnlyOnOneRepository is id-13's first entry, over the repository this
+// test file already names.
+const readOnlyOnOneRepository = `[{"type":"latere-authz","actions":["origo:repo.read"],` +
+	`"datatypes":["Repository"],"identifier":"` + repoID + `"}]`
+
+// TestServerAppliesRestrict is id-13's A14. The scaffold intersects
+// whatever its Decider returned with the grants the caller's token
+// carries, and counts the answer it wrote. There is no option to switch
+// it off: Options carries none, so an endpoint on this scaffold enforces
+// grants by construction.
+func TestServerAppliesRestrict(t *testing.T) {
+	const otherRepo = "7c6b5d4e-3f21-4a90-b8e2-1d0c9b8a7f65"
+	reader := sdkmetric.NewManualReader()
+	meter := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)).Meter("authz/server grants")
+	h := server.New(server.Options{Bearer: bearer, Vocabulary: vocabulary(t), Meter: meter, Decider: allows})
+
+	for _, tc := range []struct {
+		name, body string
+		want       bool
+		wantReason string
+	}{
+		{"the granted action on the granted repository",
+			patEnvelope("repo.read", repoID, readOnlyOnOneRepository), true, ""},
+		{"another action on the granted repository",
+			patEnvelope("repo.write", repoID, readOnlyOnOneRepository), false, authz.ReasonGrant},
+		{"the granted action on another repository",
+			patEnvelope("repo.read", otherRepo, readOnlyOnOneRepository), false, authz.ReasonGrant},
+		{"a list, which the selector does not cover",
+			patEnvelope("repo.list", "", readOnlyOnOneRepository), false, authz.ReasonGrant},
+		{"a PAT that carries no grant at all",
+			patEnvelope("repo.read", repoID, ""), false, authz.ReasonGrant},
+		{"a PAT carrying an empty array",
+			patEnvelope("repo.read", repoID, "[]"), false, authz.ReasonGrant},
+		{"a claim that is no set of grants",
+			patEnvelope("repo.read", repoID, `[{"type":"openbanking"}]`), false, authz.ReasonGrant},
+		{"a token that is not a PAT",
+			envelope(alice, "repo.write", repoKnd, repoID), true, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			status, out := post(t, h, "Bearer "+bearer, tc.body)
+			if status != http.StatusOK {
+				t.Fatalf("status = %d, want 200: a decision, allow or deny, is a 200", status)
+			}
+			if out["allow"] != tc.want {
+				t.Fatalf("allow = %v, want %v (%v)", out["allow"], tc.want, out)
+			}
+			if tc.wantReason != "" && out["reason"] != tc.wantReason {
+				t.Fatalf("reason = %v, want %q", out["reason"], tc.wantReason)
+			}
+		})
+	}
+
+	// The answer written is the answer counted: six denies the decider
+	// never made, and two allows it did.
+	got := counted(t, reader, "latere.authz.decisions")
+	if got[[2]string{"deny", authz.ReasonGrant}] != 6 {
+		t.Fatalf("the counter carries %v; want six {deny, grant}", got)
+	}
+	if got[[2]string{"allow", ""}] != 2 {
+		t.Fatalf("the counter carries %v; want two allows", got)
+	}
+}
+
+// TestRestrictReachesNoPage: an action of PageActions answers the core's
+// own page, which carries no verdict, so there is nothing for the
+// intersection to narrow. A core whose directory listing must be narrowed
+// narrows it in its own Lister, where the page is built.
+func TestRestrictReachesNoPage(t *testing.T) {
+	h := server.New(server.Options{Bearer: bearer, Vocabulary: vocabulary(t), Decider: allows,
+		PageActions: []string{"repo.list"},
+		Lister: listerFunc(func(context.Context, authz.Request) (any, error) {
+			return map[string]any{"repos": []any{}}, nil
+		})})
+	status, out := post(t, h, "Bearer "+bearer, patEnvelope("repo.list", "", readOnlyOnOneRepository))
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	if _, isPage := out["repos"]; !isPage {
+		t.Fatalf("the answer is %v; a page action answers the core's own page", out)
+	}
+}
