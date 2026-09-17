@@ -12,7 +12,10 @@
 //
 // Told a core's vocabulary through WithVocabulary, the stub refuses an
 // action outside it with a 400, the one answer the contract gives an
-// unknown action.
+// unknown action, and narrows an allow by the grants the request's token
+// carries, the way every conforming endpoint does. The vocabulary is what
+// makes the second possible: the claim names an action qualified by its
+// core, and the core is the table's.
 //
 // The control API is HTTP as well as methods, so a stack run drives the
 // stub through a host port: PUT /rules, GET and DELETE /requests, PUT
@@ -360,6 +363,9 @@ func (s *Server) decide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rule := s.Decide(req)
+	if vocabulary.Core != "" {
+		rule = restrict(vocabulary.Core, rule, req)
+	}
 	if !rule.Allow {
 		writeJSON(w, map[string]any{"allow": false, "reason": rule.Reason})
 		return
@@ -375,6 +381,26 @@ func (s *Server) decide(w http.ResponseWriter, r *http.Request) {
 		out["filter"] = rule.Filter
 	}
 	writeJSON(w, out)
+}
+
+// restrict narrows one answer by the grants the request's token carries,
+// the way a conforming endpoint does (latere.ai/x/pkg/authz.Restrict). A
+// stub told a vocabulary knows its core, which is what qualifies the
+// request's bare action against the claim's core:action; a stub told none
+// answers the rule table alone, which is how it behaved before.
+//
+// A claim that cannot be read as grants is a deny, the same closed answer
+// authz/server gives one.
+func restrict(core string, rule Rule, req authz.Request) Rule {
+	grants, err := authz.ParseGrants(req.Claims)
+	if err != nil {
+		return Rule{Reason: authz.ReasonGrant}
+	}
+	d := authz.Restrict(core, authz.Decision{Allow: rule.Allow, Reason: rule.Reason}, req, grants)
+	if !d.Allow {
+		return Rule{Reason: d.Reason}
+	}
+	return rule
 }
 
 func (s *Server) putRules(w http.ResponseWriter, r *http.Request) {

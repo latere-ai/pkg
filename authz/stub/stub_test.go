@@ -352,3 +352,65 @@ func TestAnUnregisteredListIsADecision(t *testing.T) {
 		t.Fatalf("repo.list answered %d %v; a registered action is the core's page", status, out)
 	}
 }
+
+// scopedBody is one envelope from a personal access token: the claims a
+// PEP forwards verbatim, carrying the grants its holder chose.
+func scopedBody(subject, action, resource, details string) string {
+	claims := `{"token_use":"pat"`
+	if details != "" {
+		claims += `,"authorization_details":` + details
+	}
+	claims += `}`
+	return `{"subject":"` + subject + `","issuer":"https://iss","sub":"alice","claims":` + claims +
+		`,"action":"` + action + `","resource":` + resource + `,"request":{"id":"r","ip":"1.2.3.4","user_agent":"t"}}`
+}
+
+// TestTheGrantsNarrowAnAllow: told a vocabulary, the stub answers the way
+// a conforming endpoint does — the rule table decides, and the grants the
+// request's token carries narrow the answer. The core that qualifies a
+// bare action against the claim's core:action is the table's, so a stub
+// told no table answers the rule table alone.
+func TestTheGrantsNarrowAnAllow(t *testing.T) {
+	v, err := authz.NewVocabulary("origo",
+		authz.Action{Name: "repo.read", Kind: "Repository"},
+		authz.Action{Name: "repo.write", Kind: "Repository"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const readOnlyOnRepoA = `[{"type":"latere-authz","actions":["origo:repo.read"],` +
+		`"datatypes":["Repository"],"identifier":"0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f"}]`
+
+	for _, tc := range []struct {
+		name                     string
+		action, resource, grants string
+		want                     bool
+		reason                   string
+	}{
+		{"the granted action on the granted resource", "repo.read", repoA, readOnlyOnRepoA, true, ""},
+		{"another action on it", "repo.write", repoA, readOnlyOnRepoA, false, authz.ReasonGrant},
+		{"the granted action elsewhere", "repo.read", repoB, readOnlyOnRepoA, false, authz.ReasonGrant},
+		{"a PAT carrying no grant", "repo.read", repoA, "", false, authz.ReasonGrant},
+		{"a claim that is no set of grants", "repo.read", repoA, `[{"type":"openbanking"}]`, false, authz.ReasonGrant},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := stub.New(t, stub.WithVocabulary(v))
+			status, out := call(t, s, s.Token(), scopedBody("https://iss|alice", tc.action, tc.resource, tc.grants))
+			if status != http.StatusOK {
+				t.Fatalf("status = %d, want 200", status)
+			}
+			if out["allow"] != tc.want {
+				t.Fatalf("allow = %v, want %v (%v)", out["allow"], tc.want, out)
+			}
+			if tc.reason != "" && out["reason"] != tc.reason {
+				t.Fatalf("reason = %v, want %q", out["reason"], tc.reason)
+			}
+		})
+	}
+
+	// Told no table, the stub has no core to qualify with and answers the
+	// rule table alone, which is how it behaved before.
+	s := stub.New(t)
+	if _, out := call(t, s, s.Token(), scopedBody("https://iss|alice", "repo.write", repoA, readOnlyOnRepoA)); out["allow"] != true {
+		t.Fatalf("a stub told no vocabulary answered %v; it narrows nothing", out)
+	}
+}

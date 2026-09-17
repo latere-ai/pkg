@@ -60,6 +60,12 @@ type Grants = authkit.Grants
 // nothing here.
 const GrantType = authkit.GrantType
 
+// TokenUsePAT is the "token_use" claim value grants narrow,
+// [authkit.TokenUsePAT]: a token minted from a personal access token. A
+// request whose claims carry any other value is decided by the decision
+// point alone.
+const TokenUsePAT = authkit.TokenUsePAT
+
 // ReasonGrant is the deny a decision point writes when the caller's token
 // carries grants and none of them covers the request. It is the answer
 // that needs none of the control plane's tables: the credential says what
