@@ -58,20 +58,20 @@
 // its 401. [ReasonOf] reads that word through any number of wraps, so a
 // service renders the family's word for a refusal rather than inventing one.
 //
-//	Error                Reason              Word
-//	─────                ──────              ────
-//	ErrMalformedToken    ReasonMalformed     malformed
-//	ErrInvalidSignature  ReasonBadSignature  signature
-//	ErrUnsupportedAlg    ReasonBadSignature  signature
-//	ErrInvalidIssuer     ReasonBadIssuer     issuer
-//	ErrInvalidAudience   ReasonBadAudience   audience
-//	ErrTokenExpired      ReasonExpired       expired
-//	ErrTokenNotValidYet  ReasonNotYetValid   nbf
-//	ErrTokenTooLarge     ReasonTooLarge      size
-//	ErrTokenTooOld       ReasonTooOld        iat
-//	ErrUnknownKey        ReasonUnknownKey    unknown_key
-//	ErrBadDiscovery      ReasonBadIssuer     issuer
-//	ErrIssuerUnavailable ReasonIssuerUnavailable  issuer_unavailable
+//	Error                 Reason                   Word
+//	─────                 ──────                   ────
+//	ErrMalformedToken     ReasonMalformed          malformed
+//	ErrInvalidSignature   ReasonBadSignature       signature
+//	ErrUnsupportedAlg     ReasonBadSignature       signature
+//	ErrInvalidIssuer      ReasonBadIssuer          issuer
+//	ErrInvalidAudience    ReasonBadAudience        audience
+//	ErrTokenExpired       ReasonExpired            expired
+//	ErrTokenNotValidYet   ReasonNotYetValid        nbf
+//	ErrTokenTooLarge      ReasonTooLarge           size
+//	ErrTokenTooOld        ReasonTooOld             iat
+//	ErrUnknownKey         ReasonUnknownKey         unknown_key
+//	ErrBadDiscovery       ReasonBadIssuer          issuer
+//	ErrIssuerUnavailable  ReasonIssuerUnavailable  issuer_unavailable
 //
 // The word is not the Go identifier and two errors may share one, as the
 // two signature refusals do: an algorithm no key of the set can answer is
