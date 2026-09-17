@@ -88,6 +88,22 @@ type Identity struct {
 	// resolve per-client config. Empty for dev bearer tokens and for
 	// older JWTs minted before the client_id claim was added.
 	ClientID string `json:"client_id,omitempty"`
+	// TokenUse is the token's "token_use" claim: which credential class
+	// minted it. [TokenUsePAT] is a personal access token (identity
+	// id-12); every other token the family mints carries none, so an
+	// empty value means "not a PAT" and says nothing else.
+	TokenUse string `json:"token_use,omitempty"`
+	// Grants are the RFC 9396 "authorization_details" entries the token
+	// carried: what the person said this credential may do, chosen when
+	// the key was created. They are a restriction and never authority, so
+	// a grant on a resource the person cannot reach still reaches
+	// nothing; the reach itself stays OrgID and Roles.
+	//
+	// They are read only on a TokenUsePAT token, because no other token
+	// carries them. What they mean at a decision is
+	// latere.ai/x/pkg/authz's: it is the decision point that intersects
+	// its own answer with them.
+	Grants Grants `json:"grants,omitempty"`
 	// TokenID is a stable, low-cardinality audit identifier. For JWT it is
 	// the principal Sub; for BearerToken it is "dev". It is set at
 	// authentication time and never serialised.
