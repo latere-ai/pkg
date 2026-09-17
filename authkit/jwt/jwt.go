@@ -574,12 +574,13 @@ func New(cfg Config) *Validator {
 // not reach rather than the first. ctx bounds the walk, and a cancelled
 // one stops it before the next fetch.
 func (v *Validator) Warm(ctx context.Context) error {
+	sets := v.keySets()
 	var errs []error
-	for _, iss := range slices.Sorted(maps.Keys(v.keySets())) {
+	for _, iss := range slices.Sorted(maps.Keys(sets)) {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if _, err := v.keySets()[iss].getKeys(); err != nil {
+		if _, err := sets[iss].getKeys(); err != nil {
 			errs = append(errs, fmt.Errorf("authkit/jwt: warm %s: %w", iss, err))
 		}
 	}
@@ -587,10 +588,15 @@ func (v *Validator) Warm(ctx context.Context) error {
 }
 
 // keySets is every key set a token could send this validator to, by the
-// name it is warmed and reported under. It is the issuer list when one is
-// configured, since Config.Issuer is folded into it, and the one
-// configured JWKS endpoint otherwise. A validator with neither has no set
-// to fetch.
+// name it is warmed and reported under: the issuer list when one is
+// configured, and the one configured JWKS endpoint otherwise. A validator
+// with neither has no set to fetch.
+//
+// Config.Issuer is in the list only when it names its own JWKSURL, which
+// is the same rule issuerKeySets folds it in under, and it is the same
+// rule keysFor reads: with an issuer list configured, a token is answered
+// from that list alone and v.cache is not reached, so a cache the list
+// does not hold is a cache no token can spend.
 func (v *Validator) keySets() map[string]*jwksCache {
 	if len(v.issuers) > 0 {
 		return v.issuers

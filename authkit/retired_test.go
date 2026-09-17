@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -87,6 +88,36 @@ func TestNoRetiredIdentityWireWordsSurvive(t *testing.T) {
 	if len(found) > 0 {
 		t.Fatalf("the identity epic retired these words, and this module still writes them:\n\t%s",
 			strings.Join(found, "\n\t"))
+	}
+}
+
+// TestTheRetiredCheckMatchesEveryWord is the positive control. The check
+// above passes because the tree is clean, and a matcher that matched
+// nothing would pass for the same reason; this one holds the word list
+// against a line that carries each word, so the list is tested apart from
+// whatever the tree happens to say today.
+func TestTheRetiredCheckMatchesEveryWord(t *testing.T) {
+	// One line per word, in the shape the word had where it lived.
+	for _, tc := range []struct{ word, line string }{
+		{"agent_id", "\tAgentID string `json:\"agent_id,omitempty\"`"},
+		{"grantor_id", "\tGrantorID string `json:\"grantor_id,omitempty\"`"},
+		{`"act"`, `	if act, ok := claims["act"].(string); ok {`},
+		{"actor: true", "\treq := tokenRequest{actor: true}"},
+		{"/tokeninfo", `	resp, err := c.Get(issuer + "/tokeninfo")`},
+		{"/userinfo/permissions", `	resp, err := c.Get(issuer + "/userinfo/permissions")`},
+		{"/v1/tokens/exchange", `	req.URL.Path = "/v1/tokens/exchange"`},
+	} {
+		t.Run(tc.word, func(t *testing.T) {
+			if !slices.Contains(retired, tc.word) {
+				t.Fatalf("%q is not on the retired list; the list is what the walk reads", tc.word)
+			}
+			if !strings.Contains(tc.line, tc.word) {
+				t.Fatalf("the walk would not find %q in %q", tc.word, tc.line)
+			}
+		})
+	}
+	if len(retired) != 7 {
+		t.Fatalf("the retired list holds %d words and this control covers 7; a word added there is a case added here", len(retired))
 	}
 }
 
