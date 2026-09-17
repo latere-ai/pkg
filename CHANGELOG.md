@@ -10,6 +10,19 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `jwt.Config.Now func() time.Time` is this node's clock. Nil is
+  `time.Now`, which is what a service wants and what every existing caller
+  gets; a caller supplies one to run the validator on a clock it moves.
+
+  It is the one clock the validator reads: the `exp`, `nbf` and `iat`
+  windows, the key set's cache TTL, and the back-off that bounds how often
+  a `kid` miss may force a refresh. A validator handed a clock therefore
+  reaches no real time at all, so a test can mint a token, verify it, move
+  the clock past its `exp` and see it refused, and move the clock past
+  `CacheTTL` and see the refetch a node would make.
+
 ### Fixed
 
 - Security: a discovery document must name the issuer it was fetched from.

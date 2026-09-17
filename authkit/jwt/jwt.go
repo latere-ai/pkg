@@ -96,6 +96,15 @@
 // bound, measured against this clock alone, nor a local token, stamped on
 // this clock already.
 //
+// # The clock
+//
+// [Config.Now] is this node's clock, and nil is time.Now. It is the one
+// clock the validator reads: the "exp", "nbf" and "iat" windows, the key
+// set's cache TTL, and the back-off on a refresh a kid miss forces. A
+// caller that hands one in therefore holds every instant the validator
+// reads, which is how a test mints a token, verifies it, and then ages it
+// past its "exp" without waiting for the wall clock.
+//
 // # Which key verifies a token
 //
 // One rule, on every path. The "kid" names the key that must verify the
@@ -384,6 +393,18 @@ type Config struct {
 	// alone, nor a token of [Config.LocalIssuer], which was stamped on
 	// this clock and has no second clock to reconcile.
 	ClockSkew time.Duration
+	// Now is this node's clock: what the validator reads every time it
+	// needs the current instant. Nil is time.Now, which is what a service
+	// wants; a caller supplies one to run the whole validator on a clock
+	// it moves, which is how a test mints a token and then ages it without
+	// waiting.
+	//
+	// It is the one clock: the "exp", "nbf" and "iat" windows read it, and
+	// so do the key-set cache's TTL and the back-off on a forced refresh.
+	// A validator handed a clock therefore reaches no real time at all, so
+	// a test that advances the clock past [Config.CacheTTL] sees the next
+	// fetch it would see in production.
+	Now func() time.Time
 }
 
 // LocalKey is one key of [Config.LocalIssuer]: the "kid" a token names it
@@ -419,6 +440,9 @@ type Validator struct {
 	// local is the key set of Config.LocalIssuer: one key, or none when
 	// no local issuer is configured.
 	local []jwkEntry
+	// now is the clock every window is read against: Config.Now, or the
+	// package clock when the caller supplied none.
+	now func() time.Time
 }
 
 // New creates a Validator.
@@ -432,7 +456,7 @@ func New(cfg Config) *Validator {
 	if cfg.MaxTokenAge == 0 {
 		cfg.MaxTokenAge = DefaultMaxTokenAge
 	}
-	cache := &jwksCache{url: cfg.JWKSURL, ttl: cfg.CacheTTL}
+	cache := &jwksCache{url: cfg.JWKSURL, ttl: cfg.CacheTTL, clock: cfg.Now}
 	if cfg.HTTPClient != nil {
 		cache.get = cfg.HTTPClient.Get
 	}
@@ -441,7 +465,19 @@ func New(cfg Config) *Validator {
 		cache:   cache,
 		issuers: issuerKeySets(cfg, cache),
 		local:   localKeySet(cfg),
+		now:     clockOf(cfg.Now),
 	}
+}
+
+// clockOf is the clock a validator reads: the caller's when Config.Now is
+// set, and the package clock otherwise. The fallback is a closure rather
+// than time.Now itself so that the package clock stays one variable, which
+// is what this package's own tests move.
+func clockOf(now func() time.Time) func() time.Time {
+	if now != nil {
+		return now
+	}
+	return func() time.Time { return timeNow() }
 }
 
 // issuerKeySets is one key set per trusted issuer, keyed by its trimmed
@@ -462,7 +498,7 @@ func issuerKeySets(cfg Config, cache *jwksCache) map[string]*jwksCache {
 		if key == "" || sets[key] != nil {
 			continue
 		}
-		sets[key] = &jwksCache{issuer: key, ttl: cfg.CacheTTL, get: get}
+		sets[key] = &jwksCache{issuer: key, ttl: cfg.CacheTTL, get: get, clock: cfg.Now}
 	}
 	if cfg.Issuer != "" && cfg.JWKSURL != "" {
 		sets[trimIssuer(cfg.Issuer)] = cache
@@ -581,13 +617,13 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 		skew = 0
 	}
 	exp := time.Unix(int64(raw.Exp), 0)
-	if timeNow().After(exp.Add(skew)) {
+	if v.now().After(exp.Add(skew)) {
 		return nil, ErrTokenExpired
 	}
 
 	// Validate nbf (RFC 7519 §4.1.5): reject a token used before its
 	// not-before instant. Tokens that omit nbf are unaffected.
-	if raw.Nbf != 0 && timeNow().Before(time.Unix(int64(raw.Nbf), 0).Add(-skew)) {
+	if raw.Nbf != 0 && v.now().Before(time.Unix(int64(raw.Nbf), 0).Add(-skew)) {
 		return nil, ErrTokenNotValidYet
 	}
 
@@ -661,7 +697,7 @@ func (v *Validator) validateAge(iat *float64) error {
 		}
 		return nil
 	}
-	if v.cfg.MaxTokenAge > 0 && timeNow().Sub(time.Unix(int64(*iat), 0)) > v.cfg.MaxTokenAge {
+	if v.cfg.MaxTokenAge > 0 && v.now().Sub(time.Unix(int64(*iat), 0)) > v.cfg.MaxTokenAge {
 		return ErrTokenTooOld
 	}
 	return nil
@@ -841,14 +877,25 @@ type jwksCache struct {
 	// discover it from; the first fetch then resolves it and keeps it.
 	url string
 	// issuer is the trimmed issuer URL a discovered set belongs to.
-	issuer     string
-	ttl        time.Duration
+	issuer string
+	ttl    time.Duration
+	// clock is Config.Now, and nil when the caller supplied none: the set
+	// then reads the package clock, like everything else here.
+	clock      func() time.Time
 	get        func(string) (*http.Response, error)
 	mu         sync.Mutex // guards cachedAt, lastForced, keys; never held across I/O
 	fetchMu    sync.Mutex // serializes JWKS fetches so only one goroutine hits the network
 	cachedAt   time.Time
 	lastForced time.Time
 	keys       []jwkEntry
+}
+
+// now is the clock this set measures its TTL and its refresh back-off on.
+func (c *jwksCache) now() time.Time {
+	if c.clock != nil {
+		return c.clock()
+	}
+	return timeNow()
 }
 
 // getKeys returns the cached JWKS, refetching only when the TTL has elapsed.
@@ -872,11 +919,11 @@ func (c *jwksCache) getKeysForKid(kid string) ([]jwkEntry, error) {
 	// Claim the forced-refresh window atomically: a flood of unknown-kid tokens
 	// triggers at most one refetch per minForcedRefreshInterval.
 	c.mu.Lock()
-	if timeNow().Sub(c.lastForced) < minForcedRefreshInterval {
+	if c.now().Sub(c.lastForced) < minForcedRefreshInterval {
 		c.mu.Unlock()
 		return keys, nil
 	}
-	c.lastForced = timeNow()
+	c.lastForced = c.now()
 	c.mu.Unlock()
 
 	return c.load(true)
@@ -966,7 +1013,7 @@ func (c *jwksCache) load(force bool) ([]jwkEntry, error) {
 
 	c.mu.Lock()
 	c.keys = keys
-	c.cachedAt = timeNow()
+	c.cachedAt = c.now()
 	c.mu.Unlock()
 	return keys, nil
 }
@@ -1028,7 +1075,7 @@ func (c *jwksCache) resolve(get func(string) (*http.Response, error)) (string, e
 func (c *jwksCache) freshKeys(force bool) ([]jwkEntry, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if !force && timeNow().Sub(c.cachedAt) < c.ttl && len(c.keys) > 0 {
+	if !force && c.now().Sub(c.cachedAt) < c.ttl && len(c.keys) > 0 {
 		return c.keys, true
 	}
 	return nil, false
