@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.74.0 - 2026-09-17
+
 ### Added
 
 - `jwt.Config.Now func() time.Time` is this node's clock. Nil is
