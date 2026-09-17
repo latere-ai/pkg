@@ -74,6 +74,14 @@ func TestReasonOfNamesEveryRefusal(t *testing.T) {
 			name: "malformed", want: ReasonMalformed, wire: "malformed", sen: ErrMalformedToken,
 			token: "one.two",
 		},
+		{
+			// The issuer is out of reach, so no key was read and nothing
+			// is known about the token. The port is one nothing listens on.
+			name: "issuer unavailable", want: ReasonIssuerUnavailable, wire: "issuer_unavailable",
+			sen:   ErrIssuerUnavailable,
+			token: token(func(map[string]any) {}),
+			opts:  []func(*Config){func(c *Config) { c.JWKSURL = "http://127.0.0.1:1" }},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := testValidator(t, key, tc.opts...).Validate(tc.token)
