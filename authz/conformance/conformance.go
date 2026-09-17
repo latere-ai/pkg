@@ -16,8 +16,9 @@
 //	conformance.Run(t, authorizerURL, bearer)
 //
 // checks, in order, that the probe id is denied for every subject and
-// action, that a wrong bearer is refused, and that a well-formed request
-// answers a 200 whose body has the contract's shape: allow a boolean, ttl
+// action, that a wrong bearer is refused, that an action outside the
+// grants a personal access token carries is denied, and that a
+// well-formed request answers a 200 whose body has the contract's shape: allow a boolean, ttl
 // when present a positive integer, limits when present an object, filter
 // when present owners and labels, and a deny carrying a reason. The
 // subjects and the action vocabulary have defaults an authorizer that
@@ -142,7 +143,111 @@ func Run(t testing.TB, url, token string, opts ...Option) {
 	s.deniesTheProbe(t)
 	s.refusesAWrongBearer(t)
 	s.refusesAnUnknownAction(t)
+	s.refusesAnActionOutsideTheGrants(t)
 	s.answersAWellFormedRequest(t)
+}
+
+// refusesAnActionOutsideTheGrants is id-13's A13. A personal access token
+// carries the grants its holder chose, and a decision point intersects
+// its own answer with them: a key granted one action on one resource is
+// refused every other action on that resource and that action on every
+// other resource.
+//
+// Both of those are denials, so the check needs to know nothing about who
+// owns what. It does not read the deny's reason either: the reason is
+// "grant" when the decision point would otherwise have allowed, and the
+// resources here are ids no object has, which many an endpoint refuses
+// for a reason of its own first. What it does pin is the other direction,
+// which ownership cannot fake: a request a grant does name is never
+// refused as "grant".
+//
+// The check runs only under [WithVocabulary]. The claim carries the
+// action qualified by its core, so without the core's own table there is
+// no grant to write.
+func (s *suite) refusesAnActionOutsideTheGrants(t testing.TB) {
+	t.Helper()
+	decided := s.decided()
+	if len(decided) == 0 {
+		return
+	}
+	granted, subject := decided[0], s.subjects[0]
+	here, elsewhere := freshID(), freshID()
+	entry := authz.Grant{
+		Type:       authz.GrantType,
+		Actions:    []string{s.vocabulary.Core + ":" + granted.Name},
+		Datatypes:  []string{granted.Kind},
+		Identifier: here,
+	}
+
+	what := fmt.Sprintf("%s on the resource its own grant names", granted.Name)
+	if d, ok := s.decide(t, s.scoped(subject, granted, here, entry), what); ok && !d.Allow && d.Reason == authz.ReasonGrant {
+		t.Errorf("%s was denied %q; the token carries a grant that names this action on this resource, so the grants are not what refuses it", what, authz.ReasonGrant)
+	}
+
+	// Another action on the granted resource. One entry is one selector,
+	// so the actions it lists are the whole of what it allows.
+	if len(decided) > 1 {
+		other := decided[1]
+		what := fmt.Sprintf("%s on the granted resource", other.Name)
+		if d, ok := s.decide(t, s.scoped(subject, other, here, entry), what); ok && d.Allow {
+			t.Errorf("%s was allowed; the token's only grant names %s, so no grant covers this request and the answer is a deny", what, granted.Name)
+		}
+	}
+
+	// The granted action on another resource. The selector names one
+	// resource, so it covers that one and nothing else.
+	what = fmt.Sprintf("%s on a resource no grant names", granted.Name)
+	if d, ok := s.decide(t, s.scoped(subject, granted, elsewhere, entry), what); ok && d.Allow {
+		t.Errorf("%s was allowed; the token's only grant names another resource, so no grant covers this request and the answer is a deny", what)
+	}
+}
+
+// decided is the vocabulary's actions that answer a decision: not one the
+// run declared a page, and, where it declared none, not a list either,
+// whose answer may be the core's own page. A page carries no verdict, so
+// there is nothing in it for a grant to narrow.
+func (s *suite) decided() []Action {
+	if len(s.vocabulary.Actions) == 0 {
+		return nil
+	}
+	var out []Action
+	for _, a := range s.vocabulary.Actions {
+		if s.isPage(a.Name) || (!s.pagesSet && authz.IsList(a.Name)) {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
+// scoped is one envelope from a personal access token: the claims a PEP
+// forwards verbatim, carrying the token_use that names the credential
+// class and the grants its holder chose.
+func (s *suite) scoped(subject string, a Action, id string, grants ...authz.Grant) authz.Request {
+	req := authz.Request{
+		Action:   a.Name,
+		Resource: authz.NewResource(a.Kind, id, map[string]any{"owner": subject}),
+		Request:  authz.Caller{ID: "conformance-" + freshID(), IP: "203.0.113.4", UserAgent: "authz/conformance"},
+		Claims: map[string]any{
+			"token_use":             authz.TokenUsePAT,
+			"authorization_details": grants,
+		},
+	}
+	setSubject(&req, subject)
+	return req
+}
+
+// decide sends one envelope and reads the decision out of the answer. ok
+// is false when the endpoint answered something that is no decision,
+// which the other checks report on their own.
+func (s *suite) decide(t testing.TB, req authz.Request, what string) (authz.Decision, bool) {
+	t.Helper()
+	status, raw := s.post(t, s.token, req, what)
+	if status != http.StatusOK {
+		t.Errorf("%s answered %d; a decision, allow or deny, is a 200", what, status)
+		return authz.Decision{}, false
+	}
+	return checkShape(t, what, raw)
 }
 
 // refusesAnUnknownAction: an action the core's table does not name is a
