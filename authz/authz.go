@@ -11,11 +11,18 @@
 // The package carries the envelope ([Request], [Decision]), the client
 // with the cache and the failure rules every core runs ([Client]), the
 // probe every authorizer must deny ([ProbeID], [Check]), the subject
-// rendering ([Subject]), and the owner policy a core applies when no
-// authorizer is configured ([Policy]). The stub authorizer the cores'
-// test tiers run is authz/stub, and the scaffold an endpoint is written
-// on is authz/server. A core adds its action vocabulary and the fields of
-// its resource kinds; nothing here names a product.
+// rendering ([Subject]), the owner policy a core applies when no
+// authorizer is configured ([Policy]), and the intersection with the
+// grants a credential carries ([Restrict]). The stub authorizer the
+// cores' test tiers run is authz/stub, and the scaffold an endpoint is
+// written on is authz/server. A core adds its action vocabulary and the
+// fields of its resource kinds; nothing here names a product.
+//
+// A decision is the decision point's own answer, narrowed. [Restrict] is
+// the narrowing: a personal access token carries the grants its holder
+// chose, and a decision point intersects its answer with them, which
+// turns an allow into a deny and never a deny into an allow. An endpoint
+// written on authz/server gets it by construction.
 //
 // A core declares that vocabulary as data, [Vocabulary] over [Action],
 // in a package it publishes at its module root. One declaration is then
