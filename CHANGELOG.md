@@ -10,6 +10,13 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Fixed
+
+- `authz.Client` no longer reuses a cached decision after claims, workload,
+  resource policy, issuer, subject parts, caller IP, or user-agent change.
+  Cache identity covers the exact serialized request except its correlation
+  ID; unencodable requests fail closed even when an older allow is cached.
+
 ## v0.77.0 - 2026-09-19
 
 ### Removed

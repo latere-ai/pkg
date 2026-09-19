@@ -107,7 +107,9 @@ type Request struct {
 }
 
 // Caller is what the authorizer learns about the request itself: the
-// core's request id, the peer address, and the user agent.
+// core's request id, the peer address, and the user agent. ID is correlation
+// metadata only and is excluded from decision-cache identity; IP and UserAgent
+// remain policy inputs and distinguish cached decisions.
 type Caller struct {
 	ID        string `json:"id"`
 	IP        string `json:"ip"`

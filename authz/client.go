@@ -6,6 +6,7 @@ package authz
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -82,7 +83,7 @@ func (e *UnknownAction) Error() string {
 
 // Client is the authorizer client: one call per decision, one retry when
 // the connection failed before a response line arrived, and a cache per
-// (subject, action, resource id).
+// complete decision input, excluding only the correlation request id.
 type Client struct {
 	url     string
 	token   string
@@ -94,9 +95,7 @@ type Client struct {
 	cache   *cache.TTLCache[cacheKey, cached]
 }
 
-type cacheKey struct {
-	subject, action, resource string
-}
+type cacheKey [sha256.Size]byte
 
 type cached struct {
 	decision Decision
@@ -142,15 +141,26 @@ func (c *Client) Authorize(ctx context.Context, req Request) (Decision, error) {
 	if len(c.vocab.Actions) > 0 && !c.vocab.Known(req.Action) {
 		return Decision{}, &UnknownAction{Core: c.vocab.Core, Action: req.Action}
 	}
-	key := cacheKey{req.Subject, req.Action, req.Resource.ID}
+	// Serialize once: the cache fingerprint and the wire must describe the
+	// same snapshot, even when a resource value implements json.Marshaler.
+	start := time.Now()
+	body, err := json.Marshal(req)
+	if err != nil {
+		c.observe("error", time.Since(start).Seconds())
+		return Decision{}, &Unavailable{URL: c.url, Err: err}
+	}
+	key, err := requestFingerprint(body)
+	if err != nil {
+		c.observe("error", time.Since(start).Seconds())
+		return Decision{}, &Unavailable{URL: c.url, Err: err}
+	}
 	now := c.now()
 	if req.Resource.ID != "" {
 		if e, ok := c.cache.Get(key); ok && now.Before(e.until) {
 			return e.decision, nil
 		}
 	}
-	start := time.Now()
-	raw, err := c.Ask(ctx, req)
+	raw, err := c.ask(ctx, body)
 	var d Decision
 	if err == nil {
 		d, err = c.decision(raw)
@@ -185,6 +195,11 @@ func (c *Client) Ask(ctx context.Context, req Request) ([]byte, error) {
 	if err != nil {
 		return nil, &Unavailable{URL: c.url, Err: err}
 	}
+	return c.ask(ctx, body)
+}
+
+// ask sends the exact serialized snapshot used to fingerprint a decision.
+func (c *Client) ask(ctx context.Context, body []byte) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 	var last error
@@ -199,6 +214,32 @@ func (c *Client) Ask(ctx context.Context, req Request) ([]byte, error) {
 		}
 	}
 	return nil, last
+}
+
+// requestFingerprint retains every wire field except request.id, whose sole
+// purpose is correlation. RawMessage preserves numeric precision, including
+// integer claim values above 2^53. Maps are marshalled in deterministic order.
+func requestFingerprint(body []byte) (cacheKey, error) {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return cacheKey{}, err
+	}
+	var caller map[string]json.RawMessage
+	if err := json.Unmarshal(envelope["request"], &caller); err != nil {
+		return cacheKey{}, err
+	}
+	delete(caller, "id")
+	// Values implementing json.Marshaler have already run exactly once.
+	normalizedCaller, err := json.Marshal(caller)
+	if err != nil {
+		return cacheKey{}, err
+	}
+	envelope["request"] = normalizedCaller
+	normalized, err := json.Marshal(envelope)
+	if err != nil {
+		return cacheKey{}, err
+	}
+	return cacheKey(sha256.Sum256(normalized)), nil
 }
 
 func (c *Client) once(ctx context.Context, body []byte) ([]byte, error) {
