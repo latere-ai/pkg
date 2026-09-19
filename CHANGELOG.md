@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.77.1 - 2026-09-19
+
 ### Fixed
 
 - `authz.Client` no longer reuses a cached decision after claims, workload,
