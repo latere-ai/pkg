@@ -17,7 +17,7 @@ import (
 // "who is signed in, and what orgs can they switch to" so that login
 // validation, profile resolution, and the org list are built identically
 // across services. Apps map this into their own JSON shape and add only their
-// app-specific extras (CSRF token, roles, quota, …).
+// app-specific extras (CSRF token, quota, …).
 type Me struct {
 	Sub       string     `json:"sub"`
 	Email     string     `json:"email"`
@@ -27,6 +27,9 @@ type Me struct {
 	OrgID     string     `json:"org_id"`
 	OrgName   string     `json:"org_name"` // resolved from Orgs by OrgID; "" == personal
 	Orgs      []OrgEntry `json:"orgs"`
+	// Roles are rendering hints from the current access token, including after
+	// refresh. Downstream APIs still verify that token for authorization.
+	Roles []string `json:"roles"`
 }
 
 // BuildMe resolves the full principal for a cookie-session request: it
@@ -76,7 +79,7 @@ func (c *Client) BuildMe(w http.ResponseWriter, r *http.Request) (*Me, error) {
 // funnel their access token through here so identity, profile, orgs, initials
 // and the active org name are resolved IDENTICALLY:
 //
-//   - decode sub/email/org_id from the JWT (no round-trip);
+//   - decode sub/email/org_id/roles from the JWT (no round-trip);
 //   - fetch name + avatar from /userinfo and the org list from /me/orgs with
 //     the SAME token;
 //   - derive initials and the active org name.
@@ -98,7 +101,7 @@ func (c *Client) BuildMeFromToken(ctx context.Context, accessToken string) (*Me,
 		// only the second warrants an error page.
 		return nil, nil //nolint:nilerr // (nil, nil) is BuildMeFromToken's contract for an undecodable token
 	}
-	me := &Me{Sub: claims.Sub, Email: claims.Email, OrgID: claims.OrgID}
+	me := &Me{Sub: claims.Sub, Email: claims.Email, OrgID: claims.OrgID, Roles: append([]string{}, claims.Roles...)}
 
 	var degraded error
 

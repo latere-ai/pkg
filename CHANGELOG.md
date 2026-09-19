@@ -10,6 +10,13 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `oidc.Me.Roles` exposes role hints from the current access token. Consoles
+  can update navigation after token refresh without reading stale roles from
+  the login cookie or making another identity request. API authorization
+  still verifies the access token.
+
 ## v0.77.1 - 2026-09-19
 
 ### Fixed
