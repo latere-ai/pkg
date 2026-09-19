@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.78.0 - 2026-09-19
+
 ### Added
 
 - `oidc.Me.Roles` exposes role hints from the current access token. Consoles
