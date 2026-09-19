@@ -102,7 +102,6 @@ configuration.
 | [`otel`](otel/) | One-call OpenTelemetry bootstrap for traces, metrics, and structured logs, plus HTTP server/client instrumentation and scoped child spans with error recording |
 | [`s3`](s3/) | S3 REST client in the standard library: put, create-if-absent, conditional get, head, delete, prefixed listing, and presigned GET and PUT, with a Content-Type sent on upload, read back on get and head, and bound into a presigned PUT, signed with Signature Version 4 and retried under `retry`; `s3/s3test` is an in-process endpoint for tests that verifies signatures and digests like a provider |
 | [`pgxmigrate`](pgxmigrate/) | Applies embedded golang-migrate migrations and reliably closes migrate's own connection pool afterward |
-| [`scopes`](scopes/) | Typed registry of the OAuth/RBAC scopes the Latere auth service issues, for call-site gating and OIDC discovery |
 
 ### Utilities
 

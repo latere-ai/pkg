@@ -10,6 +10,14 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Removed
+
+- `scopes`, the registry of OAuth scopes the auth service issues. Auth
+  issues only the four standard OIDC scopes and advertises them itself;
+  every product scope is owned by the product that checks it, so a shared
+  registry had nothing left to hold. Callers that named the OIDC constants
+  use the literal `openid`, `email`, `profile` and `offline_access`.
+
 ## v0.76.0 - 2026-09-18
 
 ### Fixed
