@@ -10,6 +10,14 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `egress/placeholder`: `Mint`, `Is` and `Prefix`, the placeholder
+  primitives as a standard-library-only subpackage. A package that must not
+  depend on the gateway (a control plane's exported manifest or egress
+  compiler) imports it alone. `egress.MintPlaceholder`, `egress.IsPlaceholder`
+  and `egress.PlaceholderPrefix` are unchanged and delegate to it.
+
 ## v0.78.0 - 2026-09-19
 
 ### Added

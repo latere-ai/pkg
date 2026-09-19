@@ -63,13 +63,14 @@ import (
 	"fmt"
 	"strings"
 
+	"latere.ai/x/pkg/egress/placeholder"
 	"latere.ai/x/pkg/hostmatch"
 )
 
 // PlaceholderPrefix is the prefix every placeholder token carries, so the
 // engine can pre-filter a request with a single substring check before doing
 // any per-entry work.
-const PlaceholderPrefix = "cph_"
+const PlaceholderPrefix = placeholder.Prefix
 
 // Entry is one credential's substitution rule: replace Placeholder with Secret,
 // but only toward a host in AllowedHosts.
