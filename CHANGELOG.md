@@ -10,6 +10,12 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `typesafeai`: the TypeSafe API Go SDK, moved from
+  `github.com/latere-ai/typesafe-ai-go-sdk` with unchanged behavior. Import
+  `latere.ai/x/pkg/typesafeai`; the package name remains `typesafe`.
+
 ## v0.79.0 - 2026-09-19
 
 ### Added
