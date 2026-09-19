@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.77.0 - 2026-09-19
+
 ### Removed
 
 - `scopes`, the registry of OAuth scopes the auth service issues. Auth
