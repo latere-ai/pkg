@@ -12,7 +12,7 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Added
 
-- `typesafeai`: the TypeSafe API Go SDK, moved from
+- `typesafeai`: the core TypeSafe API Go client, moved from
   `github.com/latere-ai/typesafe-ai-go-sdk` with unchanged behavior. Import
   `latere.ai/x/pkg/typesafeai`; the package name remains `typesafe`.
 
