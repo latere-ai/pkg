@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.79.0 - 2026-09-19
+
 ### Added
 
 - `egress/placeholder`: `Mint`, `Is` and `Prefix`, the placeholder
