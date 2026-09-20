@@ -498,3 +498,25 @@ func TestControlAPIReadsAndClearsTheRecorder(t *testing.T) {
 		t.Fatalf("the method sees %v after the HTTP reset", got)
 	}
 }
+
+// TestNewServesTheIssuerItSetBeforeStarting fetches the discovery document
+// straight after New, which is what a server under test does at start-up.
+// Under the race detector this is the read that raced the issuer's write
+// when New set it after the listener began serving.
+func TestNewServesTheIssuerItSetBeforeStarting(t *testing.T) {
+	s := New(t)
+	res, err := http.Get(s.URL() + "/.well-known/openid-configuration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	var doc struct {
+		Issuer string `json:"issuer"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Issuer != s.URL() {
+		t.Fatalf("discovery names %q, want %q", doc.Issuer, s.URL())
+	}
+}

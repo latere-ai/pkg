@@ -186,10 +186,15 @@ type signingKey struct {
 func New(t testing.TB, opts ...Option) *Server {
 	t.Helper()
 	s := NewHandler(opts...)
-	s.srv = httptest.NewServer(s.Handler())
+	// The issuer is written before the listener serves: the discovery
+	// handler reads it on a server goroutine, and a write after Start has
+	// no ordering with that read, which the race detector reports the
+	// first time a caller fetches the document straight after New.
+	s.srv = httptest.NewUnstartedServer(s.Handler())
 	if s.issuer == "" {
-		s.issuer = s.srv.URL
+		s.issuer = "http://" + s.srv.Listener.Addr().String()
 	}
+	s.srv.Start()
 	t.Cleanup(s.Close)
 	return s
 }

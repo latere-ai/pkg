@@ -10,6 +10,13 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Fixed
+
+- `authkit/issuertest.New` writes the issuer before its listener serves. A
+  server under test that fetched the discovery document straight after `New`
+  read the issuer on a server goroutine with no ordering against the write,
+  which the race detector reported.
+
 ### Added
 
 - `typesafeai`: the core TypeSafe API Go client, moved from
