@@ -28,7 +28,7 @@ hermetic:
 
 depcheck:
   # llmdialect is stdlib-only, and that is a promise other repositories build
-  # on: tgo's own footprint gate watches this subtree from the outside because
+  # on: forma's own footprint gate watches this subtree from the outside because
   # its server carries the three wire dialects. Watching it from the outside
   # catches the breakage; watching it here is where it can be prevented.
   #

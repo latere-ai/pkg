@@ -65,7 +65,7 @@ no-tracked-specs:
 	fi; \
 	echo "no internal specs tracked"
 
-# llmdialect is stdlib-only, and tgo's own footprint gate watches this subtree
+# llmdialect is stdlib-only, and forma's own footprint gate watches this subtree
 # from the outside. Watching it from there catches the breakage; watching it
 # here is where it can be prevented.
 deps:
