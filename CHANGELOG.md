@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.80.0 - 2026-09-20
+
 ### Fixed
 
 - `authkit/issuertest.New` writes the issuer before its listener serves. A
