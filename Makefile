@@ -108,7 +108,6 @@ lint:
 # hooks installs the repository git hooks; the pre-commit delegates to lateregate.
 hooks:
 	git config core.hooksPath .githooks
-	@[ -e CLAUDE.md ] || [ -L CLAUDE.md ] || ln -s AGENTS.md CLAUDE.md
 	@echo "installed git hooks (core.hooksPath=.githooks)"
 
 # release cuts a tag from CHANGELOG.md: the notes under "Unreleased" become
