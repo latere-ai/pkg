@@ -11,7 +11,7 @@ Every package in this repo must meet these requirements:
 - All packages must have `_test.go` files with unit tests.
 - Run tests with the race detector: `go test -race ./...`
 - Include fuzz tests (`FuzzXxx`) for functions that accept string or byte inputs.
-- Use `t.Setenv` and `t.Cleanup` for test isolation — no global state leaks between tests.
+- Use `t.Setenv` and `t.Cleanup` for test isolation, so no global state leaks between tests.
 
 ### Coverage
 
@@ -25,7 +25,7 @@ Every package in this repo must meet these requirements:
 ### Dependencies
 
 - Minimize external dependencies. Prefer the standard library.
-- Do not add test-only dependencies — use `net/http/httptest`, `errors`, etc. from stdlib.
+- Do not add test-only dependencies; use `net/http/httptest`, `errors`, etc. from stdlib.
 - When adding a new direct dependency, justify it.
 
 ## Before writing a package
@@ -52,8 +52,9 @@ statement for every Latere repository.
 ## Commands
 
 ```
+make check          # the whole shared bar (go tool lateregate)
 make test           # go vet + go test
-make test-race      # run tests with race detector
+go tool lateregate race   # run tests with race detector
 make test-hermetic  # run tests with only the toolchain on PATH
 make fuzz           # run fuzz tests (30s)
 make cover          # enforce a 90% floor per package
