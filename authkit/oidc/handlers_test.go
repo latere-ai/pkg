@@ -468,7 +468,7 @@ func TestHandleLogout(t *testing.T) {
 }
 
 func TestHandleLogout_Localhost(t *testing.T) {
-	c := testClient(t)
+	c := relativeRedirectClient(t)
 	r := httptest.NewRequest("GET", "/logout", nil)
 	r.Host = "localhost:8080"
 	w := httptest.NewRecorder()

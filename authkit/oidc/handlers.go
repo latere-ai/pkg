@@ -265,6 +265,13 @@ func (c *Client) HandleCallback(w http.ResponseWriter, r *http.Request) {
 // auth service's logout endpoint. The optional "return_to" query
 // parameter is forwarded as the post_logout_redirect_uri so the auth
 // service can redirect the user back after sign-out.
+//
+// The return address is built on the origin of the configured RedirectURL:
+// sign-in only completes on that host, so it is the one a signed-in person
+// is on, and it is configuration rather than a header a request can set.
+// Only a client whose RedirectURL is not absolute falls back to deriving
+// the origin from the request. A POST is answered 303, so the browser
+// follows it with a GET; a GET is answered 302.
 func (c *Client) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	c.ClearSession(w)
 
@@ -272,25 +279,51 @@ func (c *Client) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	if !isSafeRedirect(returnTo) {
 		returnTo = "/"
 	}
-	// Build an absolute URL so the auth service can redirect back. Behind a
-	// TLS-terminating ingress r.TLS is nil, so trust
-	// X-Forwarded-Proto first; fall back to r.TLS, then the localhost dev
-	// heuristic.
+	postLogout := c.publicOrigin(r) + returnTo
+	code := http.StatusFound
+	if r.Method == http.MethodPost {
+		code = http.StatusSeeOther
+	}
+	http.Redirect(w, r, c.AuthURL()+"/logout?post_logout_redirect_uri="+url.QueryEscape(postLogout), code)
+}
+
+// publicOrigin is the scheme and host this relying party is reached on:
+// the origin of RedirectURL when it is absolute. Otherwise it is read off
+// the request. Behind a TLS-terminating ingress r.TLS is nil, so
+// X-Forwarded-Proto wins, then r.TLS, then the localhost dev heuristic.
+func (c *Client) publicOrigin(r *http.Request) string {
+	if u, err := url.Parse(c.cfg.RedirectURL); err == nil && u.Scheme != "" && u.Host != "" {
+		return u.Scheme + "://" + u.Host
+	}
 	scheme := "https"
 	if xfp := r.Header.Get("X-Forwarded-Proto"); xfp != "" {
 		scheme = strings.TrimSpace(strings.Split(xfp, ",")[0])
 	} else if r.TLS == nil && strings.HasPrefix(r.Host, "localhost") {
 		scheme = "http"
 	}
-	postLogout := scheme + "://" + r.Host + returnTo
-	http.Redirect(w, r, c.AuthURL()+"/logout?post_logout_redirect_uri="+url.QueryEscape(postLogout), http.StatusFound)
+	return scheme + "://" + r.Host
 }
 
 // HandleLogoutNotify is the front-channel logout endpoint: the auth service
 // loads it in a hidden iframe when the user signs out elsewhere, so the local
 // session cookie is cleared and the next page load reflects the logged-out
 // state. It clears the session and returns 200.
+//
+// It carries no token, because the auth service's frame has none to send.
+// What it checks is how it was loaded: a browser that sends Sec-Fetch-Dest
+// names the destination, and anything other than a frame is answered 400
+// without clearing, so a link or an image on another page cannot sign a
+// person out. A request without the header, from a browser too old to send
+// it, is answered as before.
+//
+// A relying party that sets frame-ancestors or X-Frame-Options must admit
+// the auth service's origin on this path, or the browser refuses the frame
+// and the endpoint never runs.
 func (c *Client) HandleLogoutNotify(w http.ResponseWriter, r *http.Request) {
+	if dest := r.Header.Get("Sec-Fetch-Dest"); dest != "" && dest != "iframe" && dest != "frame" {
+		http.Error(w, "This address is only loaded by the identity provider.", http.StatusBadRequest)
+		return
+	}
 	c.ClearSession(w)
 	w.WriteHeader(http.StatusOK)
 }

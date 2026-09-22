@@ -10,6 +10,22 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Changed
+
+- `oidc.Client.HandleLogout` builds the `post_logout_redirect_uri` on the
+  origin of the configured `RedirectURL`, not on the request's `Host` and
+  `X-Forwarded-Proto`. Sign-in only completes on that origin, so this is the
+  address a signed-in person is on, and it is no longer one a request can
+  set. A client whose `RedirectURL` is relative keeps the old derivation. A
+  `POST` is now answered 303 rather than 302.
+- `oidc.Client.HandleLogoutNotify` refuses, with 400 and without clearing
+  the session, a request whose `Sec-Fetch-Dest` names anything other than a
+  frame, so a link or an image on another page can no longer sign a person
+  out. A request without the header is answered as before. A relying party
+  that sets `frame-ancestors` or `X-Frame-Options` must admit the auth
+  service's origin on this path, or the frame is refused and the endpoint
+  never runs.
+
 ## v0.80.0 - 2026-09-20
 
 ### Fixed
