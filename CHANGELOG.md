@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.81.0 - 2026-09-23
+
 ### Changed
 
 - `oidc.Client.HandleLogout` builds the `post_logout_redirect_uri` on the
