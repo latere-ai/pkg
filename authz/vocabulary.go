@@ -106,7 +106,7 @@ func (v Vocabulary) Known(action string) bool {
 
 // Kind is the resource kind an action acts on. ok is false for a string
 // the table does not name, which is the one case a caller tells apart
-// from a kind it does not recognise.
+// from a kind it does not recognize.
 func (v Vocabulary) Kind(action string) (string, bool) {
 	for _, a := range v.Actions {
 		if a.Name == action {

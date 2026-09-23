@@ -218,7 +218,7 @@ func (c *Client) ask(ctx context.Context, body []byte) ([]byte, error) {
 
 // requestFingerprint retains every wire field except request.id, whose sole
 // purpose is correlation. RawMessage preserves numeric precision, including
-// integer claim values above 2^53. Maps are marshalled in deterministic order.
+// integer claim values above 2^53. Maps are marshaled in deterministic order.
 func requestFingerprint(body []byte) (cacheKey, error) {
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(body, &envelope); err != nil {

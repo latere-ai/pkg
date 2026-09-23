@@ -176,7 +176,7 @@ func TestValidateUserToken(t *testing.T) {
 }
 
 // TestValidateLabelsOmitted: the three label claims are optional. A person
-// who has claimed no handle and a token that names no organisation yield
+// who has claimed no handle and a token that names no organization yield
 // empty fields, not an error.
 func TestValidateLabelsOmitted(t *testing.T) {
 	key := genKey(t)
@@ -472,7 +472,7 @@ func TestValidateReadsNoFlagAndNoScope(t *testing.T) {
 }
 
 // TestValidatePlatformAdminRole: platform_admin travels in roles like the
-// organisation roles, and Has reports it.
+// organization roles, and Has reports it.
 func TestValidatePlatformAdminRole(t *testing.T) {
 	key := genKey(t)
 	v := testValidator(t, key)

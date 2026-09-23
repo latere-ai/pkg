@@ -25,14 +25,14 @@ const (
 	DefaultBase = time.Second
 	// DefaultMax caps the exponential growth.
 	DefaultMax = 30 * time.Second
-	// DefaultJitter is the fraction of a computed delay that is randomised.
+	// DefaultJitter is the fraction of a computed delay that is randomized.
 	// Without it, replicas that failed together retry together.
 	DefaultJitter = 0.2
 )
 
 // Policy is bounded exponential backoff with jitter. The zero value means the
 // defaults above, so a caller that sets nothing still retries a finite
-// number of times with a randomised delay.
+// number of times with a randomized delay.
 type Policy struct {
 	// Timeout bounds each attempt independently. Zero or less adds no bound.
 	// The callback must honor its context; Do never abandons work in a goroutine.
@@ -47,7 +47,7 @@ type Policy struct {
 	// Max caps the delay and is never below Base. Zero or less means
 	// DefaultMax.
 	Max time.Duration
-	// Jitter is the fraction of each delay that is randomised downward.
+	// Jitter is the fraction of each delay that is randomized downward.
 	// Zero means DefaultJitter, a negative value means none, and values
 	// above 1 are clamped to 1.
 	Jitter float64

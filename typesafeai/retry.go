@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// The retry defaults. They match the retry behaviour of the other TypeSafe
+// The retry defaults. They match the retry behavior of the other TypeSafe
 // clients: two retries, half a second of backoff doubling to a five second
 // cap, and a refusal to wait longer than a minute on the server's say-so.
 const (
@@ -58,7 +58,7 @@ type RetryPolicy struct {
 	// subtracted from it, from 0 for no jitter to 1 for a wait anywhere
 	// between zero and the computed value.
 	Jitter float64
-	// MaxRetryAfter caps the wait the client will honour when the server asks
+	// MaxRetryAfter caps the wait the client will honor when the server asks
 	// for one. A longer request falls back to the computed wait.
 	MaxRetryAfter time.Duration
 }

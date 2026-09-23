@@ -45,7 +45,7 @@ func Strings(s []string) []string {
 
 // Normalized applies norm to each element, drops the elements norm made
 // empty, and removes duplicates with the first occurrence kept in place. The
-// result holds the normalised forms. It does not sort: a caller whose order
+// result holds the normalized forms. It does not sort: a caller whose order
 // is meaningful keeps it, and one that wants sorted output sorts the result.
 func Normalized(s []string, norm func(string) string) []string {
 	seen := make(map[string]struct{}, len(s))

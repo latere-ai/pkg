@@ -462,7 +462,7 @@ func TestEngine_RegisterDuringFireWins(t *testing.T) {
 	}
 }
 
-// A nil Schedule is normalised to the disabled one rather than panicking or
+// A nil Schedule is normalized to the disabled one rather than panicking or
 // arming a timer, so callers can pass a routine's schedule through without a
 // nil check of their own.
 func TestEngine_RegisterNilScheduleIsDisabled(t *testing.T) {

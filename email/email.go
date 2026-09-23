@@ -76,7 +76,7 @@ func New(apiKey, domain, region string, smtp *SMTPConfig) (Sender, error) {
 
 // LogSender writes a message to the log instead of delivering it — the
 // transport an unconfigured deployment gets. It is exported so a service can
-// name it when it wants that behaviour deliberately rather than by omission.
+// name it when it wants that behavior deliberately rather than by omission.
 type LogSender struct{}
 
 // Send logs the recipient and subject. The body is not logged: it is the part

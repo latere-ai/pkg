@@ -315,7 +315,7 @@ func TestDecodeOptionalBody_UnknownFields(t *testing.T) {
 	}
 }
 
-// A value that cannot be marshalled must not reach the client as the status the
+// A value that cannot be marshaled must not reach the client as the status the
 // caller asked for. Committing the status before encoding used to answer
 // "200 OK" with an empty body, which a client cannot distinguish from a
 // legitimately empty success.

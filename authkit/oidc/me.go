@@ -147,7 +147,7 @@ func (c *Client) BuildMeFromToken(ctx context.Context, accessToken string) (*Me,
 // SwitchOrgRedirect implements the shared org-switch flow: clear the current
 // session and return the login URL the SPA should navigate to. The chosen
 // org_id is forwarded to /authorize, which mints a token scoped to that org
-// (empty org_id == personal). Centralised so every service switches orgs
+// (empty org_id == personal). Centralized so every service switches orgs
 // identically. `returnTo` is where login should land after the switch.
 func SwitchOrgRedirect(w http.ResponseWriter, orgID, returnTo string) string {
 	ClearSession(w)

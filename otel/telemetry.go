@@ -46,7 +46,7 @@ import (
 const defaultSampleRatio = 0.2
 
 // samplerFromEnv builds a ParentBased(TraceIDRatioBased) sampler. ParentBased
-// honours a parent's sampling decision so a distributed trace is kept or
+// honors a parent's sampling decision so a distributed trace is kept or
 // dropped as a whole; the ratio only governs root spans. The ratio comes from
 // OTEL_TRACES_SAMPLER_ARG (a float in [0,1]), defaulting to defaultSampleRatio.
 func samplerFromEnv() trace.Sampler {
@@ -66,7 +66,7 @@ func samplerFromEnv() trace.Sampler {
 //
 // The detectors carry as much weight as the attributes. WithFromEnv reads
 // OTEL_RESOURCE_ATTRIBUTES and OTEL_SERVICE_NAME, the two variables every OTel
-// SDK is expected to honour; without it a deployment that sets them gets
+// SDK is expected to honor; without it a deployment that sets them gets
 // silence. WithTelemetrySDK records which SDK emitted the signal, which is how
 // a backend separates these services from the collector's own pipeline.
 //

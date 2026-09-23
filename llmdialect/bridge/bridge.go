@@ -141,7 +141,7 @@ type ResponseOptions struct {
 
 // Response decodes the upstream body with the backend, writes Model,
 // and encodes it with the frontend. usage is the response's own usage,
-// normalised as Usage says. loss is the response leg's report and is
+// normalized as Usage says. loss is the response leg's report and is
 // nil with today's codecs, which report loss on the request leg only;
 // the slot exists so a codec that gains one does not change this
 // signature. A body the backend cannot read is DecodeResponse; a

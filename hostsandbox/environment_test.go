@@ -47,7 +47,7 @@ func TestEnvironmentAdmitsOnlyTheAllowlist(t *testing.T) {
 		}
 		// An unset variable is absent rather than present and empty.
 		if name == "TZ" {
-			t.Errorf("an unset variable was materialised: %s", entry)
+			t.Errorf("an unset variable was materialized: %s", entry)
 		}
 	}
 	if Environment(nil) != nil {

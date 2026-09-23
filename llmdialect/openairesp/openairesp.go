@@ -195,7 +195,7 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 const includeLogProbs = "message.output_text.logprobs"
 
 // decodeInclude reads the include list. The one entry this layer can
-// serve is honoured; the rest name response parts that exist only in
+// serve is honored; the rest name response parts that exist only in
 // the upstream's own store and land in the loss report.
 func decodeInclude(req *ir.Request, raw json.RawMessage) {
 	var want []string

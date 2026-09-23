@@ -73,7 +73,7 @@ type Identity struct {
 	Roles []string `json:"roles,omitempty"`
 	// PreferredUsername, OrgSlug and OrgName are the issuer's display
 	// labels for the principal and for OrgID: the person's handle, and
-	// the slug and display name of the active organisation. They let a
+	// the slug and display name of the active organization. They let a
 	// service name the owner of a resource without asking the issuer for
 	// it. The issuer omits a label it has no value for, leaving the field
 	// empty: PreferredUsername until the person claims a handle, OrgSlug
@@ -106,7 +106,7 @@ type Identity struct {
 	Grants Grants `json:"grants,omitempty"`
 	// TokenID is a stable, low-cardinality audit identifier. For JWT it is
 	// the principal Sub; for BearerToken it is "dev". It is set at
-	// authentication time and never serialised.
+	// authentication time and never serialized.
 	TokenID string `json:"-"`
 	// Kind and ActorID identify a non-principal actor the token is bound
 	// to (e.g. Kind == "sandbox", ActorID == the sandbox id). Generic —
@@ -127,14 +127,14 @@ type Identity struct {
 // not a name: it is a token with OrgID "" and no roles.
 const (
 	// RolePlatformAdmin administers the installation: sees everything and
-	// manages every person and every organisation. It is carried on every
+	// manages every person and every organization. It is carried on every
 	// token of the principal, whatever the OrgID.
 	RolePlatformAdmin = "platform_admin"
-	// RoleOwner manages the organisation and sees everything in it. Owner
+	// RoleOwner manages the organization and sees everything in it. Owner
 	// differs from admin in three acts: transferring or deleting the
-	// organisation, changing billing, and granting owner.
+	// organization, changing billing, and granting owner.
 	RoleOwner = "owner"
-	// RoleAdmin administers the organisation.
+	// RoleAdmin administers the organization.
 	RoleAdmin = "admin"
 	// RoleMember is scoped to the tenant and to the policy its owner and
 	// admins set.
@@ -167,7 +167,7 @@ type Authenticator interface {
 	Authenticate(r *http.Request) (Identity, error)
 }
 
-// ErrUnauthenticated is returned when the request carries no recognisable
+// ErrUnauthenticated is returned when the request carries no recognizable
 // credential.
 var ErrUnauthenticated = errors.New("unauthenticated")
 
@@ -211,7 +211,7 @@ func Middleware(next http.Handler, a Authenticator) http.Handler {
 
 // WriteUnauthorized writes the standard 401 JSON envelope
 // ({"error":"unauthorized","message":<msg>}) used across Latere auth
-// middleware. Centralised here so the client-facing wire contract has a
+// middleware. Centralized here so the client-facing wire contract has a
 // single owner and cannot drift between packages.
 func WriteUnauthorized(w http.ResponseWriter, msg string) {
 	httpjson.Write(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized", "message": msg})

@@ -143,7 +143,7 @@ func RemoteDefaultBranch(repoPath string) string {
 	return "main"
 }
 
-// InitLocalRepo initialises a git repository at path, sets a local
+// InitLocalRepo initializes a git repository at path, sets a local
 // user.email / user.name identity, stages all files, and creates an initial
 // commit with the given message. The commit uses --allow-empty so it succeeds
 // even when path is empty. Used to track changes inside non-git workspace

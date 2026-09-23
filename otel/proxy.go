@@ -267,7 +267,7 @@ func allowTelemetryBytes(ctx context.Context, w http.ResponseWriter, limiter *ra
 	}
 	if d := rsv.DelayFrom(now); d > 0 {
 		// Cancel returns the tokens: the payload is being dropped, not
-		// queued, so holding them would penalise the next caller twice.
+		// queued, so holding them would penalize the next caller twice.
 		rsv.CancelAt(now)
 		rejects.Add(ctx, 1)
 		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(d.Seconds()))))

@@ -11,7 +11,7 @@
 //
 // The stub records every request it serves, and a test in another
 // process reads the record at GET /requests and clears it with DELETE
-// /requests, so a stack tier can prove a service dialled the issuer zero
+// /requests, so a stack tier can prove a service dialed the issuer zero
 // times during its data-plane requests (Lux spec 001's third invariant).
 //
 // The stub began as Origo's test/stubs/issuer and moved here with id-04 so
@@ -163,7 +163,7 @@ type Server struct {
 
 // ServiceClient is one confidential client the stub's token endpoint
 // accepts for the client_credentials grant, and the identity it mints:
-// the service account's own subject, the organisation it belongs to, and
+// the service account's own subject, the organization it belongs to, and
 // the audiences its actor tokens may be narrowed to. A request for an
 // audience outside that list is refused with invalid_target, which is
 // auth's registry gate (identity rule R3).

@@ -30,7 +30,7 @@
 // # A response, translated back
 //
 // Response decodes the upstream's body, writes the name the caller asked
-// for, encodes in the caller's dialect, and returns the usage normalised
+// for, encodes in the caller's dialect, and returns the usage normalized
 // so input never counts cache reads:
 //
 //	out, _, usage, err := b.Response(upstreamBody, bridge.ResponseOptions{Model: "my-model"})

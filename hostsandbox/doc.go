@@ -42,7 +42,7 @@
 // way: allowWrite is narrow and denyWrite makes exceptions to it, so only the
 // ReadWrite paths are writable and StageSpec.DeniedWrites and the directory
 // holding LogPath are denied inside them. StageSpec.Denied withholds a path
-// from a read grant that would otherwise cover it; srt honours a denial that
+// from a read grant that would otherwise cover it; srt honors a denial that
 // is more specific than the allowance it falls inside.
 //
 // # The network policy

@@ -143,7 +143,7 @@ func TestRequestLossReport(t *testing.T) {
 }
 
 // TestResponseWritesTheModel: the caller-facing name is written back,
-// "" keeps the upstream's, and the response's usage is normalised.
+// "" keeps the upstream's, and the response's usage is normalized.
 func TestResponseWritesTheModel(t *testing.T) {
 	b := open(t, ir.DialectAnthropicMessages, ir.DialectOpenAIChat)
 	body := fixture(t, "fixtures/openai-chat.response.json")

@@ -52,7 +52,7 @@ func TestParseUnverified_HappyPath(t *testing.T) {
 
 // TestParseUnverified_Labels: the three display-label claims reach their
 // fields through the same mapping Validate uses, and each is optional on its
-// own — a person claims a handle or does not, a token names an organisation
+// own — a person claims a handle or does not, a token names an organization
 // or does not.
 func TestParseUnverified_Labels(t *testing.T) {
 	tests := []struct {
@@ -63,7 +63,7 @@ func TestParseUnverified_Labels(t *testing.T) {
 		orgName  string
 	}{
 		{
-			name:     "handle and organisation",
+			name:     "handle and organization",
 			payload:  map[string]any{"sub": "s", "org_id": "org-9", "preferred_username": "ada", "org_slug": "acme", "org_name": "Acme, Inc."},
 			username: "ada", slug: "acme", orgName: "Acme, Inc.",
 		},
@@ -73,7 +73,7 @@ func TestParseUnverified_Labels(t *testing.T) {
 			slug:    "acme", orgName: "Acme, Inc.",
 		},
 		{
-			name:     "personal token names no organisation",
+			name:     "personal token names no organization",
 			payload:  map[string]any{"sub": "s", "preferred_username": "ada"},
 			username: "ada",
 		},

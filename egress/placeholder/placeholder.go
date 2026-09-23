@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: Apache-2.0
 
-// Package placeholder mints and recognises the opaque token a sandbox holds
+// Package placeholder mints and recognizes the opaque token a sandbox holds
 // in place of a credential value. It imports only the standard library so a
 // control plane's exported packages, which dial nothing, can mint one
 // without pulling in the gateway, its TLS stack, or its HTTP clients.

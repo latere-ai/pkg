@@ -90,9 +90,9 @@ func finishDecode(w http.ResponseWriter, dec *json.Decoder) bool {
 	return false
 }
 
-// Write serialises v as JSON and writes it with the given HTTP status code.
+// Write serializes v as JSON and writes it with the given HTTP status code.
 //
-// v is marshalled in full before any byte of the response is committed, so a
+// v is marshaled in full before any byte of the response is committed, so a
 // value that cannot be encoded answers 500 rather than the requested status
 // followed by a truncated body. Committing the status first is the tempting
 // shape -- it streams, and it needs no buffer -- but it makes the one failure

@@ -51,7 +51,7 @@ func TestIncludeKeepsReportingWhatItCannotServe(t *testing.T) {
 	req := decode(t, `{"model":"m","input":"hi",
 		"include":["message.output_text.logprobs","reasoning.encrypted_content"]}`)
 	if !req.LogProbs {
-		t.Fatal("logprobs include was not honoured")
+		t.Fatal("logprobs include was not honored")
 	}
 	if !slices.Contains(req.Loss.Strings(), "include") {
 		t.Fatalf("an unservable include entry vanished: %v", req.Loss.Strings())
@@ -76,7 +76,7 @@ func TestTopLogProbsAloneAsksForNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(raw), "top_logprobs") {
-		t.Fatalf("a count that asks for nothing travelled upstream: %s", raw)
+		t.Fatalf("a count that asks for nothing traveled upstream: %s", raw)
 	}
 }
 

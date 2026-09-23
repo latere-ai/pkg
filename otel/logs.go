@@ -49,7 +49,7 @@ var (
 // log records and is safe to call when the OTLP path was never installed.
 //
 // Errors from the OTLP path do not mask the local handler: if the exporter
-// fails to initialise, SetupLogs returns the local-only logger and a noop
+// fails to initialize, SetupLogs returns the local-only logger and a noop
 // shutdown along with the underlying error so callers may decide whether to
 // log it. Errors from emitting a record on the OTLP bridge are silently
 // dropped at write time so the local writer remains the source of truth for

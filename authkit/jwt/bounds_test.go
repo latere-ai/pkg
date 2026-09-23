@@ -58,7 +58,7 @@ func TestMaxTokenBytesDefault(t *testing.T) {
 }
 
 // grantsCapBytes is the bound infrastructure/identity id-13 puts on the
-// serialised authorization_details array: 4096 bytes of compact JSON,
+// serialized authorization_details array: 4096 bytes of compact JSON,
 // computed and refused where the key is created, so the failure lands on
 // the person creating it and never on a token nobody can spend.
 const grantsCapBytes = 4096

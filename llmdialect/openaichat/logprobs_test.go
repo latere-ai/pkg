@@ -77,7 +77,7 @@ func TestLogProbsWithoutCountOmitsTopLogProbs(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(raw), "top_logprobs") {
-		t.Fatalf("top_logprobs travelled without logprobs: %s", raw)
+		t.Fatalf("top_logprobs traveled without logprobs: %s", raw)
 	}
 }
 

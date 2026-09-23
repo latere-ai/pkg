@@ -142,7 +142,7 @@ type compiledEntry struct {
 // dropped: a placeholder that can never be scoped to a destination would be a
 // footgun, a line break in a header value is an injection, and the store
 // that owns the credentials should already reject such entries at write
-// time. This is defence in depth. [NewMapStrict] reports what was dropped.
+// time. This is defense in depth. [NewMapStrict] reports what was dropped.
 func NewMap(entries []Entry) *Map {
 	m, _ := NewMapStrict(entries)
 	return m

@@ -186,7 +186,7 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 		}
 		req.ToolChoice = tc
 	}
-	// Reasoning is signalled two ways: the current API uses
+	// Reasoning is signaled two ways: the current API uses
 	// output_config.effort (with thinking:{adaptive}), the deprecated one
 	// thinking:{enabled, budget_tokens}. Effort wins when present.
 	switch {

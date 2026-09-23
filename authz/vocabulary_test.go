@@ -204,7 +204,7 @@ func TestLabelIsTheKindUntilACoreNamesOne(t *testing.T) {
 		t.Fatalf("Label = %q, want %q", got, "Sandbox sets")
 	}
 	if got := labelled.Label("Sandbox"); got != "Sandbox" {
-		t.Fatalf("a kind the core labelled nothing for = %q, want the kind", got)
+		t.Fatalf("a kind the core labeled nothing for = %q, want the kind", got)
 	}
 	if got := labelled.Label("Volume"); got != "Volume" {
 		t.Fatalf("a kind the table does not name = %q, want the string back", got)

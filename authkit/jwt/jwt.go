@@ -27,8 +27,8 @@
 //	─────               ─────                  ────
 //	sub                 Sub                    the principal id; the only claim required
 //	principal_type      PrincipalType          "user" or "service"
-//	org_id              OrgID                  the active organisation
-//	roles               Roles                  platform_admin, then the role names in that organisation
+//	org_id              OrgID                  the active organization
+//	roles               Roles                  platform_admin, then the role names in that organization
 //	email               Email
 //	client_id           ClientID               "azp" is the fallback
 //	kind, actor_id      Kind, ActorID          a non-principal actor a token is bound to
@@ -40,7 +40,7 @@
 //
 // An issuer that stamps only "sub" still verifies; the Identity that results
 // carries the subject and nothing more. The three label claims are display
-// only: they name the person and the active organisation so that a service
+// only: they name the person and the active organization so that a service
 // can label a resource without calling the issuer, and the membership a
 // service decides from stays "org_id" and "roles". Two claims are read by
 // nothing: "scp" is the client's ceiling at the issuer and no service decides
@@ -799,7 +799,7 @@ func (v *Validator) Validate(rawToken string) (*Claims, error) {
 // sameIssuer reports whether two issuer URLs name one issuer. Trailing
 // slashes are not part of the name: an issuer that publishes "https://x"
 // and stamps "https://x/" is one issuer, and no caller can reconcile that
-// from outside. Nothing else is normalised, so a path is still a path.
+// from outside. Nothing else is normalized, so a path is still a path.
 func sameIssuer(a, b string) bool { return trimIssuer(a) == trimIssuer(b) }
 
 // trimIssuer is an issuer URL by the name it is matched under.

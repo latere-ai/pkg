@@ -11,13 +11,13 @@ import (
 
 // Built-in ClaimsMapper adapters for the IDPs latere services deploy against.
 // Each maps an IDP's identity and (where available) role/group claims onto the
-// portable User. Authentication is portable; these adapters localise the
+// portable User. Authentication is portable; these adapters localize the
 // non-portable authorization shape per IDP.
 
 // KeycloakMapper maps Keycloak claims. Keycloak puts realm roles under
 // realm_access.roles, on the access token by default and on the ID token only
 // when the client has a realm-roles mapper with "add to ID token" enabled.
-// Union both so a role holder is recognised regardless of the client's mapper
+// Union both so a role holder is recognized regardless of the client's mapper
 // config (accessClaims is nil when the access token is not a verifiable JWT).
 type KeycloakMapper struct{}
 

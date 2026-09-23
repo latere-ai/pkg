@@ -42,7 +42,7 @@ func Clean(rel string) (string, error) {
 
 // Join joins rel under base and verifies lexically that the result stays
 // under base. rel is OS-native, so a forward-slash value from [Clean] goes
-// through [filepath.FromSlash] first. The check is defence in depth for a
+// through [filepath.FromSlash] first. The check is defense in depth for a
 // rel that was validated by Clean and a hard guard for one that was not.
 func Join(base, rel string) (string, error) {
 	base = filepath.Clean(base)

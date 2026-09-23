@@ -14,6 +14,6 @@ package atomicfile
 // os.Rename, which is a different change from this one.
 //
 // Callers on Windows therefore get [WriteSync]'s temp-file fsync but not the
-// directory-entry guarantee. That is weaker than the POSIX behaviour, and it
+// directory-entry guarantee. That is weaker than the POSIX behavior, and it
 // is stated rather than papered over.
 func syncDir(string) error { return nil }

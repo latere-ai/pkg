@@ -72,7 +72,7 @@ func AuditAttrs(ctx context.Context, action, resource string, outcome Outcome, e
 //
 // This is the slog layer of the audit shape, and it is not pkg/audit. The
 // two are layers, not two standards: pkg/audit.Event is a Go struct a
-// product serialises to its own store, and this is slog attributes on the
+// product serializes to its own store, and this is slog attributes on the
 // pipeline every service already has (provenance.md, "Relation to
 // pkg/audit"). Where the two vocabularies differ, this one is initiator.*
 // and pkg/audit keeps its own Actor; re-expressing Actor is a decision for

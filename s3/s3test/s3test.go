@@ -255,7 +255,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("If-Match") != "" {
 		// Spaces answers 412 to every If-Match; the fake does the same so
 		// a compare-and-swap fails in the unit suite.
-		s.refuse(w, http.StatusPreconditionFailed, "PreconditionFailed", "If-Match is not honoured; see the s3 package documentation")
+		s.refuse(w, http.StatusPreconditionFailed, "PreconditionFailed", "If-Match is not honored; see the s3 package documentation")
 		return
 	}
 	key := s.key(r)

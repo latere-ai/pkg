@@ -404,7 +404,7 @@ func (c *Client) FetchUserInfoContext(ctx context.Context, accessToken string) (
 // the configured AuthURL. The caller renders the returned UserCode +
 // VerificationURI to the user, then calls DeviceAccessToken to poll
 // for approval. extra carries auth-server extension parameters
-// (auth.latere.ai honours `org_id` to scope the resulting token).
+// (auth.latere.ai honors `org_id` to scope the resulting token).
 //
 // Use this for headless / CLI flows. Browser-based clients should
 // use HandleLogin instead.
@@ -414,7 +414,7 @@ func (c *Client) DeviceAuth(ctx context.Context, extra url.Values) (*oauth2.Devi
 
 // DeviceAccessToken polls the token endpoint with the device-code
 // grant until the user approves, denies, or the code expires. RFC
-// 8628 slow_down / authorization_pending semantics are honoured by
+// 8628 slow_down / authorization_pending semantics are honored by
 // the underlying oauth2 client.
 func (c *Client) DeviceAccessToken(ctx context.Context, da *oauth2.DeviceAuthResponse) (*oauth2.Token, error) {
 	return c.provider.DeviceAccessToken(ctx, da)

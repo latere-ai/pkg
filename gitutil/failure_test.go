@@ -47,7 +47,7 @@ func fakeGitFailing(t *testing.T, guard string) {
 
 // InitLocalRepo runs five git commands in sequence. Each has its own error
 // message so a failure names the step it came from rather than reporting a
-// generic "could not initialise repository".
+// generic "could not initialize repository".
 func TestInitLocalRepo_StepFailures(t *testing.T) {
 	cases := []struct {
 		name    string

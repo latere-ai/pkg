@@ -12,13 +12,13 @@
 // [Object.ContentType]. A service that needs another call adds it here
 // rather than a cloud SDK.
 //
-// # What the providers honour
+// # What the providers honor
 //
 // The primitives were verified on MinIO and on Spaces; the report is
 // docs/spikes/2026-09-06-conditional-writes.md in the origo repository.
 // What it found that a caller must design around:
 //
-//   - PUT If-Match is not portable. MinIO honours it; Spaces answers 412
+//   - PUT If-Match is not portable. MinIO honors it; Spaces answers 412
 //     to every If-Match, including one carrying the ETag it returned a
 //     moment earlier. This package has no If-Match on PUT, and its s3test
 //     fake answers 412 to one, so a design that needs compare-and-swap

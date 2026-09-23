@@ -17,7 +17,7 @@ const Interval = 10 * time.Millisecond
 
 // For fails t when cond is still false after timeout. It returns as soon as
 // cond reports true. cond runs on the calling goroutine, so it must read
-// shared state through whatever synchronisation the code under test
+// shared state through whatever synchronization the code under test
 // provides.
 func For(t testing.TB, timeout time.Duration, cond func() bool) {
 	t.Helper()

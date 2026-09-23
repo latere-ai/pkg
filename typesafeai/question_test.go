@@ -78,7 +78,7 @@ func TestQuestionMarshalJSON(t *testing.T) {
 				t.Fatalf("marshalling: %v", err)
 			}
 			if !reflect.DeepEqual(jsonValue(t, got), jsonValue(t, []byte(tt.want))) {
-				t.Errorf("marshalled to %s, want %s", got, tt.want)
+				t.Errorf("marshaled to %s, want %s", got, tt.want)
 			}
 		})
 	}

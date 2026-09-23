@@ -11,7 +11,7 @@ import (
 
 // StaticTokenAuthenticator maps a small set of pre-shared bearer tokens to
 // caller-supplied Identities. Each token resolves to its own Identity, so
-// distinct dev users, fixtures, or service callers can be modelled without
+// distinct dev users, fixtures, or service callers can be modeled without
 // the single-superadmin synthesis BearerToken applies.
 //
 // Constant-time comparison is used against every configured token so timing

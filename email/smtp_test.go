@@ -26,7 +26,7 @@ func TestSMTP_Send_BadRecipient(t *testing.T) {
 }
 
 // A subject is a header, so a line break in one is refused before anything is
-// dialled — whatever the calling service put in it.
+// dialed — whatever the calling service put in it.
 func TestSMTP_Send_RejectsCRLFInSubject(t *testing.T) {
 	s, _ := newSMTPSender(&SMTPConfig{Host: "smtp.example.com", Port: "587", From: "noreply@example.com"})
 	err := s.Send(context.Background(), "user@example.com", "Evil\r\nBcc: attacker@evil.com", "<p>b</p>")

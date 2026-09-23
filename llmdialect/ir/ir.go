@@ -135,7 +135,7 @@ type Tool struct {
 // records [LossServerToolOf] rather than inventing one.
 type ServerTool struct {
 	// Type is the provider's versioned identifier for the tool, e.g.
-	// "web_search_20250305". It is what selects the behaviour.
+	// "web_search_20250305". It is what selects the behavior.
 	Type string
 
 	// Name is what the model calls the tool by, e.g. "web_search".

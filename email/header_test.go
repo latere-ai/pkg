@@ -30,7 +30,7 @@ func TestRejectCRLF(t *testing.T) {
 	}
 }
 
-// FuzzRejectCRLF asserts the one property the whole header defence rests on:
+// FuzzRejectCRLF asserts the one property the whole header defense rests on:
 // a value that survives the check cannot carry a line break, whatever it is.
 func FuzzRejectCRLF(f *testing.F) {
 	for _, seed := range []string{"", "Subject", "a\r\nb", "a\nb", "a\rb", "ünïcode", "\x00"} {

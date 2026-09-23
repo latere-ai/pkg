@@ -24,7 +24,7 @@ func Transport(base http.RoundTripper) http.RoundTripper {
 }
 
 // HTTPClient returns an *http.Client whose Transport is instrumented via
-// Transport. It is a convenience for callers that do not otherwise customise
+// Transport. It is a convenience for callers that do not otherwise customize
 // the client.
 func HTTPClient() *http.Client {
 	return &http.Client{Transport: Transport(nil)}

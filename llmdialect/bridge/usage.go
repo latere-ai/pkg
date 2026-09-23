@@ -10,7 +10,7 @@ import (
 	"latere.ai/x/pkg/llmdialect/ir"
 )
 
-// Usage is one dialect's usage members, normalised: Input never counts
+// Usage is one dialect's usage members, normalized: Input never counts
 // cache reads, which OpenAI and Google fold into their prompt total and
 // Anthropic reports beside it, so the five numbers add up the same way
 // whatever answered. Every member is floored at zero.

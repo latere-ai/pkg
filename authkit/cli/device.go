@@ -47,7 +47,7 @@ type DeviceCodeClient struct {
 	OpenBrowser func(url string) error
 
 	// ExtraParams carries auth-server extension parameters forwarded on
-	// DeviceAuth. auth.latere.ai honours `org_id` here to scope the
+	// DeviceAuth. auth.latere.ai honors `org_id` here to scope the
 	// resulting token.
 	ExtraParams url.Values
 }

@@ -28,7 +28,7 @@ func Copy(src, dst string) error {
 		// Copy carries no context, and neither does the CopyGo fallback it
 		// drops to, so there is nothing to cancel on either path. Background
 		// states that rather than implying a cancellation this API cannot
-		// honour.
+		// honor.
 		cmd := exec.CommandContext(context.Background(), "cp", "-a", src+"/.", dst)
 		if err := cmd.Run(); err == nil {
 			return nil

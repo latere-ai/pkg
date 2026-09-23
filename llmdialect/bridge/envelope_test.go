@@ -80,7 +80,7 @@ func TestGoldenShapes(t *testing.T) {
 
 // TestEnvelopeDetails: the lux shape merges Details under the named
 // members, omits details when there are none, and falls back to code
-// and message when a detail value cannot be marshalled; the Google shape
+// and message when a detail value cannot be marshaled; the Google shape
 // omits an empty domain.
 func TestEnvelopeDetails(t *testing.T) {
 	got := Envelope(WireLux, Failure{Code: "c", Message: "M.", RequestID: "r", Detail: "d", Details: map[string]any{"retry_after": 2, "request_id": "overridden"}})

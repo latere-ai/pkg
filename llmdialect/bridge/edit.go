@@ -288,7 +288,7 @@ func SetIncludeUsage(body []byte) []byte {
 }
 
 // RemoveMember deletes the top-level member named key with the comma
-// that joined it to its neighbours, and returns body unchanged when the
+// that joined it to its neighbors, and returns body unchanged when the
 // member is absent or the body cannot be read.
 func RemoveMember(body []byte, key string) []byte {
 	s, ok, err := member(body, 0, key)

@@ -69,7 +69,7 @@ func TestDeviceAuth_HappyPath(t *testing.T) {
 }
 
 // TestDeviceAccessToken_HonorsAuthorizationPending pins the polling
-// behaviour: the first call returns authorization_pending; the next
+// behavior: the first call returns authorization_pending; the next
 // call (after the configured interval) returns the token. Callers
 // downstream rely on this to render "Waiting for approval..." once
 // before the token comes back.
@@ -144,7 +144,7 @@ func TestDeviceAccessToken_AccessDeniedSurfaces(t *testing.T) {
 }
 
 // TestEnabled_DeviceOnly confirms a public client (ClientSecret +
-// RedirectURL empty) is recognised as enabled — required so CLIs can
+// RedirectURL empty) is recognized as enabled — required so CLIs can
 // instantiate a Client without supplying browser-flow plumbing they
 // don't need.
 func TestEnabled_DeviceOnly(t *testing.T) {
