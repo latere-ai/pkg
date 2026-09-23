@@ -53,7 +53,9 @@ var providerSurface = []string{
 //   - the client and its configuration — Client, New, Config, LoadConfig,
 //     LoadConfigWithPrefix;
 //   - the session itself — Session, SessionFromToken, ErrSessionExpired,
-//     SessionCookieName, SessionMaxAge, ClearSession;
+//     SessionCookieName, SessionMaxAge, ClearSession, and
+//     ErrSwitchOrgRefused, the refusal of Client.SwitchOrg, which moves a
+//     session into another context;
 //   - the authorization-code flow's short-lived state — FlowState,
 //     FlowCookieName, FlowMaxAge, ClearFlowState, GenerateState,
 //     GenerateVerifier;
@@ -90,6 +92,7 @@ var sessionHandlers = []string{
 	"type Session",
 	"type SessionAuthenticator",
 	"var ErrSessionExpired",
+	"var ErrSwitchOrgRefused",
 }
 
 // outsideTheAllowance is exported and is neither Provider nor a session

@@ -10,6 +10,25 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `oidc.Client.SwitchOrg` moves a session into another context without a
+  second sign-in: it spends the session's refresh token with the `org_id`
+  parameter the latere issuer honors, `""` being the personal context, and
+  answers the session with the new token, organization and roles. The caller
+  persists it with `SetSession`. A refusal is `oidc.ErrSwitchOrgRefused`.
+
+### Changed
+
+- A token minted from a service account's key is narrowed by its grants,
+  as a personal access token's is. `authkit.TokenUseServiceAccountKey`
+  (`"sak"`) names the class and `authkit.NarrowedByGrants` the classes
+  grants narrow; `authz.ParseGrants`, `authz.Restrict` and the JWT
+  validator read both. A service whose validator does not set
+  `Config.ReadsGrants` now refuses a service account key's token that
+  carries grants, as it refuses a personal access token's: set it and apply
+  `authz.Restrict` where the service decides.
+
 ## v0.81.0 - 2026-09-23
 
 ### Changed
