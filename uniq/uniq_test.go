@@ -50,7 +50,7 @@ func TestStrings(t *testing.T) {
 	}
 }
 
-func TestNormalizedKeepsNormalisedForm(t *testing.T) {
+func TestNormalizedKeepsNormalizedForm(t *testing.T) {
 	in := []string{"Foo", " foo", "BAR", "bar", ""}
 	got := Normalized(in, func(s string) string { return strings.ToLower(strings.TrimSpace(s)) })
 	if !slices.Equal(got, []string{"foo", "bar"}) {

@@ -61,9 +61,9 @@ func TestSetup_SendsVendorAuthHeaders(t *testing.T) {
 	}
 }
 
-// TestSetup_HonoursEndpointPath covers a vendor that serves OTLP under a path
+// TestSetup_HonorsEndpointPath covers a vendor that serves OTLP under a path
 // prefix rather than at the host root, which several do.
-func TestSetup_HonoursEndpointPath(t *testing.T) {
+func TestSetup_HonorsEndpointPath(t *testing.T) {
 	var (
 		mu    sync.Mutex
 		paths = map[string]bool{}

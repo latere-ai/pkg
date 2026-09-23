@@ -199,14 +199,14 @@ func TestLabelIsTheKindUntilACoreNamesOne(t *testing.T) {
 		t.Fatalf("Label with no labels declared = %q, want the kind", got)
 	}
 
-	labelled := v.WithLabels(map[string]string{"SandboxSet": "Sandbox sets"})
-	if got := labelled.Label("SandboxSet"); got != "Sandbox sets" {
+	labeled := v.WithLabels(map[string]string{"SandboxSet": "Sandbox sets"})
+	if got := labeled.Label("SandboxSet"); got != "Sandbox sets" {
 		t.Fatalf("Label = %q, want %q", got, "Sandbox sets")
 	}
-	if got := labelled.Label("Sandbox"); got != "Sandbox" {
+	if got := labeled.Label("Sandbox"); got != "Sandbox" {
 		t.Fatalf("a kind the core labeled nothing for = %q, want the kind", got)
 	}
-	if got := labelled.Label("Volume"); got != "Volume" {
+	if got := labeled.Label("Volume"); got != "Volume" {
 		t.Fatalf("a kind the table does not name = %q, want the string back", got)
 	}
 }
@@ -219,17 +219,17 @@ func TestWithLabelsReturnsACopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	labels := map[string]string{"Repository": "Repositories"}
-	labelled := v.WithLabels(labels)
+	labeled := v.WithLabels(labels)
 	if got := v.Label("Repository"); got != "Repository" {
 		t.Fatalf("the original vocabulary now labels %q; WithLabels returns a copy", got)
 	}
 	// The map the caller handed in is not the one the copy reads either.
 	labels["Repository"] = "Something else"
-	if got := labelled.Label("Repository"); got != "Repositories" {
+	if got := labeled.Label("Repository"); got != "Repositories" {
 		t.Fatalf("Label = %q; a later write to the caller's map reached the vocabulary", got)
 	}
 	// Labels travel with a copy: a vocabulary passed by value keeps them.
-	if got := labelled.WithLabels(nil).Label("Repository"); got != "Repository" {
+	if got := labeled.WithLabels(nil).Label("Repository"); got != "Repository" {
 		t.Fatalf("WithLabels(nil) left %q; it declares no label", got)
 	}
 }

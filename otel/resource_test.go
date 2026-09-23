@@ -21,7 +21,7 @@ func attrValue(res *resource.Resource, key string) (string, bool) {
 	return "", false
 }
 
-func TestServiceResource_HonoursResourceAttributesEnv(t *testing.T) {
+func TestServiceResource_HonorsResourceAttributesEnv(t *testing.T) {
 	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "team=infra,tier=edge")
 
 	res, err := serviceResource(context.Background(), "svc", "1.0")

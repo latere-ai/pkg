@@ -469,7 +469,7 @@ func TestDoWithRetriesDisabled(t *testing.T) {
 	}
 }
 
-func TestDoHonoursRetryAfter(t *testing.T) {
+func TestDoHonorsRetryAfter(t *testing.T) {
 	clearEnv(t)
 	tests := []struct {
 		name   string

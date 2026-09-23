@@ -75,7 +75,7 @@ func TestQuestionMarshalJSON(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := json.Marshal(tt.question)
 			if err != nil {
-				t.Fatalf("marshalling: %v", err)
+				t.Fatalf("marshaling: %v", err)
 			}
 			if !reflect.DeepEqual(jsonValue(t, got), jsonValue(t, []byte(tt.want))) {
 				t.Errorf("marshaled to %s, want %s", got, tt.want)
@@ -94,7 +94,7 @@ func TestEmptyStringInstructionsSurvive(t *testing.T) {
 	} {
 		data, err := json.Marshal(question)
 		if err != nil {
-			t.Fatalf("marshalling %T: %v", question, err)
+			t.Fatalf("marshaling %T: %v", question, err)
 		}
 		decoded, ok := jsonValue(t, data).(map[string]any)
 		if !ok {

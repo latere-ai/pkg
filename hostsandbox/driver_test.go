@@ -350,9 +350,9 @@ func TestStopKillsAStageThatIgnoresSIGTERM(t *testing.T) {
 	}
 }
 
-// TestStopHonoursACancelledContext checks that a cancelled context ends the
+// TestStopHonorsACancelledContext checks that a cancelled context ends the
 // grace period early with SIGKILL and reports the cancellation.
-func TestStopHonoursACancelledContext(t *testing.T) {
+func TestStopHonorsACancelledContext(t *testing.T) {
 	driver := New(Config{Home: t.TempDir(), Look: shim(t), Lookup: os.LookupEnv, StopGrace: 10 * time.Second})
 	dir := t.TempDir()
 	handle, err := driver.Launch(context.Background(), stage(t, dir, "/bin/sh", "-c", `trap "" TERM; sleep 30`))
