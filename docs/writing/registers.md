@@ -21,6 +21,10 @@ When writing a sentence, ask who reads it, then write for exactly that
 reader. A sentence that tries to serve two readers serves neither: the user
 cannot act on the detail, and the developer cannot debug from the summary.
 
+Every register spells in American English: organization, behavior, license,
+catalog. A wire value that already spells a word the British way, such as a
+`cancelled` status, keeps its spelling until its contract changes.
+
 ## Errors: one code, one sentence, one detail
 
 The registers do not leak into each other by construction. An error has:
