@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.82.0 - 2026-09-24
+
 ### Added
 
 - `oidc.Client.SwitchOrg` moves a session into another context without a
