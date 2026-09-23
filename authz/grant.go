@@ -60,11 +60,16 @@ type Grants = authkit.Grants
 // nothing here.
 const GrantType = authkit.GrantType
 
-// TokenUsePAT is the "token_use" claim value grants narrow,
+// TokenUsePAT is a "token_use" claim value grants narrow,
 // [authkit.TokenUsePAT]: a token minted from a personal access token. A
-// request whose claims carry any other value is decided by the decision
-// point alone.
+// request whose claims carry a value [authkit.NarrowedByGrants] does not
+// name is decided by the decision point alone.
 const TokenUsePAT = authkit.TokenUsePAT
+
+// TokenUseServiceAccountKey is the "token_use" claim value of a token
+// minted from a service account's key, [authkit.TokenUseServiceAccountKey].
+// Grants narrow it as they narrow [TokenUsePAT].
+const TokenUseServiceAccountKey = authkit.TokenUseServiceAccountKey
 
 // ReasonGrant is the deny a decision point writes when the caller's token
 // carries grants and none of them covers the request. It is the answer
@@ -73,8 +78,9 @@ const TokenUsePAT = authkit.TokenUsePAT
 const ReasonGrant = "grant"
 
 // ParseGrants reads the grants off a verified envelope. A request whose
-// "token_use" is not [authkit.TokenUsePAT] carries none, whatever the
-// claim says, because no other credential class is narrowed this way.
+// "token_use" [authkit.NarrowedByGrants] does not name carries none,
+// whatever the claim says, because no other credential class is narrowed
+// this way.
 //
 // An envelope with no claims, and one whose claim is absent, carry no
 // grant and no error: what that answers is [Restrict]'s. A claim that
@@ -82,7 +88,7 @@ const ReasonGrant = "grant"
 // nothing from a claim nobody could parse.
 func ParseGrants(claims map[string]any) (Grants, error) {
 	use, _ := claims["token_use"].(string)
-	if use != authkit.TokenUsePAT {
+	if !authkit.NarrowedByGrants(use) {
 		return nil, nil
 	}
 	raw, ok := claims["authorization_details"]
@@ -106,17 +112,18 @@ func ParseGrants(claims map[string]any) (Grants, error) {
 // that forgets to qualify denies everything; the core is a parameter and
 // not an inference.
 //
-// A token whose "token_use" is not [authkit.TokenUsePAT] is decided by d
-// alone. A PAT that carries no grant at all is denied: an absent claim is
-// not full access, and neither is an empty array. auth refuses an empty
-// array where a key is created and writes a grant list onto every key
-// that predates this, so a live key always carries one, and a token
-// carrying none is a token nobody wrote a grant for.
+// A token whose "token_use" [authkit.NarrowedByGrants] does not name is
+// decided by d alone. A key-minted token that carries no grant at all is
+// denied: an absent claim is not full access, and neither is an empty
+// array. auth refuses an empty array where a key is created and writes a
+// grant list onto every key that predates this, so a live key always
+// carries one, and a token carrying none is a token nobody wrote a grant
+// for.
 func Restrict(core string, d Decision, req Request, grants Grants) Decision {
 	if !d.Allow {
 		return d
 	}
-	if use, _ := req.Claims["token_use"].(string); use != authkit.TokenUsePAT {
+	if use, _ := req.Claims["token_use"].(string); !authkit.NarrowedByGrants(use) {
 		return d
 	}
 	if slices.ContainsFunc(grants, func(g Grant) bool { return covers(core, g, req) }) {

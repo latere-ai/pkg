@@ -212,3 +212,29 @@ func TestParseUnverifiedReadsTheGrantsClaim(t *testing.T) {
 		t.Fatalf("Grants =\n%#v\nwant\n%#v", claims.Grants, want)
 	}
 }
+
+// TestGrantsAreReadOnAServiceAccountKey: a service account key's token
+// carries grants (auth spec 084). A validator that reads grants reads them
+// as it reads a PAT's, and one that does not refuses the token, as it
+// refuses a PAT's, so no service decides such a token by its role alone.
+func TestGrantsAreReadOnAServiceAccountKey(t *testing.T) {
+	key := genKey(t)
+	p := defaultPayload()
+	p["token_use"] = authkit.TokenUseServiceAccountKey
+	p["authorization_details"] = oneRepositoryRead()
+	tok := signToken(t, key, defaultHeader(key), p)
+
+	if _, err := testValidator(t, key).Validate(tok); !errors.Is(err, ErrGrantsUnread) {
+		t.Fatalf("a validator that reads no grants answered %v, want ErrGrantsUnread", err)
+	}
+	claims, err := testValidator(t, key, readsGrants).Validate(tok)
+	if err != nil {
+		t.Fatalf("a service account key's token was refused: %v", err)
+	}
+	if len(claims.Grants) == 0 {
+		t.Fatal("Grants is empty; a service account key's token carries its grants")
+	}
+	if claims.TokenUse != authkit.TokenUseServiceAccountKey {
+		t.Fatalf("TokenUse = %q, want %q", claims.TokenUse, authkit.TokenUseServiceAccountKey)
+	}
+}

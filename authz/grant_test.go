@@ -303,10 +303,9 @@ func TestRestrictCoversByIdentifier(t *testing.T) {
 	}
 }
 
-// TestRestrictIgnoresGrantsOnNonPAT is id-13's A10. Grants narrow one
-// credential class. A session token, a service account key's token and
-// an actor token are decided by the decision point alone, whatever the
-// claim carries.
+// TestRestrictIgnoresGrantsOnNonPAT is id-13's A10. Grants narrow the
+// key-minted classes alone. A session token and an actor token are decided
+// by the decision point alone, whatever the claim carries.
 func TestRestrictIgnoresGrantsOnNonPAT(t *testing.T) {
 	grants, err := authz.ParseGrants(patClaims(t, readOnlyOnOneRepository))
 	if err != nil {
@@ -402,5 +401,43 @@ func TestGrantsRenderTheClaim(t *testing.T) {
 		if !strings.Contains(string(raw), field) {
 			t.Fatalf("the rendered entry %s carries no %s", raw, field)
 		}
+	}
+}
+
+// TestRestrictNarrowsAServiceAccountKey: a service account's key carries
+// grants as a personal access token does (auth spec 084), so its token is
+// narrowed by them and a key-minted token with none is denied.
+func TestRestrictNarrowsAServiceAccountKey(t *testing.T) {
+	if !authkit.NarrowedByGrants(authz.TokenUseServiceAccountKey) || !authkit.NarrowedByGrants(authz.TokenUsePAT) {
+		t.Fatal("NarrowedByGrants must name both key-minted classes")
+	}
+	for _, use := range []string{"", "session", "actor"} {
+		if authkit.NarrowedByGrants(use) {
+			t.Fatalf("NarrowedByGrants(%q) = true, want false", use)
+		}
+	}
+	claims := patClaims(t, readOnlyOnOneRepository)
+	claims["token_use"] = authz.TokenUseServiceAccountKey
+	grants, err := authz.ParseGrants(claims)
+	if err != nil {
+		t.Fatalf("ParseGrants: %v", err)
+	}
+	if len(grants) == 0 {
+		t.Fatal("ParseGrants read no grant off a service account key's token")
+	}
+	if got := authz.Restrict("origo", allowed, req(claims, "repo.read", "Repository", grantedRepo), grants); !got.Allow {
+		t.Fatalf("a covered request was denied: %#v", got)
+	}
+	got := authz.Restrict("origo", allowed, req(claims, "repo.write", "Repository", otherRepo), grants)
+	if got.Allow || got.Reason != authz.ReasonGrant {
+		t.Fatalf("an uncovered request answered %#v, want a %q deny", got, authz.ReasonGrant)
+	}
+	bare := map[string]any{"token_use": authz.TokenUseServiceAccountKey}
+	none, err := authz.ParseGrants(bare)
+	if err != nil {
+		t.Fatalf("ParseGrants: %v", err)
+	}
+	if got := authz.Restrict("origo", allowed, req(bare, "repo.read", "Repository", grantedRepo), none); got.Allow {
+		t.Fatal("a service account key's token with no grant was allowed")
 	}
 }

@@ -22,10 +22,22 @@ import (
 // latere.ai/x/pkg/authz.
 
 // TokenUsePAT is the "token_use" of a token minted from a personal access
-// token (identity id-12, R2). Grants narrow that credential class and no
-// other: a token whose "token_use" is anything else is decided by the
-// decision point alone, whatever the claim carries.
+// token (identity id-12, R2), in the personal context or, as a member key,
+// in an organization's.
 const TokenUsePAT = "pat"
+
+// TokenUseServiceAccountKey is the "token_use" of a token minted from a
+// service account's key. The key carries grants as a personal access token
+// does, so its token is narrowed by them.
+const TokenUseServiceAccountKey = "sak"
+
+// NarrowedByGrants reports whether a token of this "token_use" is narrowed
+// by its grants: the classes minted from a stored key, [TokenUsePAT] and
+// [TokenUseServiceAccountKey]. A token of any other class is decided by the
+// decision point alone, whatever the claim carries.
+func NarrowedByGrants(tokenUse string) bool {
+	return tokenUse == TokenUsePAT || tokenUse == TokenUseServiceAccountKey
+}
 
 // GrantType is the one authorization_details type of the family. RFC 9396
 // leaves the fields of an entry to its type, and this is the type that

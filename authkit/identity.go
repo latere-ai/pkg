@@ -90,8 +90,9 @@ type Identity struct {
 	ClientID string `json:"client_id,omitempty"`
 	// TokenUse is the token's "token_use" claim: which credential class
 	// minted it. [TokenUsePAT] is a personal access token (identity
-	// id-12); every other token the family mints carries none, so an
-	// empty value means "not a PAT" and says nothing else.
+	// id-12), [TokenUseServiceAccountKey] a service account's key; every
+	// other token the family mints carries none, so an empty value means
+	// "not minted from a key" and says nothing else.
 	TokenUse string `json:"token_use,omitempty"`
 	// Grants are the RFC 9396 "authorization_details" entries the token
 	// carried: what the person said this credential may do, chosen when
@@ -99,8 +100,8 @@ type Identity struct {
 	// a grant on a resource the person cannot reach still reaches
 	// nothing; the reach itself stays OrgID and Roles.
 	//
-	// They are read only on a TokenUsePAT token, because no other token
-	// carries them. What they mean at a decision is
+	// They are read only on a token [NarrowedByGrants] names, because no
+	// other token carries them. What they mean at a decision is
 	// latere.ai/x/pkg/authz's: it is the decision point that intersects
 	// its own answer with them.
 	Grants Grants `json:"grants,omitempty"`

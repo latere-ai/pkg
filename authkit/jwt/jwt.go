@@ -914,11 +914,11 @@ func (raw rawPayload) grants() (authkit.Grants, error) {
 	return g, nil
 }
 
-// carriesGrants reports whether this payload is a personal access token
-// with a grants claim to read. A claim written as JSON null carries
-// nothing, the same as an absent one.
+// carriesGrants reports whether this payload was minted from a key whose
+// class grants narrow, with a grants claim to read. A claim written as JSON
+// null carries nothing, the same as an absent one.
 func (raw rawPayload) carriesGrants() bool {
-	if raw.TokenUse != authkit.TokenUsePAT {
+	if !authkit.NarrowedByGrants(raw.TokenUse) {
 		return false
 	}
 	trimmed := bytes.TrimSpace(raw.AuthorizationDetails)
