@@ -5,7 +5,7 @@
 // the llmdialect codecs: a Reader that yields one event per call and a
 // Writer that emits `event:`/`data:` frames. It covers exactly the SSE
 // subset the OpenAI and Anthropic streaming APIs use (single-line JSON
-// data, optional event name, comment keep-alives) — it is not a general
+// data, optional event name, comment keep-alives); it is not a general
 // SSE client.
 package sse
 

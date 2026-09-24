@@ -37,11 +37,11 @@
 // Every action of the vocabulary is decided, one whose verb is list
 // included: its answer is a decision whose [authz.Decision.Filter]
 // narrows the core's own list. The exception is an action whose answer is
-// a page of the core's own shape — Origo's repo.list, a directory page
-// with fields and a cursor this contract does not fix — which a core
+// a page of the core's own shape (Origo's repo.list, a directory page
+// with fields and a cursor this contract does not fix), which a core
 // names in [Options.PageActions] and a [Lister] answers.
 //
-// Everything a decision reads — the tables, the roles, the plans — stays
+// Everything a decision reads (the tables, the roles, the plans) stays
 // with whoever wrote the [Decider]. What the scaffold adds to the answer
 // is one thing: the grants the caller's own credential carries.
 // A personal access token is narrowed by

@@ -5,7 +5,7 @@
 // without a model tokenizer. It exists for count_tokens emulation when
 // the backend dialect has no counting endpoint: the estimate targets
 // the right order of magnitude (harness context-window bookkeeping),
-// not billing accuracy — metering always uses the backend's reported
+// not billing accuracy: metering always uses the backend's reported
 // usage, never this.
 package tokencount
 

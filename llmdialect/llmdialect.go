@@ -1,17 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: Apache-2.0
 
-// Package llmdialect translates between LLM inference wire dialects —
-// Anthropic Messages, OpenAI Chat Completions, OpenAI Responses, and
-// the lux-native dialect (the IR itself as a public wire format) —
+// Package llmdialect translates between LLM inference wire dialects
+// (Anthropic Messages, OpenAI Chat Completions, OpenAI Responses, and
+// the lux-native dialect, which is the IR itself as a public wire format)
 // through a neutral intermediate representation (package ir), so a
 // caller speaking one dialect can drive a model served behind
 // another.
 //
 // Translation is hub-and-spoke: each dialect implements a Frontend
 // (caller side) and/or Backend (upstream side) codec against the IR,
-// never a pairwise mapping. The package is wire-level — bytes and SSE
-// events in, bytes and SSE events out — and owns no transport, auth,
+// never a pairwise mapping. The package is wire-level (bytes and SSE
+// events in, bytes and SSE events out) and owns no transport, auth,
 // or logging; the consumer (e.g. the Lux gateway's /compat surfaces)
 // supplies those.
 //

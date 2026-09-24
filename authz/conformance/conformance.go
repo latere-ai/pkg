@@ -26,7 +26,7 @@
 // table and adds the check that an action outside it is refused.
 //
 // An action whose answer is a page of the core's own shape rather than a
-// decision — Origo's repo.list, a directory page — is named with
+// decision (Origo's repo.list, a directory page) is named with
 // WithPageActions. A run that names none accepts either shape for an
 // action whose verb is list and requires a decision for every other,
 // because both are conforming and only the endpoint knows which it

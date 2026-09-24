@@ -5,8 +5,8 @@
 // else: a service composes its own subjects and bodies and hands them here.
 //
 // The split is deliberate. Delivery is a platform concern with one correct
-// answer — pick a working transport, refuse header injection, instrument the
-// outbound call — while a message is a product decision that belongs to the
+// answer (pick a working transport, refuse header injection, instrument the
+// outbound call), while a message is a product decision that belongs to the
 // service making it. Sharing the transport keeps the careful part in one
 // place; keeping the templates out means adding a new kind of mail is a change
 // in one service rather than a release of this module.

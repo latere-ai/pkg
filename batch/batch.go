@@ -4,7 +4,7 @@
 // Package batch provides a generic, non-blocking batching pump: producers
 // Add items without ever blocking (a full intake buffer drops the item and
 // reports it), while a single Run goroutine accumulates items and hands them to
-// a caller-supplied flush function in batches — either when the batch reaches a
+// a caller-supplied flush function in batches: when the batch reaches a
 // size threshold, at a fixed interval, or as a final drain when Run's context
 // is cancelled.
 //

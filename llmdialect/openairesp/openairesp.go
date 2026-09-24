@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package openairesp implements the OpenAI Responses dialect for
-// llmdialect — the wire shape Codex speaks. It ships both codecs, and
+// llmdialect, the wire shape Codex speaks. It ships both codecs, and
 // only the stateless subset: requests carrying previous_response_id or
 // store:true are rejected, since the translation layer stores nothing.
 // Reasoning items cannot be replayed across providers (their content is
@@ -10,7 +10,7 @@
 //
 // The frontend (caller side, openairesp.go) lets Codex point at the
 // compat surface. The backend (upstream side, backend.go) drives a
-// Responses-native model from another dialect — the path that lets a
+// Responses-native model from another dialect: the path that lets a
 // Messages- or Chat-dialect client reach an OpenAI reasoning model,
 // which requires the Responses API for function tools.
 package openairesp

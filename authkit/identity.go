@@ -10,7 +10,7 @@
 // package; the packages that produce an Identity import it:
 //
 //	authkit        Identity, Authenticator, Middleware, CSRF, dev and static authenticators
-//	authkit/jwt    offline RS256 verification; Authenticator for bearer JWTs
+//	authkit/jwt    offline RS256 and ES256 verification; Authenticator for bearer JWTs
 //	authkit/oidc   OIDC relying party; SessionAuthenticator for cookie sessions
 //	authkit/cli    token store and device-code login for command-line clients
 //
