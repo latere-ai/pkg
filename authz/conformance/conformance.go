@@ -2,9 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package conformance is the test every authorizer passes: the rules of
-// the one authorizer contract the open cores share (latere-ai/specs
-// decisions/2026-09-13-one-platform-open-cores.md, C3 and C4; Lux spec
-// 006) as checks against a running endpoint. A core runs it against the
+// the one authorizer contract the open cores share, as checks against a
+// running endpoint. A core runs it against the
 // stub authorizer in its test tier and against the authorizer it deploys,
 // and an operator who writes a twenty-line authorizer runs it against
 // that. The package proves the shape of what the endpoint answers; the

@@ -24,8 +24,7 @@ const ServiceTokenLifetimeMargin = 30 * time.Second
 // ClientCredentials asks the issuer for a service token: the client's own
 // identity, minted with the client_credentials grant, addressed to
 // audience. It is the credential a service presents when it acts as itself
-// and not for a person (rule R5 of latere-ai/specs
-// infrastructure/identity.md). An empty audience asks for a token the
+// and not for a person. An empty audience asks for a token the
 // issuer's own API accepts; scopes, when given, are the ceiling the issuer
 // intersects with the client's registry row. The client authenticates with
 // HTTP Basic, the method every OAuth issuer accepts.

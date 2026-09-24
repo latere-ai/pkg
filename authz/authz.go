@@ -1,9 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: Apache-2.0
 
-// Package authz is the one authorizer contract the open cores share
-// (latere-ai/specs, decisions/2026-09-13-one-platform-open-cores.md, C3
-// and C4). A core verifies a token, renders its subject, and asks one
+// Package authz is the one authorizer contract the open cores share.
+// A core verifies a token, renders its subject, and asks one
 // endpoint whether that subject may do one action to one resource; the
 // endpoint decides from the claims it is handed and its own state, and
 // the core caches the answer, fails closed, and decides nothing itself.

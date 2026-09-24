@@ -1,11 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: Apache-2.0
 
-// Package conformance is rule R2 of latere-ai/specs
-// infrastructure/identity.md as a test a service runs: the service
-// verifies aud = self, reads one authkit.Identity, and performs no HTTP
-// call to the issuer on the request path, and rule R9: access is by role,
-// so a token carrying the retired is_superadmin flag and no platform_admin
+// Package conformance turns the family's token-verification rules into a
+// test a service runs: the service verifies aud = self, reads one
+// authkit.Identity, and performs no HTTP call to the issuer on the request
+// path; and access is by role, so a token carrying the retired is_superadmin flag and no platform_admin
 // role holds no authority. A repository calls Run from one of its tests
 // with the authenticator it installs in production, built against the stub
 // issuer the suite hands it, and the suite fails the build when any of the

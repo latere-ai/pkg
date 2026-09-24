@@ -11,8 +11,7 @@ import (
 	"latere.ai/x/pkg/authkit"
 )
 
-// The grants a credential carries, applied at a decision point
-// (infrastructure/identity id-13).
+// The grants a credential carries, applied at a decision point.
 //
 // A personal access token is the person who holds it. A grant is what the
 // person said that credential may do instead: one action of a published

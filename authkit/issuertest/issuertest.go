@@ -4,17 +4,17 @@
 // Package issuertest is the family's stub issuer for tests: a discovery
 // document, a JWKS, and a control API that mints any token, so a test
 // produces the token for each row of a service's verification table by
-// setting one field wrong. It also serves POST /actor-tokens, the one hop
-// of latere-ai/specs infrastructure/identity/id-03-one-hop.md, so a
+// setting one field wrong. It also serves POST /actor-tokens, the single
+// delegation hop a service makes on a person's behalf, so a
 // consumer's end-to-end tier can mint for a product the way the issuer
 // does. It serves plain HTTP on a loopback address.
 //
 // The stub records every request it serves, and a test in another
 // process reads the record at GET /requests and clears it with DELETE
 // /requests, so a stack tier can prove a service dialed the issuer zero
-// times during its data-plane requests (Lux spec 001's third invariant).
+// times during its data-plane requests.
 //
-// The stub began as Origo's test/stubs/issuer and moved here with id-04 so
+// The stub began as Origo's test issuer and moved here so
 // that the conformance suite (authkit/conformance) and every repository's
 // tests share one issuer.
 package issuertest

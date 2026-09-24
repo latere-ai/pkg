@@ -2,10 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package server is the endpoint half of the one authorizer contract the
-// open cores share (latere-ai/specs
-// decisions/2026-09-13-one-platform-open-cores.md, C3 and C4;
-// infrastructure/identity/id-11-one-authorizer-library.md). It is the
-// scaffold every authorizer needs and no authorizer should write twice:
+// open cores share. It is the scaffold every authorizer needs and no
+// authorizer should write twice:
 // the bearer and its successor, the body bound, the decode into
 // [authz.Request], the validation against the core's [authz.Vocabulary],
 // the probe rule, the failure mapping, and the 200 body. What it does not
@@ -45,8 +43,8 @@
 //
 // Everything a decision reads — the tables, the roles, the plans — stays
 // with whoever wrote the [Decider]. What the scaffold adds to the answer
-// is one thing: the grants the caller's own credential carries
-// (infrastructure/identity id-13). A personal access token is narrowed by
+// is one thing: the grants the caller's own credential carries.
+// A personal access token is narrowed by
 // what its holder chose, and [authz.Restrict] intersects the decider's
 // answer with that set before it is written and before it is counted. It
 // is not an option and there is no way to switch it off, so an endpoint
@@ -357,7 +355,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // restrict intersects one decision with the grants the caller's token
-// carries (infrastructure/identity id-13). It is not an option and there
+// carries. It is not an option and there
 // is no way to switch it off: an endpoint on this scaffold enforces
 // grants by construction, and a core that bumps this package gets the
 // intersection with no code of its own.

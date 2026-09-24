@@ -7,8 +7,7 @@
 // It answers two questions identity does not: on whose behalf did a service
 // act, and by what path did the call arrive. The answers are metadata. They
 // decide nothing, they grant nothing, and a service that reads them still
-// reaches its verdict from the token it verified and its own state
-// (latere-ai/specs infrastructure/provenance.md, "The two layers").
+// reaches its verdict from the token it verified and its own state.
 //
 // # Three members, set once
 //
