@@ -20,6 +20,6 @@ html, err := md.Render(body)
 
 ### Functions
 
-- `Parse(src)` — splits into untyped `map[string]any` frontmatter + body
-- `ParseInto(src, v)` — decodes frontmatter into a typed struct + body
-- `Render(src)` — converts Markdown to HTML (GFM extensions, auto heading IDs)
+- `Parse(src)`: splits into untyped `map[string]any` frontmatter + body
+- `ParseInto(src, v)`: decodes frontmatter into a typed struct + body
+- `Render(src)`: converts Markdown to HTML (GFM extensions, auto heading IDs)

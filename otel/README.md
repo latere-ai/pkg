@@ -64,16 +64,16 @@ Without it the instrumentation is a noop: spans are created and discarded, and n
 
 ## Functions
 
-- `Bootstrap(ctx, Config)` — one-call logs + traces + metrics; sets slog default; returns a combined shutdown. Noop export when the endpoint is unset.
-- `RunServer(ctx, srv, timeout, preShutdown)` — runs an `http.Server` and shuts it down gracefully when ctx is cancelled. Caller owns signals and handler wrapping.
-- `Version(override)` — resolves a version string from the override, then build info (module version or short VCS revision), then `"dev"`.
-- `Replica()` — resolves a replica label from `POD_NAME`, `HOSTNAME`, or the OS hostname.
-- `Transport(base)` / `HTTPClient()` — instrument an outbound `http.Client` and propagate the trace context.
-- `Setup(ctx, name, version)` — lower-level traces + metrics only (used by `Bootstrap`).
-- `SetupLogs(ctx, LogsConfig)` — lower-level logging only (used by `Bootstrap`).
-- `Handler(h, operation, opts...)` — wraps an `http.Handler` with tracing/metrics and sets the `X-Trace-Id` response header.
-- `TraceIDs(ctx)` / `LogAttrs(ctx)` — extract trace/span IDs for log correlation.
-- `TelemetryProxy(prefix)` — same-origin relay for browser OTLP. Mount it and the SPA exports through your service instead of reaching the collector directly.
+- `Bootstrap(ctx, Config)`: one-call logs + traces + metrics; sets slog default; returns a combined shutdown. Noop export when the endpoint is unset.
+- `RunServer(ctx, srv, timeout, preShutdown)`: runs an `http.Server` and shuts it down gracefully when ctx is cancelled. Caller owns signals and handler wrapping.
+- `Version(override)`: resolves a version string from the override, then build info (module version or short VCS revision), then `"dev"`.
+- `Replica()`: resolves a replica label from `POD_NAME`, `HOSTNAME`, or the OS hostname.
+- `Transport(base)` / `HTTPClient()`: instrument an outbound `http.Client` and propagate the trace context.
+- `Setup(ctx, name, version)`: lower-level traces + metrics only (used by `Bootstrap`).
+- `SetupLogs(ctx, LogsConfig)`: lower-level logging only (used by `Bootstrap`).
+- `Handler(h, operation, opts...)`: wraps an `http.Handler` with tracing/metrics and sets the `X-Trace-Id` response header.
+- `TraceIDs(ctx)` / `LogAttrs(ctx)`: extract trace/span IDs for log correlation.
+- `TelemetryProxy(prefix)`: same-origin relay for browser OTLP. Mount it and the SPA exports through your service instead of reaching the collector directly.
 
 ## Logging
 
@@ -108,8 +108,8 @@ person's token calls `provenance.Stamp` once, and every service after it calls
 `provenance.From` and never sets.
 
 ```go
-ctx = provenance.Stamp(ctx, id, issuer, "origo.latere.ai") // the edge, once
-logger.InfoContext(ctx, "clone", provenance.Attrs(ctx)...) // every hop after
+ctx = provenance.Stamp(ctx, id, issuer, "origo.latere.ai")              // the edge, once
+logger.LogAttrs(ctx, slog.LevelInfo, "clone", provenance.Attrs(ctx)...) // every hop after
 ```
 
 `initiator.sub`, `initiator.iss` and `entry` name the person the call is for

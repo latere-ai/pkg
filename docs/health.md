@@ -14,7 +14,7 @@ it.
 
 ## Why two probes and not one
 
-The fleet had five spellings (`healthz`, `health`, `live`, `ready`,
+The fleet had six spellings (`healthz`, `health`, `live`, `ready`,
 `livez`, `readyz`) and a single `healthz` on most of them. Kubernetes has
 two probe semantics with two consequences: liveness failing means
 *restart me*, readiness failing means *take me out of rotation*. One path
