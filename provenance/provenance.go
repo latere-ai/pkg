@@ -16,7 +16,7 @@
 //
 //	MemberSubject  initiator.sub   the issuer-qualified subject, <iss>|<sub>
 //	MemberIssuer   initiator.iss   the issuer that minted the verified token
-//	MemberEntry    entry           the front door's host, e.g. origo.latere.ai
+//	MemberEntry    entry           the front door's host, e.g. code.latere.ai
 //
 // The carrier already exists. otel.Bootstrap installs a composite
 // TraceContext+Baggage propagator (pkg/otel/telemetry.go), every outbound

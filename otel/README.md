@@ -108,7 +108,7 @@ person's token calls `provenance.Stamp` once, and every service after it calls
 `provenance.From` and never sets.
 
 ```go
-ctx = provenance.Stamp(ctx, id, issuer, "origo.latere.ai")              // the edge, once
+ctx = provenance.Stamp(ctx, id, issuer, "code.latere.ai")               // the edge, once
 logger.LogAttrs(ctx, slog.LevelInfo, "clone", provenance.Attrs(ctx)...) // every hop after
 ```
 

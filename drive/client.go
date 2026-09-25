@@ -42,7 +42,7 @@ type Client struct {
 	http    *http.Client
 }
 
-// NewClient returns a Client for drive's API base (e.g. https://drive.latere.ai).
+// NewClient returns a Client for drive's API base, the deployment's origin.
 // Returns nil when baseURL is empty so a deployment without drive configured can
 // detect "mounts unsupported" and reject mount requests rather than panic.
 func NewClient(baseURL string, tokens TokenSource) *Client {

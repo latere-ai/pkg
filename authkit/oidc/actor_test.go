@@ -70,7 +70,7 @@ func actorClient(t *testing.T, authURL string) (*Client, *time.Time) {
 // One mint per session and audience, reused until 30 s before it lapses;
 // a second audience is its own token; a second session is its own token.
 func TestActorTokenIsMintedOncePerAudienceUntilNearExpiry(t *testing.T) {
-	srv, mints := actorIssuer(t, "session-1", "origo", "lux.latere.ai")
+	srv, mints := actorIssuer(t, "session-1", "origo", "lux")
 	c, clock := actorClient(t, srv.URL)
 	sess := &Session{AccessToken: "session-1"}
 	ctx := context.Background()
@@ -95,7 +95,7 @@ func TestActorTokenIsMintedOncePerAudienceUntilNearExpiry(t *testing.T) {
 		t.Fatalf("mints = %d after repeated calls, want 1", mints.Load())
 	}
 
-	if _, _, err := c.ActorToken(ctx, sess, "lux.latere.ai"); err != nil {
+	if _, _, err := c.ActorToken(ctx, sess, "lux"); err != nil {
 		t.Fatal(err)
 	}
 	if mints.Load() != 2 {
@@ -128,9 +128,9 @@ func TestActorTokenRefusalCarriesTheIssuersReason(t *testing.T) {
 	c, _ := actorClient(t, srv.URL)
 	sess := &Session{AccessToken: "session-1"}
 
-	_, _, err := c.ActorToken(context.Background(), sess, "drive.latere.ai")
-	if err == nil || !strings.Contains(err.Error(), "invalid_target") || !strings.Contains(err.Error(), "drive.latere.ai") {
-		t.Fatalf("err = %v, want the issuer's invalid_target for drive.latere.ai", err)
+	_, _, err := c.ActorToken(context.Background(), sess, "arca")
+	if err == nil || !strings.Contains(err.Error(), "invalid_target") || !strings.Contains(err.Error(), "arca") {
+		t.Fatalf("err = %v, want the issuer's invalid_target for arca", err)
 	}
 	if mints.Load() != 0 {
 		t.Errorf("mints = %d, want none", mints.Load())

@@ -350,7 +350,7 @@ func TestStringListDecodesBothShapes(t *testing.T) {
 // that token only to the audiences the client's row names.
 func TestTokenEndpointMintsAServiceTokenForARegisteredClient(t *testing.T) {
 	s := New(t, WithServiceClient("topos-org1", ServiceClient{
-		Secret: "s3cret", Sub: "sa-org1", OrgID: "org1", ActorAudiences: []string{"lux.latere.ai", "drive.latere.ai"},
+		Secret: "s3cret", Sub: "sa-org1", OrgID: "org1", ActorAudiences: []string{"lux", "arca"},
 	}))
 	ctx := context.Background()
 
@@ -374,7 +374,7 @@ func TestTokenEndpointMintsAServiceTokenForARegisteredClient(t *testing.T) {
 	for _, tc := range []struct{ name, id, secret, aud string }{
 		{"wrong secret", "topos-org1", "nope", ""},
 		{"unknown client", "nobody", "s3cret", ""},
-		{"product audience on the grant", "topos-org1", "s3cret", "lux.latere.ai"},
+		{"product audience on the grant", "topos-org1", "s3cret", "lux"},
 	} {
 		if _, _, err := oidc.ClientCredentials(ctx, s.URL(), tc.id, tc.secret, tc.aud, nil); err == nil {
 			t.Errorf("%s: the grant must be refused", tc.name)
@@ -413,7 +413,7 @@ func TestTokenEndpointMintsAServiceTokenForARegisteredClient(t *testing.T) {
 		}
 		return resp.StatusCode
 	}
-	if got := narrow("lux.latere.ai"); got != http.StatusOK {
+	if got := narrow("lux"); got != http.StatusOK {
 		t.Fatalf("a listed audience = %d, want 200", got)
 	}
 	if got := narrow("sandboxd"); got != http.StatusBadRequest {

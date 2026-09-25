@@ -22,7 +22,7 @@ func reference(aud string) Service {
 }
 
 func TestTheReferenceVerifierConforms(t *testing.T) {
-	Run(t, reference("drive.latere.ai"))
+	Run(t, reference("arca"))
 }
 
 // recorder is a TB that records failures instead of stopping the test, so
@@ -61,7 +61,7 @@ func run(t *testing.T, check func(TB, Service), s Service) []string {
 }
 
 func TestAServiceThatAcceptsAnyAudienceFails(t *testing.T) {
-	anyAud := Service{Audience: "drive.latere.ai", New: func(_ testing.TB, issuerURL, jwksURL string) authkit.Authenticator {
+	anyAud := Service{Audience: "arca", New: func(_ testing.TB, issuerURL, jwksURL string) authkit.Authenticator {
 		return jwt.NewAuthenticator(jwt.New(jwt.Config{JWKSURL: jwksURL, Issuer: issuerURL}))
 	}}
 	if f := run(t, RefusesIssuerAudience, anyAud); len(f) != 1 || !strings.Contains(f[0], "addressed to the issuer was admitted") {
@@ -76,7 +76,7 @@ func TestAServiceThatAcceptsAnyAudienceFails(t *testing.T) {
 }
 
 func TestAServiceThatVerifiesTheWrongAudienceFails(t *testing.T) {
-	wrong := Service{Audience: "drive.latere.ai", New: func(_ testing.TB, issuerURL, jwksURL string) authkit.Authenticator {
+	wrong := Service{Audience: "arca", New: func(_ testing.TB, issuerURL, jwksURL string) authkit.Authenticator {
 		return jwt.NewAuthenticator(jwt.New(jwt.Config{JWKSURL: jwksURL, Issuer: issuerURL, Audiences: []string{"sandboxd"}}))
 	}}
 	if f := run(t, AdmitsOwnAudience, wrong); len(f) != 1 || !strings.Contains(f[0], "was refused") {
@@ -100,8 +100,8 @@ func (c chatty) Authenticate(r *http.Request) (authkit.Identity, error) {
 }
 
 func TestAServiceThatCallsTheIssuerPerRequestFails(t *testing.T) {
-	s := Service{Audience: "drive.latere.ai", New: func(_ testing.TB, issuerURL, jwksURL string) authkit.Authenticator {
-		return chatty{issuerURL: issuerURL, inner: jwt.NewAuthenticator(jwt.New(jwt.Config{JWKSURL: jwksURL, Issuer: issuerURL, Audiences: []string{"drive.latere.ai"}}))}
+	s := Service{Audience: "arca", New: func(_ testing.TB, issuerURL, jwksURL string) authkit.Authenticator {
+		return chatty{issuerURL: issuerURL, inner: jwt.NewAuthenticator(jwt.New(jwt.Config{JWKSURL: jwksURL, Issuer: issuerURL, Audiences: []string{"arca"}}))}
 	}}
 	f := run(t, CallsOnlyTheKeySet, s)
 	if len(f) != 3 || !strings.Contains(f[0], "GET /tokeninfo") {
@@ -118,8 +118,8 @@ func (i identityless) Authenticate(r *http.Request) (authkit.Identity, error) {
 }
 
 func TestAServiceThatDropsTheClaimsFails(t *testing.T) {
-	s := Service{Audience: "drive.latere.ai", New: func(_ testing.TB, issuerURL, jwksURL string) authkit.Authenticator {
-		return identityless{jwt.NewAuthenticator(jwt.New(jwt.Config{JWKSURL: jwksURL, Issuer: issuerURL, Audiences: []string{"drive.latere.ai"}}))}
+	s := Service{Audience: "arca", New: func(_ testing.TB, issuerURL, jwksURL string) authkit.Authenticator {
+		return identityless{jwt.NewAuthenticator(jwt.New(jwt.Config{JWKSURL: jwksURL, Issuer: issuerURL, Audiences: []string{"arca"}}))}
 	}}
 	f := run(t, AdmitsOwnAudience, s)
 	if len(f) != 4 {
@@ -147,13 +147,13 @@ func (f flagReader) Authenticate(r *http.Request) (authkit.Identity, error) {
 }
 
 func TestAServiceThatReadsTheFlagFails(t *testing.T) {
-	s := Service{Audience: "drive.latere.ai", New: func(_ testing.TB, issuerURL, jwksURL string) authkit.Authenticator {
-		return flagReader{jwt.NewAuthenticator(jwt.New(jwt.Config{JWKSURL: jwksURL, Issuer: issuerURL, Audiences: []string{"drive.latere.ai"}}))}
+	s := Service{Audience: "arca", New: func(_ testing.TB, issuerURL, jwksURL string) authkit.Authenticator {
+		return flagReader{jwt.NewAuthenticator(jwt.New(jwt.Config{JWKSURL: jwksURL, Issuer: issuerURL, Audiences: []string{"arca"}}))}
 	}}
 	if f := run(t, RefusesTheFlag, s); len(f) != 1 || !strings.Contains(f[0], "reads as the platform admin") {
 		t.Fatalf("flag: %v", f)
 	}
-	if f := run(t, RefusesTheFlag, reference("drive.latere.ai")); len(f) != 0 {
+	if f := run(t, RefusesTheFlag, reference("arca")); len(f) != 0 {
 		t.Fatalf("the reference verifier reads no flag: %v", f)
 	}
 }
@@ -168,8 +168,8 @@ func (l roleless) Authenticate(r *http.Request) (authkit.Identity, error) {
 }
 
 func TestAServiceThatDropsTheRolesFails(t *testing.T) {
-	s := Service{Audience: "drive.latere.ai", New: func(_ testing.TB, issuerURL, jwksURL string) authkit.Authenticator {
-		return roleless{jwt.NewAuthenticator(jwt.New(jwt.Config{JWKSURL: jwksURL, Issuer: issuerURL, Audiences: []string{"drive.latere.ai"}}))}
+	s := Service{Audience: "arca", New: func(_ testing.TB, issuerURL, jwksURL string) authkit.Authenticator {
+		return roleless{jwt.NewAuthenticator(jwt.New(jwt.Config{JWKSURL: jwksURL, Issuer: issuerURL, Audiences: []string{"arca"}}))}
 	}}
 	if f := run(t, RefusesTheFlag, s); len(f) != 1 || !strings.Contains(f[0], "not reported by Has") {
 		t.Fatalf("roles: %v", f)
