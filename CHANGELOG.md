@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.82.1 - 2026-09-25
+
 - `s3`: an empty object is sent with `Content-Length: 0`. A zero-byte `Body`
   went out chunked with no length, which S3-compatible stores such as
   DigitalOcean Spaces refuse with `411 MissingContentLength`.
