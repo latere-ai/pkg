@@ -7,7 +7,7 @@
 // routes to. Authenticate with a Lux virtual key or a Latere Auth
 // bearer; both travel as Authorization: Bearer.
 //
-//	c := luxsdk.New("https://lux.latere.ai", luxsdk.WithAPIKey(key))
+//	c := luxsdk.New("https://api.latere.ai/v1/models", luxsdk.WithAPIKey(key))
 //	res, err := c.Generate(ctx, &luxsdk.Request{
 //		Model:    "claude-sonnet-5",
 //		Messages: []luxsdk.Message{luxsdk.UserText("hello")},
@@ -209,7 +209,7 @@ type Client struct {
 // They apply only to what the caller left unset, so an explicit
 // argument can never be overridden by the process environment.
 const (
-	// EnvBaseURL names the gateway, e.g. https://lux.latere.ai. It is
+	// EnvBaseURL names the gateway, e.g. https://api.latere.ai/v1/models. It is
 	// deliberately not LUX_API_URL: that is the latere CLI's own target,
 	// and one variable steering both would let `eval "$(latere lux env
 	// lux)"` silently retarget the CLI from a subshell.
@@ -219,9 +219,10 @@ const (
 	EnvAPIKey = "LUX_API_KEY"
 )
 
-// DefaultBaseURL is the public gateway, used when neither an explicit
-// baseURL nor [EnvBaseURL] is set.
-const DefaultBaseURL = "https://lux.latere.ai"
+// DefaultBaseURL is Latere's Lux deployment, served under the platform
+// origin's /v1/models, used when neither an explicit baseURL nor
+// [EnvBaseURL] is set. The native dialect's routes are paths under it.
+const DefaultBaseURL = "https://api.latere.ai/v1/models"
 
 // New returns a client for the Lux deployment at baseURL.
 //

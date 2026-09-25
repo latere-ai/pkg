@@ -93,3 +93,18 @@ func TestNewEnvFallbackPrecedence(t *testing.T) {
 		})
 	}
 }
+
+// An unset base reaches Latere's Lux core under the platform origin, where
+// the native dialect's routes sit below /v1/models. The hosted gateway that
+// answered at lux.latere.ai was retired, and its host no longer resolves.
+func TestDefaultBaseURLIsTheCoreUnderThePlatformOrigin(t *testing.T) {
+	t.Setenv(EnvBaseURL, "")
+	t.Setenv(EnvAPIKey, "")
+	const want = "https://api.latere.ai/v1/models"
+	if c := New(""); c.baseURL != want {
+		t.Fatalf("baseURL = %q, want %q", c.baseURL, want)
+	}
+	if got := New("").baseURL + generatePath; got != want+"/lux/v1/generate" {
+		t.Fatalf("generate URL = %q, want %q", got, want+"/lux/v1/generate")
+	}
+}

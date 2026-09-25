@@ -21,7 +21,7 @@ and [lux-python-sdk](https://github.com/latere-ai/lux-python-sdk).
 
 ```go
 // Through a Lux deployment: key custody, gates, metering, routing.
-c := luxsdk.New("https://lux.latere.ai", luxsdk.WithAPIKey(key))
+c := luxsdk.New("https://api.latere.ai/v1/models", luxsdk.WithAPIKey(key))
 
 // Provider-direct: BYO endpoint + key; the dialect translation runs
 // client-side through the same llmdialect backends the gateway uses.
@@ -57,7 +57,7 @@ mode), `WithTokenSource` (per-call token, e.g. a rotating JWT),
 ## Cost attribution
 
 ```go
-c := luxsdk.New("https://lux.latere.ai", luxsdk.WithAPIKey(key),
+c := luxsdk.New("https://api.latere.ai/v1/models", luxsdk.WithAPIKey(key),
     luxsdk.WithCostTags(map[string]string{"tenant": "acme", "project": "web"}))
 ```
 

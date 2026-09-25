@@ -10,6 +10,12 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+- `luxsdk`: `DefaultBaseURL` is `https://api.latere.ai/v1/models`, Latere's
+  Lux core under the platform origin, so `New("")` with no `LUX_BASE_URL`
+  reaches a live deployment. It named `https://lux.latere.ai`, the retired
+  hosted gateway, whose host no longer resolves. A caller that passes a base
+  URL or sets `LUX_BASE_URL` is unaffected.
+
 ## v0.82.1 - 2026-09-25
 
 - `s3`: an empty object is sent with `Content-Length: 0`. A zero-byte `Body`

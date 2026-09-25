@@ -65,7 +65,7 @@ func main() {
 Call the Lux gateway with a typed request:
 
 ```go
-c := luxsdk.New("https://lux.latere.ai", luxsdk.WithAPIKey(key))
+c := luxsdk.New("https://api.latere.ai/v1/models", luxsdk.WithAPIKey(key))
 res, err := c.Generate(ctx, &luxsdk.Request{
 	Model:    "claude-sonnet-5",
 	Messages: []luxsdk.Message{luxsdk.UserText("hello")},
