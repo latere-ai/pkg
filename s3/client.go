@@ -221,6 +221,12 @@ func (c *Client) once(ctx context.Context, r request) (*http.Response, error) {
 	}
 	if r.body != nil {
 		req.ContentLength = size
+		// A zero length on a non-nil body reads to net/http as unknown, which
+		// it sends chunked with no Content-Length; S3-compatible stores refuse
+		// that with 411. NoBody is the empty body net/http sends as length 0.
+		if size == 0 {
+			req.Body, req.GetBody = http.NoBody, func() (io.ReadCloser, error) { return http.NoBody, nil }
+		}
 		if r.body.MD5 != "" {
 			req.Header.Set("Content-MD5", r.body.MD5)
 		}

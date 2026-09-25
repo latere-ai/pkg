@@ -346,6 +346,29 @@ func TestRetriesServerFailuresAndNotClientOnes(t *testing.T) {
 	}
 }
 
+// TestAnEmptyObjectIsSentWithItsLength: an empty body goes out with
+// Content-Length 0 and not chunked, which an S3-compatible store refuses with
+// 411 MissingContentLength.
+func TestAnEmptyObjectIsSentWithItsLength(t *testing.T) {
+	var length int64 = -2
+	var chunked []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		length, chunked = r.ContentLength, r.TransferEncoding
+		w.Header().Set("ETag", `"d41d8cd98f00b204e9800998ecf8427e"`)
+	}))
+	defer srv.Close()
+	c, err := s3.New(srv.URL, "r", "b", "k", "s", s3.WithPathStyle(), s3.WithHTTPClient(srv.Client()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.PutObject(t.Context(), "empty", s3.BytesBody(nil)); err != nil {
+		t.Fatal(err)
+	}
+	if length != 0 || len(chunked) != 0 {
+		t.Fatalf("an empty object arrived with length %d and transfer encoding %v", length, chunked)
+	}
+}
+
 func TestErrorsWithoutAnXMLBody(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
