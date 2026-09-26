@@ -15,6 +15,9 @@ import (
 	"time"
 
 	otelglobal "go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
@@ -287,6 +290,163 @@ func TestHandlerRouteFromServeMuxPattern(t *testing.T) {
 	if route != "/v1/parse/{id}" {
 		t.Errorf("http.route = %q, want /v1/parse/{id}", route)
 	}
+}
+
+// installMeterReader swaps in a meter provider backed by a manual reader for
+// the duration of the test. otelhttp resolves its meter from the global
+// provider when the handler is built, so call this before Handler.
+func installMeterReader(t *testing.T) *sdkmetric.ManualReader {
+	t.Helper()
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	prev := otelglobal.GetMeterProvider()
+	otelglobal.SetMeterProvider(mp)
+	t.Cleanup(func() {
+		otelglobal.SetMeterProvider(prev)
+		if err := mp.Shutdown(context.Background()); err != nil {
+			t.Errorf("meter provider shutdown: %v", err)
+		}
+	})
+	return reader
+}
+
+// requestRoutes collects http.server.request.duration and returns the number
+// of recorded requests per http.route value. Data points without http.route
+// count under "". An empty map means no request was recorded.
+func requestRoutes(t *testing.T, reader *sdkmetric.ManualReader) map[string]uint64 {
+	t.Helper()
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(t.Context(), &rm); err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	routes := map[string]uint64{}
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name != "http.server.request.duration" {
+				continue
+			}
+			hist, ok := m.Data.(metricdata.Histogram[float64])
+			if !ok {
+				t.Fatalf("%s is %T, want Histogram[float64]", m.Name, m.Data)
+			}
+			for _, dp := range hist.DataPoints {
+				v, _ := dp.Attributes.Value(attribute.Key("http.route"))
+				routes[v.AsString()] += dp.Count
+			}
+		}
+	}
+	return routes
+}
+
+func assertRoutes(t *testing.T, got, want map[string]uint64) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("request metrics by http.route = %v, want %v", got, want)
+	}
+	for route, n := range want {
+		if got[route] != n {
+			t.Fatalf("request metrics by http.route = %v, want %v", got, want)
+		}
+	}
+}
+
+// TestHandlerRouteTemplateLabelsRequestMetrics covers the request metrics
+// otelhttp records for a hand-written router. The request has no ServeMux
+// pattern, so http.route on the metrics comes only from the template. Traces
+// are never sampled here: the metrics are recorded for every request, and the
+// route must reach them whether or not the span is kept.
+func TestHandlerRouteTemplateLabelsRequestMetrics(t *testing.T) {
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.NeverSample()))
+	prevTP := otelglobal.GetTracerProvider()
+	otelglobal.SetTracerProvider(tp)
+	t.Cleanup(func() {
+		otelglobal.SetTracerProvider(prevTP)
+		if err := tp.Shutdown(context.Background()); err != nil {
+			t.Errorf("tracer provider shutdown: %v", err)
+		}
+	})
+
+	t.Run("template", func(t *testing.T) {
+		reader := installMeterReader(t)
+		wrapped := Handler(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}),
+			"op",
+			WithRouteTemplate(func(r *http.Request) string { return "/v1/items/:id" }),
+		)
+		wrapped.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/v1/items/a", nil))
+		wrapped.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/v1/items/b", nil))
+		assertRoutes(t, requestRoutes(t, reader), map[string]uint64{"/v1/items/:id": 2})
+	})
+
+	t.Run("empty template omits route", func(t *testing.T) {
+		reader := installMeterReader(t)
+		wrapped := Handler(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+			"op",
+			WithRouteTemplate(func(r *http.Request) string { return "" }),
+		)
+		wrapped.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/x", nil))
+		assertRoutes(t, requestRoutes(t, reader), map[string]uint64{"": 1})
+	})
+}
+
+// TestHandlerServeMuxPatternLabelsRequestMetrics pins the ServeMux case.
+// otelhttp derives http.route on the metrics from the matched pattern itself.
+// When a template is also set, otelhttp appends the pattern after the
+// labeler's attributes, so a matched pattern names the metrics while the
+// template still names the span; an unmatched request falls back to the
+// template.
+func TestHandlerServeMuxPatternLabelsRequestMetrics(t *testing.T) {
+	newMux := func() *http.ServeMux {
+		mux := http.NewServeMux()
+		mux.HandleFunc("GET /v1/parse/{id}", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+		return mux
+	}
+
+	t.Run("pattern", func(t *testing.T) {
+		reader := installMeterReader(t)
+		wrapped := Handler(newMux(), "testsvc")
+		wrapped.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/v1/parse/prs_abc123", nil))
+		assertRoutes(t, requestRoutes(t, reader), map[string]uint64{"/v1/parse/{id}": 1})
+	})
+
+	t.Run("pattern and template", func(t *testing.T) {
+		reader := installMeterReader(t)
+		wrapped := Handler(newMux(), "testsvc",
+			WithRouteTemplate(func(r *http.Request) string { return "/v1/parse/:id" }),
+		)
+		wrapped.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/v1/parse/prs_abc123", nil))
+		wrapped.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/v1/unknown", nil))
+		assertRoutes(t, requestRoutes(t, reader), map[string]uint64{
+			"/v1/parse/{id}": 1,
+			"/v1/parse/:id":  1,
+		})
+	})
+}
+
+// TestHandlerWithSkipRecordsNoRequestMetrics checks that a skipped request
+// reaches neither the span nor the request metrics, and that the next
+// observed request is labeled with its template.
+func TestHandlerWithSkipRecordsNoRequestMetrics(t *testing.T) {
+	reader := installMeterReader(t)
+	wrapped := Handler(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+		"op",
+		WithSkip(func(r *http.Request) bool { return r.URL.Path == "/healthz" }),
+		WithRouteTemplate(func(r *http.Request) string { return r.URL.Path }),
+	)
+
+	wrapped.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	assertRoutes(t, requestRoutes(t, reader), map[string]uint64{})
+
+	wrapped.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/v1/x", nil))
+	assertRoutes(t, requestRoutes(t, reader), map[string]uint64{"/v1/x": 1})
 }
 
 func FuzzRouteFromPattern(f *testing.F) {

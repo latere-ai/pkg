@@ -10,6 +10,20 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Fixed
+
+- `otel`: `Handler` with `WithRouteTemplate` puts the template on the
+  request metrics as `http.route` (`http.server.request.duration` and the
+  request and response body size histograms), not only on the span. The
+  metrics are recorded for every request, sampled or not, and until now a
+  service with a hand-written router got route-named spans but request
+  metrics with no route at all, because otelhttp takes metric attributes
+  from the ServeMux pattern and its context labeler, never from the span.
+  A service that adds `http.route` to `otelhttp.LabelerFromContext` itself
+  can delete that code; until it does, the metrics still carry one
+  `http.route`. Behind a `ServeMux` that matched the request, the metrics
+  keep the mux pattern as before, and the template still names the span.
+
 ## v0.85.0 - 2026-09-26
 
 ### Changed

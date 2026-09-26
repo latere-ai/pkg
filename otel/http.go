@@ -33,8 +33,11 @@ type handlerConfig struct {
 }
 
 // WithRouteTemplate sets a function that returns the route template for the
-// request (e.g. "/v1/sandboxes/:id"). The result is set as the http.route span
-// attribute and passed to the metrics hook so labels stay bounded.
+// request (e.g. "/v1/sandboxes/:id"). The result names the span, is set as the
+// http.route attribute on the span and on the otelhttp request metrics, and is
+// passed to the metrics hook, so labels stay bounded. When the wrapped handler
+// is a ServeMux that matched the request, otelhttp labels the request metrics
+// with the mux pattern instead; the template still names the span.
 func WithRouteTemplate(fn func(*http.Request) string) HandlerOption {
 	return func(c *handlerConfig) { c.routeTemplate = fn }
 }
@@ -47,8 +50,9 @@ func WithSurfaceAttr(fn func(*http.Request) string) HandlerOption {
 }
 
 // WithSkip filters requests that should not be observed at all: no span, no
-// metrics hook, no X-Trace-Id header. The wrapped handler still runs. Use for
-// liveness / readiness probes that would otherwise dominate trace volume.
+// request metrics, no metrics hook, no X-Trace-Id header. The wrapped handler
+// still runs. Use for liveness / readiness probes that would otherwise
+// dominate trace volume.
 func WithSkip(fn func(*http.Request) bool) HandlerOption {
 	return func(c *handlerConfig) { c.skip = fn }
 }
@@ -121,6 +125,17 @@ func Handler(h http.Handler, operation string, opts ...HandlerOption) http.Handl
 		var route string
 		if cfg.routeTemplate != nil {
 			route = cfg.routeTemplate(r)
+			// otelhttp records the request metrics for every request, sampled
+			// or not, and takes their attributes from r.Pattern and the
+			// labeler it puts in the request context, never from span
+			// attributes. A hand-written router leaves r.Pattern empty, so the
+			// template reaches the metrics only through the labeler. The
+			// ServeMux branch below needs no labeler entry: otelhttp derives
+			// http.route from r.Pattern itself and appends it after the
+			// labeler's attributes, so a matched pattern wins either way.
+			if l, ok := otelhttp.LabelerFromContext(r.Context()); ok && route != "" {
+				l.Add(attribute.String("http.route", route))
+			}
 		} else {
 			route = routeFromPattern(r.Pattern)
 		}

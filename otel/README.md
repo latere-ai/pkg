@@ -75,6 +75,27 @@ Without it the instrumentation is a noop: spans are created and discarded, and n
 - `TraceIDs(ctx)` / `LogAttrs(ctx)`: extract trace/span IDs for log correlation.
 - `TelemetryProxy(prefix)`: same-origin relay for browser OTLP. Mount it and the SPA exports through your service instead of reaching the collector directly.
 
+## Route names
+
+`Handler` names each request by its route, so span names and metric labels
+stay bounded: one series for `/v1/items/{id}`, not one per item.
+
+- With a Go 1.22 `ServeMux`, nothing is configured. The matched pattern,
+  method dropped, is set as `http.route` on the span, and otelhttp puts the
+  same pattern on the request metrics (`http.server.request.duration` and the
+  request and response body size histograms).
+- With a hand-written router, pass `WithRouteTemplate(fn)`. The result names
+  the span (`GET /v1/items/:id`), is set as `http.route` on the span and on the
+  request metrics, and is passed to the `WithMetricsHook` callback. An empty
+  result leaves `http.route` off. `fn` is called before the handler runs, for
+  the span name, and again after, so derive the template from the method and
+  path rather than from state the handler sets.
+- With both, a template over a `ServeMux`, the span follows the template and
+  the request metrics follow the matched mux pattern, which otelhttp gives
+  precedence. A request the mux did not match carries the template on both.
+
+Requests filtered by `WithSkip` record neither a span nor request metrics.
+
 ## Logging
 
 Records emitted inside a span carry `trace_id` and `span_id` on both streams:
