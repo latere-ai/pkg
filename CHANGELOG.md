@@ -19,6 +19,12 @@ under **Removed** or **Changed** with what to do about it.
   written as a `Content-Signal` line inside the group. `Robots.Policy`
   prepends the Content Signals Policy text. The package states no
   preference of its own; every value is the site's configuration.
+- `agentweb`: the page index and the sitemap. `Index` lists a site's public
+  pages in reading order; `ParseIndex` decodes it from the JSON a static
+  build writes, and a server can build the same struct in Go.
+  `WriteSitemap` and `SitemapHandler` render it with `lastmod`, `priority`,
+  and hreflang alternates: `SitemapOptions.HrefLang` writes a short code
+  such as `zh` as `zh-Hans`, and `XDefault` names the x-default language.
 
 ## v0.83.0 - 2026-09-26
 
