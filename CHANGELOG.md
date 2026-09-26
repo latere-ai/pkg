@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.83.0 - 2026-09-26
+
 - `luxsdk`: `DefaultBaseURL` is `https://api.latere.ai/v1/models`, Latere's
   Lux core under the platform origin, so `New("")` with no `LUX_BASE_URL`
   reaches a live deployment. It named `https://lux.latere.ai`, the retired
