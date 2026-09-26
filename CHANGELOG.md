@@ -10,6 +10,16 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `agentweb`: robots.txt from configuration. `WriteRobots` and
+  `RobotsHandler` render user-agent groups with their Allow and Disallow
+  rules, the `Sitemap` lines, and `Signals`, a site's Content Signals usage
+  preferences (`search`, `ai-input`, `ai-train`, each yes, no, or unset),
+  written as a `Content-Signal` line inside the group. `Robots.Policy`
+  prepends the Content Signals Policy text. The package states no
+  preference of its own; every value is the site's configuration.
+
 ## v0.83.0 - 2026-09-26
 
 - `luxsdk`: `DefaultBaseURL` is `https://api.latere.ai/v1/models`, Latere's

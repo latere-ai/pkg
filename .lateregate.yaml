@@ -37,6 +37,11 @@ depcheck:
     latere.ai/x/pkg/llmdialect:
       decision: llmdialect-stdlib-only
       allow: {}
+    # agentweb is served by static sites whose whole binary is an embedded
+    # tree and this package; standard library only keeps that true.
+    latere.ai/x/pkg/agentweb:
+      decision: agentweb-stdlib-only
+      allow: {}
 
 license:
   # The identifier every source file carries and the holder it names. There
