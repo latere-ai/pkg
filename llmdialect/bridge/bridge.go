@@ -282,11 +282,13 @@ func (b *Bridge) fail(w io.Writer, o StreamOptions, e *Error) {
 
 // responseEvents re-emits a whole response as the event sequence a
 // stream would have carried: message_start, one block with its deltas
-// per block, message_delta with the usage, message_stop.
+// per block, message_delta with the usage, message_stop. An opaque
+// block's header carries its whole payload, as a backend's stream
+// carries it.
 func responseEvents(resp *ir.Response) []ir.Event {
 	events := []ir.Event{{Type: ir.EventMessageStart, ID: resp.ID, Model: resp.Model}}
 	for i, b := range resp.Blocks {
-		header := ir.Block{Type: b.Type}
+		header := ir.Block{Type: b.Type, Opaque: b.Opaque}
 		if b.ToolUse != nil {
 			header.ToolUse = &ir.ToolUse{ID: b.ToolUse.ID, Name: b.ToolUse.Name}
 		}
@@ -303,6 +305,8 @@ func responseEvents(resp *ir.Response) []ir.Event {
 			if len(b.ToolUse.Args) > 0 {
 				events = append(events, ir.Event{Type: ir.EventArgsDelta, Index: i, Delta: string(b.ToolUse.Args)})
 			}
+		case ir.BlockOpaque:
+			// No deltas; the header above carries the payload.
 		case ir.BlockImage, ir.BlockToolResult, ir.BlockRedactedThinking:
 			// Not an output block any dialect streams; the header alone
 			// is emitted so the block count stays the response's.

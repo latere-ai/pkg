@@ -390,7 +390,8 @@ func decodeToolChoice(raw json.RawMessage) (*ir.ToolChoice, error) {
 
 // buildOutput renders IR blocks as Responses output items. Text blocks
 // coalesce into a single message item; thinking becomes a reasoning
-// item with a summary; tool calls become function_call items.
+// item with a summary; tool calls become function_call items. Other
+// blocks, opaque ones included, have no output item here.
 func buildOutput(id string, blocks []ir.Block, probs []ir.TokenLogProb) []map[string]any {
 	var output []map[string]any
 	var texts []string
@@ -601,6 +602,11 @@ func (e *eventEncoder) Encode(ev ir.Event) error {
 				"output_index": e.outputIndex,
 				"item":         map[string]any{"type": "reasoning", "id": e.itemID, "summary": []any{}},
 			})
+		case ir.BlockOpaque:
+			// Kept for replay to the backend that produced it; the
+			// caller's request never asked for such items, so no output
+			// item is written and its block_stop closes nothing.
+			return nil
 		default:
 			return fmt.Errorf("openairesp: block type %q not streamable", ev.Block.Type)
 		}

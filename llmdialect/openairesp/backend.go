@@ -66,7 +66,7 @@ func (*Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 	if s := encodeInstructions(req); s != "" {
 		body["instructions"] = s
 	}
-	input := make([]map[string]any, 0, len(req.Messages))
+	input := make([]any, 0, len(req.Messages))
 	for i, m := range req.Messages {
 		items, err := encodeMessage(m, req)
 		if err != nil {
@@ -190,9 +190,10 @@ func encodeInstructions(req *ir.Request) string {
 // encodeMessage converts one IR message into Responses input items,
 // preserving block order: text/image coalesce into a message item;
 // tool uses become function_call items; tool results become
-// function_call_output items.
-func encodeMessage(m ir.Message, req *ir.Request) ([]map[string]any, error) {
-	var out []map[string]any
+// function_call_output items; an opaque block of this dialect is its
+// item, re-emitted as it came.
+func encodeMessage(m ir.Message, req *ir.Request) ([]any, error) {
+	var out []any
 	var content []map[string]any
 
 	role := "user"
@@ -239,6 +240,18 @@ func encodeMessage(m ir.Message, req *ir.Request) ([]map[string]any, error) {
 		case ir.BlockThinking, ir.BlockRedactedThinking:
 			// Provider-encrypted; never replayed toward a fresh backend.
 			req.Loss.Add(ir.LossThinking)
+		case ir.BlockOpaque:
+			switch {
+			case blk.Opaque == nil:
+				return nil, fmt.Errorf("opaque block missing opaque payload")
+			case blk.Opaque.Dialect != DialectName:
+				req.Loss.Add(ir.LossOpaque)
+			case len(blk.Opaque.Raw) == 0:
+				return nil, fmt.Errorf("opaque block carries no item")
+			default:
+				flush()
+				out = append(out, blk.Opaque.Raw)
+			}
 		default:
 			return nil, fmt.Errorf("block type %q not allowed in a message", blk.Type)
 		}

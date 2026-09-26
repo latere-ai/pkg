@@ -10,6 +10,29 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `llmdialect/ir.BlockOpaque`, a content block that carries one
+  provider item verbatim for replay to the dialect that produced it:
+  `Block.Opaque` holds an `ir.Opaque` with the producing `Dialect`, the
+  item's `Kind` within it, and its JSON as `Raw`. A backend of that
+  dialect writes `Raw` unchanged where the block stands; the other
+  backends drop the block and record `ir.LossOpaque` (`opaque`), never an
+  error. The lux dialect carries it both ways as `{"type":"opaque",
+  "opaque":{"dialect","kind","raw"}}`, with `raw` as the JSON value
+  itself, so a harness that stores sessions as lux JSON keeps the item
+  byte for byte; `luxsdk.Opaque` and `luxsdk.BlockOpaque` re-export the
+  vocabulary. `Raw` is kept in the form `encoding/json` writes (compact,
+  with `<`, `>` and `&` escaped), which every later marshal leaves as it
+  is; the lux decoder brings a body written by another encoder into that
+  form. In a stream the block is one `block_start` whose header
+  carries the payload, then its `block_stop`. The Anthropic, Chat and
+  Responses frontends leave it out of the responses and streams they
+  write, and the Anthropic stream shifts later content indices down past
+  it so they stay dense. `ir.PrefixCacheKeys` hashes the block's
+  dialect, kind and raw JSON after the fields every block contributes;
+  keys of requests without opaque blocks are unchanged.
+
 ## v0.87.0 - 2026-09-27
 
 ### Added

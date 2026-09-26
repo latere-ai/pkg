@@ -50,6 +50,7 @@ type (
 	Image          = lux.Image
 	ToolUse        = lux.ToolUse
 	ToolResult     = lux.ToolResult
+	Opaque         = lux.Opaque
 	Tool           = lux.Tool
 	ServerTool     = lux.ServerTool
 	WebSearch      = lux.WebSearch
@@ -75,6 +76,7 @@ const (
 	BlockToolResult       = ir.BlockToolResult
 	BlockThinking         = ir.BlockThinking
 	BlockRedactedThinking = ir.BlockRedactedThinking
+	BlockOpaque           = ir.BlockOpaque
 
 	ToolChoiceAuto = ir.ToolChoiceAuto
 	ToolChoiceAny  = ir.ToolChoiceAny

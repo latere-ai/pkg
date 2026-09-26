@@ -390,6 +390,11 @@ func decodeToolChoice(tc wireToolChoice) (*ir.ToolChoice, error) {
 func (*Frontend) EncodeResponse(resp *ir.Response) ([]byte, error) {
 	content := make([]map[string]any, 0, len(resp.Blocks))
 	for _, b := range resp.Blocks {
+		if b.Type == ir.BlockOpaque {
+			// Another dialect's item, kept for replay to it; a Messages
+			// client has no member for it.
+			continue
+		}
 		enc, err := encodeResponseBlock(b)
 		if err != nil {
 			return nil, err
@@ -463,6 +468,28 @@ func encodeUsage(u ir.Usage) map[string]any {
 // message_stop) from canonical IR events.
 type EventEncoder struct {
 	w *sse.Writer
+
+	// dropped holds the IR indices of the opaque blocks the stream
+	// carried. This dialect has no member for them, so their events are
+	// swallowed, and every later index shifts down past them: a Messages
+	// client files each delta under content[index], so the indices it
+	// sees must stay dense.
+	dropped []int
+}
+
+// index maps an IR block index to the Messages content index, and
+// reports false for a block that was dropped.
+func (e *EventEncoder) index(i int) (int, bool) {
+	shift := 0
+	for _, d := range e.dropped {
+		switch {
+		case d == i:
+			return 0, false
+		case d < i:
+			shift++
+		}
+	}
+	return i - shift, true
 }
 
 // NewEventEncoder returns an encoder writing Messages SSE frames to w.
@@ -497,12 +524,20 @@ func (e *EventEncoder) Encode(ev ir.Event) error {
 		// some SDK stream states expect it.
 		return e.write("ping", map[string]any{"type": "ping"})
 	case ir.EventBlockStart:
+		if ev.Block != nil && ev.Block.Type == ir.BlockOpaque {
+			e.dropped = append(e.dropped, ev.Index)
+			return nil
+		}
 		blk, err := encodeStreamBlockHeader(ev.Block)
 		if err != nil {
 			return err
 		}
+		idx, ok := e.index(ev.Index)
+		if !ok {
+			return fmt.Errorf("anthropic: block_start at index %d, which an opaque block already took", ev.Index)
+		}
 		return e.write("content_block_start", map[string]any{
-			"type": "content_block_start", "index": ev.Index, "content_block": blk,
+			"type": "content_block_start", "index": idx, "content_block": blk,
 		})
 	case ir.EventTextDelta:
 		return e.blockDelta(ev.Index, map[string]any{"type": "text_delta", "text": ev.Delta})
@@ -513,7 +548,11 @@ func (e *EventEncoder) Encode(ev ir.Event) error {
 	case ir.EventSignatureDelta:
 		return e.blockDelta(ev.Index, map[string]any{"type": "signature_delta", "signature": ev.Delta})
 	case ir.EventBlockStop:
-		return e.write("content_block_stop", map[string]any{"type": "content_block_stop", "index": ev.Index})
+		idx, ok := e.index(ev.Index)
+		if !ok {
+			return nil
+		}
+		return e.write("content_block_stop", map[string]any{"type": "content_block_stop", "index": idx})
 	case ir.EventMessageDelta:
 		stop := ev.StopReason
 		if stop == "" {
@@ -535,8 +574,12 @@ func (e *EventEncoder) Encode(ev ir.Event) error {
 }
 
 func (e *EventEncoder) blockDelta(index int, delta map[string]any) error {
+	idx, ok := e.index(index)
+	if !ok {
+		return nil
+	}
 	return e.write("content_block_delta", map[string]any{
-		"type": "content_block_delta", "index": index, "delta": delta,
+		"type": "content_block_delta", "index": idx, "delta": delta,
 	})
 }
 

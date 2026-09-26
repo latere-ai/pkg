@@ -259,6 +259,10 @@ func encodeMessage(m ir.Message, req *ir.Request) ([]map[string]any, error) {
 			case ir.BlockImage:
 				textOnly = false
 				content = append(content, map[string]any{"type": "image_url", "image_url": map[string]any{"url": imageURL(blk.Image)}})
+			case ir.BlockOpaque:
+				// Another dialect's item; this dialect defines none of
+				// its own.
+				req.Loss.Add(ir.LossOpaque)
 			default:
 				return nil, fmt.Errorf("block type %q not allowed in a user message", blk.Type)
 			}
@@ -288,6 +292,8 @@ func encodeMessage(m ir.Message, req *ir.Request) ([]map[string]any, error) {
 				// Never replayed toward a non-Anthropic backend
 				// (signatures cannot be preserved).
 				req.Loss.Add(ir.LossThinking)
+			case ir.BlockOpaque:
+				req.Loss.Add(ir.LossOpaque)
 			default:
 				return nil, fmt.Errorf("block type %q not allowed in an assistant message", blk.Type)
 			}

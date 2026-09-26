@@ -58,6 +58,7 @@ const (
 	BlockToolResult       BlockType = "tool_result"
 	BlockThinking         BlockType = "thinking"
 	BlockRedactedThinking BlockType = "redacted_thinking"
+	BlockOpaque           BlockType = "opaque"
 )
 
 // Block is one typed content unit inside a message (or the system
@@ -80,10 +81,42 @@ type Block struct {
 	// Redacted is the opaque payload of a redacted_thinking block.
 	Redacted string
 
+	// Opaque is the payload of a BlockOpaque block.
+	Opaque *Opaque
+
 	// CacheHint marks a prompt-cache breakpoint after this block
 	// (Anthropic cache_control). Backends without explicit caching
 	// drop it into the loss report.
 	CacheHint bool
+}
+
+// Opaque is a provider item carried verbatim: a unit of a conversation
+// that one dialect defines and the IR has no member for, such as an
+// OpenAI Responses reasoning item with its encrypted_content. It exists
+// so a caller that stores the IR can replay the item on a later request
+// to the same dialect: a reasoning model served over Responses keeps its
+// reasoning across turns only when its earlier reasoning items come
+// back in the input.
+//
+// The item is meaningful only to Dialect. A backend of that dialect
+// re-emits Raw unchanged at the block's position; a backend of any other
+// dialect drops the block and records LossOpaque. The lux codecs carry
+// the block unchanged in both directions, because the lux dialect is
+// the IR on the wire; the other frontends drop it from the responses
+// and streams they encode. In a stream the block is a BlockStart whose
+// header carries the whole payload, followed by its BlockStop.
+type Opaque struct {
+	// Dialect is the dialect that produced the item.
+	Dialect Dialect
+
+	// Kind is the item's type within that dialect, e.g. "reasoning".
+	Kind string
+
+	// Raw is the item's JSON. Codecs that produce an opaque block store
+	// it in the form encoding/json writes a json.RawMessage: compact,
+	// with <, > and & escaped. Raw then survives every later marshal,
+	// the lux wire and a backend request body included, byte for byte.
+	Raw json.RawMessage
 }
 
 // Image is image content, either inline base64 or by URL.
@@ -321,6 +354,7 @@ const (
 	LossCitations         LossField = "citations"
 	LossInclude           LossField = "include"
 	LossLogProbs          LossField = "logprobs"
+	LossOpaque            LossField = "opaque"
 	LossReasoningEffort   LossField = "reasoning_effort"
 	LossReasoningItems    LossField = "reasoning"
 	LossReasoningSummary  LossField = "reasoning.summary"
@@ -385,7 +419,8 @@ func LossResponseFormatOf(t string) LossField { return LossField("response_forma
 // for an image its media type, data and URL, for a tool use its id,
 // name and arguments, and for a tool result its tool_use_id, "1" or "0"
 // for is_error, and its inner blocks each contributed the same way
-// under the role "tool_result". Every field is written as its byte
+// under the role "tool_result", and for an opaque block its dialect,
+// kind and raw JSON. Every field is written as its byte
 // length in decimal, a colon, the bytes and a comma, so no boundary is
 // ambiguous. The model, tools and sampling parameters are not part of
 // it: a router knows the model, and the prefix is what a cache holds.
@@ -435,6 +470,11 @@ func hashBlock(w io.Writer, role string, b Block) {
 		for _, inner := range b.ToolResult.Blocks {
 			hashBlock(w, "tool_result", inner)
 		}
+	}
+	if b.Opaque != nil {
+		hashField(w, string(b.Opaque.Dialect))
+		hashField(w, b.Opaque.Kind)
+		hashField(w, string(b.Opaque.Raw))
 	}
 }
 

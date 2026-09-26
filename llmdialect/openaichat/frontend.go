@@ -409,8 +409,8 @@ func (*Frontend) EncodeResponse(resp *ir.Response) ([]byte, error) {
 			texts = append(texts, b.Text)
 		case ir.BlockThinking:
 			thinking = append(thinking, b.Text)
-		case ir.BlockRedactedThinking:
-			// Opaque; nothing representable.
+		case ir.BlockRedactedThinking, ir.BlockOpaque:
+			// Provider payloads a Chat client has no member for.
 		case ir.BlockToolUse:
 			args := string(b.ToolUse.Args)
 			if args == "" {

@@ -316,6 +316,10 @@ func encodeBackendBlock(blk ir.Block, role ir.Role, req *ir.Request) (map[string
 		return map[string]any{"type": "thinking", "thinking": blk.Text, "signature": blk.Signature}, true, nil
 	case ir.BlockRedactedThinking:
 		return map[string]any{"type": "redacted_thinking", "data": blk.Redacted}, true, nil
+	case ir.BlockOpaque:
+		// Another dialect's item; this dialect defines none of its own.
+		req.Loss.Add(ir.LossOpaque)
+		return nil, false, nil
 	default:
 		return nil, false, fmt.Errorf("block type %q not representable", blk.Type)
 	}

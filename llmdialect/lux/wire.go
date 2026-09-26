@@ -74,7 +74,18 @@ type Block struct {
 	ToolResult *ToolResult  `json:"tool_result,omitempty"`
 	Signature  string       `json:"signature,omitempty"`
 	Redacted   string       `json:"redacted,omitempty"`
+	Opaque     *Opaque      `json:"opaque,omitempty"`
 	CacheHint  bool         `json:"cache_hint,omitempty"`
+}
+
+// Opaque is a provider item carried verbatim for replay to the dialect
+// that produced it (ir.Opaque). Raw travels as the JSON value itself,
+// not as a string, so the lux body stays readable and the item's bytes
+// come back exactly as they went out.
+type Opaque struct {
+	Dialect ir.Dialect      `json:"dialect"`
+	Kind    string          `json:"kind,omitempty"`
+	Raw     json.RawMessage `json:"raw"`
 }
 
 // Image is image content, either inline base64 or by URL.
@@ -243,10 +254,36 @@ func blockToIR(b Block, loss *ir.Loss) (ir.Block, bool, error) {
 		return ir.Block{Type: ir.BlockThinking, Text: b.Text, Signature: b.Signature}, true, nil
 	case ir.BlockRedactedThinking:
 		return ir.Block{Type: ir.BlockRedactedThinking, Redacted: b.Redacted}, true, nil
+	case ir.BlockOpaque:
+		op, err := opaqueToIR(b.Opaque)
+		if err != nil {
+			return ir.Block{}, false, err
+		}
+		return ir.Block{Type: ir.BlockOpaque, Opaque: op, CacheHint: b.CacheHint}, true, nil
 	default:
 		loss.Add(ir.LossContentTypeOf(string(b.Type)))
 		return ir.Block{}, false, nil
 	}
+}
+
+// opaqueToIR validates a wire opaque payload and brings Raw into the
+// form ir.Opaque documents, so a body written by another JSON encoder
+// (indented, say) decodes to the same IR as the one this codec wrote.
+func opaqueToIR(o *Opaque) (*ir.Opaque, error) {
+	if o == nil {
+		return nil, fmt.Errorf("opaque block missing opaque payload")
+	}
+	if o.Dialect == "" {
+		return nil, fmt.Errorf("opaque block needs a dialect")
+	}
+	if len(o.Raw) == 0 {
+		return nil, fmt.Errorf("opaque block needs raw")
+	}
+	raw, err := json.Marshal(o.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("opaque block raw: %w", err)
+	}
+	return &ir.Opaque{Dialect: o.Dialect, Kind: o.Kind, Raw: raw}, nil
 }
 
 // blockFromIR converts an IR block to the wire. The lux dialect is the
@@ -283,6 +320,13 @@ func blockFromIR(b ir.Block) (Block, error) {
 		return Block{Type: ir.BlockThinking, Text: b.Text, Signature: b.Signature}, nil
 	case ir.BlockRedactedThinking:
 		return Block{Type: ir.BlockRedactedThinking, Redacted: b.Redacted}, nil
+	case ir.BlockOpaque:
+		if b.Opaque == nil {
+			return Block{}, fmt.Errorf("opaque block missing opaque payload")
+		}
+		return Block{Type: ir.BlockOpaque, Opaque: &Opaque{
+			Dialect: b.Opaque.Dialect, Kind: b.Opaque.Kind, Raw: bytes.Clone(b.Opaque.Raw),
+		}, CacheHint: b.CacheHint}, nil
 	default:
 		return Block{}, fmt.Errorf("lux: block type %q not representable", b.Type)
 	}

@@ -520,6 +520,31 @@ func TestResponseEvents(t *testing.T) {
 	}
 }
 
+// TestResponseEventsCarryOpaque: an opaque block has no deltas, so the
+// re-emitted header is where its payload travels, exactly as a
+// backend's stream carries it.
+func TestResponseEventsCarryOpaque(t *testing.T) {
+	op := &ir.Opaque{Dialect: ir.DialectOpenAIResponses, Kind: "reasoning", Raw: json.RawMessage(`{"id":"rs_1"}`)}
+	events := responseEvents(&ir.Response{ID: "r", Blocks: []ir.Block{
+		{Type: ir.BlockOpaque, Opaque: op},
+		{Type: ir.BlockText, Text: "hi"},
+	}})
+	var types []string
+	for _, ev := range events {
+		types = append(types, string(ev.Type))
+	}
+	want := "message_start block_start block_stop block_start text_delta block_stop message_delta message_stop"
+	if got := strings.Join(types, " "); got != want {
+		t.Fatalf("events\n got %s\nwant %s", got, want)
+	}
+	if h := events[1].Block; h == nil || h.Type != ir.BlockOpaque || h.Opaque != op {
+		t.Fatalf("opaque header = %+v", events[1].Block)
+	}
+	if events[4].Block != nil || events[3].Block.Opaque != nil {
+		t.Fatalf("payload leaked onto another block: %+v", events[3].Block)
+	}
+}
+
 // TestTranslationGoldens is the byte-equality proof: for every dialect
 // pair, the request leg with the upstream name written, the response leg
 // with the caller's name written back, the stream leg event by event,
