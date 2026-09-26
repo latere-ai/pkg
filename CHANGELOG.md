@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.87.0 - 2026-09-27
+
 ### Added
 
 - `otel`: `SetRoute(ctx, route)` records the route of a request from inside
