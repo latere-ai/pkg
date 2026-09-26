@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.84.0 - 2026-09-26
+
 ### Added
 
 - `agentweb`: robots.txt from configuration. `WriteRobots` and
