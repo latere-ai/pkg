@@ -10,6 +10,30 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `otel`: `SetRoute(ctx, route)` records the route of a request from inside
+  the handler, for a router that learns it only by serving the request:
+  behind middleware that copies the request, whose matched pattern never
+  reached `Handler`, or nested under another router. The last call wins.
+- `otel`: `UnmatchedRoute` (`unmatched`) is the label a service's own metrics
+  and logs give a request no route serves.
+
+### Changed
+
+- `otel`: `Handler` decides one route per request after the handler returns:
+  `SetRoute`, then `WithRouteTemplate`, then the matched `ServeMux` pattern.
+  The span, the request metrics and the metrics hook all carry it. Before, a
+  `ServeMux` inside the handler replaced the template on the request metrics,
+  so a service mounted under `/` or `/v1/` reported that mount as the route
+  of every request, and each service copied the request to hide the pattern.
+  Drop that copy; a template now decides on its own.
+- `otel`: a span with no route is named by its method (`GET`) instead of the
+  operation passed to `Handler`, as the semantic conventions name it.
+- `otel`: a route template or pattern without a path, such as a template
+  returning `unknown`, gives no `http.route`. Return `""` for a request no
+  route serves.
+
 ## v0.86.0 - 2026-09-26
 
 ### Fixed

@@ -6,9 +6,11 @@ package otel
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -251,10 +253,12 @@ func TestHandlerWithMetricsHookCarriesMethodAndClass(t *testing.T) {
 
 func TestRouteFromPattern(t *testing.T) {
 	cases := map[string]string{
-		"":                   "",
-		"GET /v1/parse/{id}": "/v1/parse/{id}",
-		"/static/":           "/static/",
-		"POST /x":            "/x",
+		"":                          "",
+		"GET /v1/parse/{id}":        "/v1/parse/{id}",
+		"/static/":                  "/static/",
+		"POST /x":                   "/x",
+		"GET example.com/v1/x/{id}": "/v1/x/{id}",
+		"unknown":                   "",
 	}
 	for in, want := range cases {
 		if got := routeFromPattern(in); got != want {
@@ -393,11 +397,9 @@ func TestHandlerRouteTemplateLabelsRequestMetrics(t *testing.T) {
 }
 
 // TestHandlerServeMuxPatternLabelsRequestMetrics pins the ServeMux case.
-// otelhttp derives http.route on the metrics from the matched pattern itself.
-// When a template is also set, otelhttp appends the pattern after the
-// labeler's attributes, so a matched pattern names the metrics while the
-// template still names the span; an unmatched request falls back to the
-// template.
+// Without a template the matched pattern is the route. With one, the template
+// decides for matched and unmatched requests alike: a service that names its
+// routes is not overridden by whatever pattern a mux inside it matched.
 func TestHandlerServeMuxPatternLabelsRequestMetrics(t *testing.T) {
 	newMux := func() *http.ServeMux {
 		mux := http.NewServeMux()
@@ -421,11 +423,147 @@ func TestHandlerServeMuxPatternLabelsRequestMetrics(t *testing.T) {
 		)
 		wrapped.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/v1/parse/prs_abc123", nil))
 		wrapped.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/v1/unknown", nil))
-		assertRoutes(t, requestRoutes(t, reader), map[string]uint64{
-			"/v1/parse/{id}": 1,
-			"/v1/parse/:id":  1,
-		})
+		assertRoutes(t, requestRoutes(t, reader), map[string]uint64{"/v1/parse/:id": 2})
 	})
+}
+
+// spanRoutes returns each ended span's name and http.route, in order.
+func spanRoutes(rec *tracetest.SpanRecorder) [][2]string {
+	var out [][2]string
+	for _, s := range rec.Ended() {
+		route := ""
+		for _, kv := range s.Attributes() {
+			if kv.Key == "http.route" {
+				route = kv.Value.AsString()
+			}
+		}
+		out = append(out, [2]string{s.Name(), route})
+	}
+	return out
+}
+
+func serve(h http.Handler, method, target string) {
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(method, target, nil))
+}
+
+// A service with a route table mounted under a catch-all: the mux matches "/"
+// for every request, and before the template decided the route, that pattern
+// replaced the template on the request metrics.
+func TestTemplateDecidesOverAMatchedMount(t *testing.T) {
+	rec := installRecorder(t)
+	reader := installMeterReader(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {})
+	wrapped := Handler(mux, "svc", WithRouteTemplate(func(r *http.Request) string {
+		if strings.HasPrefix(r.URL.Path, "/v1/items/") {
+			return "/v1/items/{id}"
+		}
+		return ""
+	}))
+
+	serve(wrapped, http.MethodGet, "/v1/items/a")
+	serve(wrapped, http.MethodGet, "/nowhere")
+
+	assertRoutes(t, requestRoutes(t, reader), map[string]uint64{"/v1/items/{id}": 1, "": 1})
+	want := [][2]string{{"GET /v1/items/{id}", "/v1/items/{id}"}, {"GET", ""}}
+	if got := spanRoutes(rec); !slices.Equal(got, want) {
+		t.Errorf("spans = %q, want %q", got, want)
+	}
+}
+
+type copyKey struct{}
+
+// A router behind middleware that copies the request sets its pattern on the
+// copy, which Handler never sees, so without SetRoute the request had no route.
+func TestSetRouteBehindARequestCopy(t *testing.T) {
+	for _, record := range []bool{false, true} {
+		t.Run(fmt.Sprintf("SetRoute=%v", record), func(t *testing.T) {
+			rec := installRecorder(t)
+			reader := installMeterReader(t)
+			mux := http.NewServeMux()
+			mux.HandleFunc("GET /v1/sandboxes/{id}", func(w http.ResponseWriter, r *http.Request) {
+				if record {
+					SetRoute(r.Context(), r.Pattern)
+				}
+			})
+			copying := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mux.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), copyKey{}, 1)))
+			})
+			serve(Handler(copying, "svc"), http.MethodGet, "/v1/sandboxes/sb_1")
+
+			route, name := "", "GET"
+			if record {
+				route, name = "/v1/sandboxes/{id}", "GET /v1/sandboxes/{id}"
+			}
+			assertRoutes(t, requestRoutes(t, reader), map[string]uint64{route: 1})
+			if got := spanRoutes(rec); !slices.Equal(got, [][2]string{{name, route}}) {
+				t.Errorf("spans = %q, want name %q route %q", got, name, route)
+			}
+		})
+	}
+}
+
+// Nested routers that each record the pattern they matched: the innermost is
+// the last to run, so its route stands. A route recorded with SetRoute also
+// takes precedence over the template.
+func TestSetRouteInnermostWins(t *testing.T) {
+	reader := installMeterReader(t)
+	inner := http.NewServeMux()
+	inner.HandleFunc("GET /v1/items/{id}", func(w http.ResponseWriter, r *http.Request) {
+		SetRoute(r.Context(), r.Pattern)
+	})
+	outer := http.NewServeMux()
+	outer.HandleFunc("/v1/", func(w http.ResponseWriter, r *http.Request) {
+		SetRoute(r.Context(), r.Pattern)
+		inner.ServeHTTP(w, r.WithContext(r.Context()))
+	})
+	wrapped := Handler(outer, "svc", WithRouteTemplate(func(*http.Request) string { return "/v1/*" }))
+
+	serve(wrapped, http.MethodGet, "/v1/items/a")
+	serve(wrapped, http.MethodGet, "/v1/other")
+
+	assertRoutes(t, requestRoutes(t, reader), map[string]uint64{"/v1/items/{id}": 1, "/v1/": 1})
+}
+
+// Handler mounted under a subtree of a mux in front of it: the outer pattern
+// is on the request before otelhttp sees it, and used to label every request
+// under the mount. The inner route replaces it, and a request the inner mux
+// does not serve carries no route rather than the mount's.
+func TestRouteOfAMuxInFrontOfHandler(t *testing.T) {
+	reader := installMeterReader(t)
+	inner := http.NewServeMux()
+	inner.HandleFunc("POST /internal/lux/authorize", func(w http.ResponseWriter, r *http.Request) {})
+	outer := http.NewServeMux()
+	outer.Handle("/internal/", Handler(inner, "internal"))
+	outer.Handle("POST /internal/events", Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), "events"))
+
+	serve(outer, http.MethodPost, "/internal/lux/authorize")
+	serve(outer, http.MethodPost, "/internal/nope")
+	serve(outer, http.MethodPost, "/internal/events")
+
+	assertRoutes(t, requestRoutes(t, reader), map[string]uint64{
+		"/internal/lux/authorize": 1,
+		"":                        1,
+		"/internal/events":        1,
+	})
+}
+
+func TestSetRouteOutsideHandlerDoesNothing(t *testing.T) {
+	SetRoute(context.Background(), "/x")
+}
+
+func TestMetricsHookReceivesTheDecidedRoute(t *testing.T) {
+	var got []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/items/{id}", func(w http.ResponseWriter, r *http.Request) {})
+	wrapped := Handler(mux, "svc", WithMetricsHook(func(_ context.Context, route, _, _ string, _ time.Duration) {
+		got = append(got, route)
+	}))
+	serve(wrapped, http.MethodGet, "/v1/items/a")
+	serve(wrapped, http.MethodGet, "/nowhere")
+	if want := []string{"/v1/items/{id}", ""}; !slices.Equal(got, want) {
+		t.Errorf("hook routes = %q, want %q", got, want)
+	}
 }
 
 // TestHandlerWithSkipRecordsNoRequestMetrics checks that a skipped request
@@ -456,10 +594,9 @@ func FuzzRouteFromPattern(f *testing.F) {
 	f.Add("POST /x {$}")
 	f.Fuzz(func(t *testing.T, pattern string) {
 		got := routeFromPattern(pattern)
-		// Never longer than the input, and a space-bearing pattern keeps only
-		// the tail after the first space.
-		if len(got) > len(pattern) {
-			t.Errorf("routeFromPattern(%q) = %q longer than input", pattern, got)
+		// A suffix of the input that is empty or starts at its first slash.
+		if !strings.HasSuffix(pattern, got) || (got != "" && (got[0] != '/' || strings.IndexByte(pattern, '/') != len(pattern)-len(got))) {
+			t.Errorf("routeFromPattern(%q) = %q, want the input from its first slash", pattern, got)
 		}
 	})
 }

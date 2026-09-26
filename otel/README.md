@@ -78,21 +78,35 @@ Without it the instrumentation is a noop: spans are created and discarded, and n
 ## Route names
 
 `Handler` names each request by its route, so span names and metric labels
-stay bounded: one series for `/v1/items/{id}`, not one per item.
+stay bounded: one series for `/v1/items/{id}`, not one per item. The route is
+decided once, after the handler returns, and goes to `http.route` on the span
+and on the request metrics (`http.server.request.duration` and the request
+and response body size histograms), to the span name (`GET /v1/items/{id}`),
+and to the `WithMetricsHook` callback. The first of these that applies:
 
-- With a Go 1.22 `ServeMux`, nothing is configured. The matched pattern,
-  method dropped, is set as `http.route` on the span, and otelhttp puts the
-  same pattern on the request metrics (`http.server.request.duration` and the
-  request and response body size histograms).
-- With a hand-written router, pass `WithRouteTemplate(fn)`. The result names
-  the span (`GET /v1/items/:id`), is set as `http.route` on the span and on the
-  request metrics, and is passed to the `WithMetricsHook` callback. An empty
-  result leaves `http.route` off. `fn` is called before the handler runs, for
-  the span name, and again after, so derive the template from the method and
-  path rather than from state the handler sets.
-- With both, a template over a `ServeMux`, the span follows the template and
-  the request metrics follow the matched mux pattern, which otelhttp gives
-  precedence. A request the mux did not match carries the template on both.
+1. A route the handler recorded with `SetRoute(ctx, route)`.
+2. The `WithRouteTemplate(fn)` result, when the option is set.
+3. The pattern of a Go 1.22 `ServeMux` that matched the request, inside the
+   handler or in front of `Handler`, method and host dropped.
+
+Which one a service uses:
+
+- A single `ServeMux`: nothing to configure.
+- A route table the service can consult without serving the request, such as
+  a hand-written router or `ServeMux.Handler`: `WithRouteTemplate`. `fn` runs
+  before the handler, for the span name, and after it, so derive the route
+  from the method, path and query rather than from state the handler sets. A
+  mux inside the handler, typically a mount such as `/` or `/v1/`, never
+  replaces the template.
+- A router that learns the route only by serving the request, behind
+  middleware that copies it (`r.WithContext`) or nested under another router:
+  call `SetRoute(r.Context(), r.Pattern)` from each matched handler. The last
+  call wins, which is the innermost router.
+
+A request no route serves has no `http.route`, a span named by its method
+alone, and `""` in the hook. Metrics and logs of a service's own that need a
+value for it use `UnmatchedRoute` (`unmatched`), so every service counts those
+requests under the same label.
 
 Requests filtered by `WithSkip` record neither a span nor request metrics.
 

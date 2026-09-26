@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -33,13 +34,49 @@ type handlerConfig struct {
 }
 
 // WithRouteTemplate sets a function that returns the route template for the
-// request (e.g. "/v1/sandboxes/:id"). The result names the span, is set as the
-// http.route attribute on the span and on the otelhttp request metrics, and is
-// passed to the metrics hook, so labels stay bounded. When the wrapped handler
-// is a ServeMux that matched the request, otelhttp labels the request metrics
-// with the mux pattern instead; the template still names the span.
+// request (e.g. "/v1/sandboxes/:id"), or "" for a request no route serves. It
+// is a function of the request as it arrives, so it also names the span before
+// the handler runs. The template decides the route unless the handler records
+// one with SetRoute: a ServeMux pattern matched inside the handler, which is
+// often a coarse mount such as "/" or "/v1/", never replaces it. See Handler
+// for where the route goes.
 func WithRouteTemplate(fn func(*http.Request) string) HandlerOption {
 	return func(c *handlerConfig) { c.routeTemplate = fn }
+}
+
+// UnmatchedRoute is the route label a service's own metrics and logs give a
+// request no route serves, so every service counts those under one value.
+// OpenTelemetry signals carry no http.route for such a request instead, as the
+// semantic conventions ask.
+const UnmatchedRoute = "unmatched"
+
+type routeKey struct{}
+
+// routeHolder carries the route SetRoute records from inside the handler back
+// to Handler. A handler may record it from another goroutine.
+type routeHolder struct{ route atomic.Pointer[string] }
+
+// SetRoute records the route that serves the request, for a handler behind
+// Handler that learns it only once it has routed the request: a router behind
+// middleware that copies the request (r.WithContext and the like), whose
+// matched pattern never reaches the request Handler holds, or one that refines
+// a matched pattern. route is a path template or a ServeMux pattern; a method
+// or host in front of the path is dropped. The last call wins, which is the
+// innermost router when each calls SetRoute from the handler it matched. A
+// route recorded here takes precedence over WithRouteTemplate and over the
+// pattern of a ServeMux. Outside Handler it does nothing.
+func SetRoute(ctx context.Context, route string) {
+	if h, ok := ctx.Value(routeKey{}).(*routeHolder); ok {
+		r := routeFromPattern(route)
+		h.route.Store(&r)
+	}
+}
+
+func (h *routeHolder) get() string {
+	if r := h.route.Load(); r != nil {
+		return *r
+	}
+	return ""
 }
 
 // WithSurfaceAttr sets a function returning a coarse-grained surface label
@@ -67,10 +104,16 @@ func WithMetricsHook(fn func(ctx context.Context, route, method, statusClass str
 // Handler wraps an http.Handler with OpenTelemetry tracing and metrics.
 // It injects the trace ID as a response header for client-side correlation.
 //
-// Without options it preserves the prior simple shape: otelhttp.NewHandler
-// plus an X-Trace-Id response header. With options it adds route templating,
-// surface attribution, probe skipping, and a metrics callback so products can
-// share the boilerplate without giving up their own metrics registry shape.
+// Every request gets one route, decided once the handler returns, in this
+// order: the route the handler recorded with SetRoute; the WithRouteTemplate
+// result; the pattern of a ServeMux that matched the request, inside the
+// handler or in front of Handler. The route is http.route on the span and on
+// the request metrics (http.server.request.duration and the rest), the span is
+// named "METHOD route", and the metrics hook receives it. A request no route
+// serves has no http.route, a span named by its method alone, and "" in the
+// hook. Options add surface attribution, probe skipping, and a metrics
+// callback so products can share the boilerplate without giving up their own
+// metrics registry shape.
 func Handler(h http.Handler, operation string, opts ...HandlerOption) http.Handler {
 	cfg := handlerConfig{}
 	for _, opt := range opts {
@@ -115,30 +158,29 @@ func Handler(h http.Handler, operation string, opts ...HandlerOption) http.Handl
 
 		sw := &statusWriter{ResponseWriter: w, code: http.StatusOK}
 		start := time.Now()
-		h.ServeHTTP(sw, r)
+		// The handler gets its own copy of the request, carrying the holder
+		// SetRoute writes to. A ServeMux sets the pattern it matched on the
+		// request it was handed, so the copy keeps a mount's coarse pattern
+		// off r until the route is decided below.
+		holder := &routeHolder{}
+		served := r.WithContext(context.WithValue(r.Context(), routeKey{}, holder))
+		h.ServeHTTP(sw, served)
 
-		// The matched route is known only after the mux has run. An explicit
-		// template wins; otherwise fall back to the Go 1.22 ServeMux pattern
-		// (e.g. "GET /v1/parse/{id}"), which the mux sets on r once it matches.
-		// This keeps http.route low-cardinality (bound IDs) without per-service
-		// path normalizers.
-		var route string
-		if cfg.routeTemplate != nil {
-			route = cfg.routeTemplate(r)
-			// otelhttp records the request metrics for every request, sampled
-			// or not, and takes their attributes from r.Pattern and the
-			// labeler it puts in the request context, never from span
-			// attributes. A hand-written router leaves r.Pattern empty, so the
-			// template reaches the metrics only through the labeler. The
-			// ServeMux branch below needs no labeler entry: otelhttp derives
-			// http.route from r.Pattern itself and appends it after the
-			// labeler's attributes, so a matched pattern wins either way.
-			if l, ok := otelhttp.LabelerFromContext(r.Context()); ok && route != "" {
-				l.Add(attribute.String("http.route", route))
+		route := holder.get()
+		if route == "" {
+			if cfg.routeTemplate != nil {
+				route = routeFromPattern(cfg.routeTemplate(r))
+			} else {
+				route = routeFromPattern(served.Pattern)
 			}
-		} else {
-			route = routeFromPattern(r.Pattern)
 		}
+		// r is the request otelhttp handed this handler. Once the handler
+		// returns, otelhttp takes http.route on the request metrics, which it
+		// records for every request sampled or not, from r.Pattern, and
+		// renames the span through the formatter when r.Pattern is set. The
+		// decided route replaces whatever a ServeMux in front of Handler
+		// matched; "" leaves the metrics without a route.
+		r.Pattern = route
 		if route != "" && span.SpanContext().IsValid() {
 			span.SetAttributes(attribute.String("http.route", route))
 		}
@@ -152,12 +194,21 @@ func Handler(h http.Handler, operation string, opts ...HandlerOption) http.Handl
 		skip := cfg.skip
 		otelOpts = append(otelOpts, otelhttp.WithFilter(func(r *http.Request) bool { return !skip(r) }))
 	}
-	if cfg.routeTemplate != nil {
-		fn := cfg.routeTemplate
-		otelOpts = append(otelOpts, otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
-			return r.Method + " " + fn(r)
-		}))
-	}
+	// otelhttp names the span when it starts and again once the handler has
+	// returned with r.Pattern set, which is when it carries the decided
+	// route. At the start the name comes from a ServeMux in front of Handler
+	// or from the template, whichever is known.
+	template := cfg.routeTemplate
+	otelOpts = append(otelOpts, otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+		route := routeFromPattern(r.Pattern)
+		if route == "" && template != nil {
+			route = routeFromPattern(template(r))
+		}
+		if route == "" {
+			return r.Method
+		}
+		return r.Method + " " + route
+	}))
 	return otelhttp.NewHandler(inner, operation, otelOpts...)
 }
 
@@ -184,17 +235,16 @@ func LogAttrs(ctx context.Context) []any {
 	return []any{"trace_id", traceID, "span_id", spanID}
 }
 
-// routeFromPattern strips the optional leading method token from a Go 1.22
-// ServeMux pattern, leaving just the path template: "GET /v1/x/{id}" becomes
-// "/v1/x/{id}". An empty pattern (no route matched, e.g. a 404) yields "".
+// routeFromPattern is the path of a Go 1.22 ServeMux pattern or a route
+// template, from its first slash, as otelhttp reads a pattern: the method and
+// host in front go, so "GET /v1/x/{id}" and "GET example.com/v1/x/{id}" both
+// become "/v1/x/{id}". A value without a path, such as "" for a request no
+// route matched, yields "".
 func routeFromPattern(pattern string) string {
-	if pattern == "" {
-		return ""
+	if i := strings.IndexByte(pattern, '/'); i >= 0 {
+		return pattern[i:]
 	}
-	if _, path, ok := strings.Cut(pattern, " "); ok {
-		return path
-	}
-	return pattern
+	return ""
 }
 
 func statusClass(code int) string {
