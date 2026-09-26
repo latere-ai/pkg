@@ -70,6 +70,10 @@ type Robots struct {
 	// Sitemaps are absolute URLs, written as Sitemap lines after the
 	// groups.
 	Sitemaps []string
+
+	// CacheControl is the Cache-Control value served with the document.
+	// Empty sends [DefaultCacheControl].
+	CacheControl string
 }
 
 // Group is one robots.txt group: the crawlers it names and the rules they
@@ -140,7 +144,11 @@ func RobotsHandler(r Robots) (http.Handler, error) {
 	if err := WriteRobots(&b, r); err != nil {
 		return nil, err
 	}
-	return staticHandler(b.Bytes(), "text/plain; charset=utf-8"), nil
+	cc, err := cacheControl(r.CacheControl)
+	if err != nil {
+		return nil, err
+	}
+	return staticHandler(b.Bytes(), "text/plain; charset=utf-8", cc), nil
 }
 
 // validate rejects a value that would break the line structure of the

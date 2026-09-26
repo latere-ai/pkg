@@ -39,6 +39,10 @@ type LLMsOptions struct {
 	// DefaultSection is the heading for pages that name no section. Empty
 	// means "Pages".
 	DefaultSection string
+
+	// CacheControl is the Cache-Control value served with the document.
+	// Empty sends [DefaultCacheControl].
+	CacheControl string
 }
 
 // WriteLLMsTxt renders an llms.txt file (llmstxt.org) for the index to w:
@@ -102,7 +106,11 @@ func LLMsTxtHandler(idx *Index, opts LLMsOptions) (http.Handler, error) {
 	if err := WriteLLMsTxt(&b, idx, opts); err != nil {
 		return nil, err
 	}
-	return staticHandler(b.Bytes(), "text/plain; charset=utf-8"), nil
+	cc, err := cacheControl(opts.CacheControl)
+	if err != nil {
+		return nil, err
+	}
+	return staticHandler(b.Bytes(), "text/plain; charset=utf-8", cc), nil
 }
 
 // Opener opens the Markdown twin at an index path, such as
@@ -161,11 +169,15 @@ func WriteLLMsFull(w io.Writer, idx *Index, open Opener, opts LLMsOptions) error
 // every GET.
 //
 // It reads every twin once, here, so a twin the index names but the site
-// does not have fails at startup rather than midway through a response. A read that still fails after the response has started is
-// logged, and the connection is aborted with http.ErrAbortHandler, so the
+// does not have fails at startup rather than midway through a response. A
+// read that still fails after the response has started is logged, and the connection is aborted with http.ErrAbortHandler, so the
 // client sees a truncated transfer rather than a file that looks complete.
 func LLMsFullHandler(idx *Index, open Opener, opts LLMsOptions) (http.Handler, error) {
 	if err := WriteLLMsFull(io.Discard, idx, open, opts); err != nil {
+		return nil, err
+	}
+	cc, err := cacheControl(opts.CacheControl)
+	if err != nil {
 		return nil, err
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -173,6 +185,7 @@ func LLMsFullHandler(idx *Index, open Opener, opts LLMsOptions) (http.Handler, e
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", cc)
 		if r.Method == http.MethodHead {
 			w.WriteHeader(http.StatusOK)
 			return

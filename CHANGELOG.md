@@ -10,6 +10,16 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Changed
+
+- `agentweb`: robots.txt, sitemap.xml, llms.txt and llms-full.txt are
+  served with `Cache-Control: public, max-age=300`
+  (`DefaultCacheControl`). Without it a CDN in front applied its own
+  default and kept a replaced robots.txt for hours after a deploy. A site
+  sets another value with the new `CacheControl` field on `Robots`,
+  `SitemapOptions` or `LLMsOptions`; a value containing a line break is
+  refused when the handler is built.
+
 ## v0.84.0 - 2026-09-26
 
 ### Added

@@ -28,6 +28,10 @@ type SitemapOptions struct {
 	// alternate, the one served to a reader whose language no version
 	// matches. Empty writes no x-default.
 	XDefault string
+
+	// CacheControl is the Cache-Control value served with the document.
+	// Empty sends [DefaultCacheControl].
+	CacheControl string
 }
 
 // WriteSitemap renders the index as a sitemap (sitemaps.org protocol 0.9)
@@ -87,7 +91,11 @@ func SitemapHandler(idx *Index, opts SitemapOptions) (http.Handler, error) {
 	if err := WriteSitemap(&b, idx, opts); err != nil {
 		return nil, err
 	}
-	return staticHandler(b.Bytes(), "application/xml; charset=utf-8"), nil
+	cc, err := cacheControl(opts.CacheControl)
+	if err != nil {
+		return nil, err
+	}
+	return staticHandler(b.Bytes(), "application/xml; charset=utf-8", cc), nil
 }
 
 func writeAlternate(out *errwriter.Writer, hreflang, href string) {

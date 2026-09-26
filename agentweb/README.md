@@ -197,6 +197,21 @@ Markdown type and `Link: <page URL>; rel="canonical"`.
   Content Signals. The package doc has the full reasoning and the sources.
 - **HTML to Markdown conversion.** A site that has Markdown source serves it.
 
+## Freshness
+
+The robots.txt, sitemap, llms.txt and llms-full.txt handlers send
+`Cache-Control: public, max-age=300` (`DefaultCacheControl`) unless the
+site sets `CacheControl` in `Robots`, `SitemapOptions` or `LLMsOptions`.
+Without the header a CDN in front applies its own default, which can hold a
+replaced robots.txt for hours after a deploy. Five minutes bounds that and
+still lets a CDN answer repeated fetches of the larger documents; the
+rendered documents carry a strong ETag, so revalidation after that costs a
+304. Edge freshness does not reach crawlers sooner than their own cache
+allows: RFC 9309 lets a crawler keep robots.txt for up to 24 hours.
+
+The Markdown twins and pages served through `Negotiate` keep the site's own
+caching.
+
 ## Serving the twins well
 
 - Give `.md` files the `text/markdown; charset=utf-8` type in the site's own
