@@ -31,6 +31,13 @@ under **Removed** or **Changed** with what to do about it.
   and `LLMsFullHandler` stream every twin's body in reading order through
   an `Opener`; `FSOpener` reads them from an `fs.FS`, and the handler reads
   each once at startup so a missing twin fails there.
+- `agentweb`: Markdown negotiation. `Negotiate` wraps a site's handler so a
+  request whose `Accept` ranks `text/markdown` above `text/html` gets the
+  page's Markdown twin, served by the site's own handler with its ETag and
+  precompressed siblings, as `text/markdown; charset=utf-8`. Both
+  representations carry `Vary: Accept`, and the HTML carries
+  `Link: <twin>; rel="alternate"; type="text/markdown"`. A browser's
+  `Accept` keeps HTML. `PrefersMarkdown` exposes the rule.
 
 ## v0.83.0 - 2026-09-26
 
