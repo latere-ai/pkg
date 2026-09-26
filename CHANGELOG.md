@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.85.0 - 2026-09-26
+
 ### Changed
 
 - `agentweb`: robots.txt, sitemap.xml, llms.txt and llms-full.txt are
