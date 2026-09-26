@@ -25,6 +25,12 @@ under **Removed** or **Changed** with what to do about it.
   `WriteSitemap` and `SitemapHandler` render it with `lastmod`, `priority`,
   and hreflang alternates: `SitemapOptions.HrefLang` writes a short code
   such as `zh` as `zh-Hans`, and `XDefault` names the x-default language.
+- `agentweb`: llms.txt and llms-full.txt. `WriteLLMsTxt` and
+  `LLMsTxtHandler` list the index's pages under their sections, linking
+  each page's Markdown twin, optionally for one language. `WriteLLMsFull`
+  and `LLMsFullHandler` stream every twin's body in reading order through
+  an `Opener`; `FSOpener` reads them from an `fs.FS`, and the handler reads
+  each once at startup so a missing twin fails there.
 
 ## v0.83.0 - 2026-09-26
 
