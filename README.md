@@ -81,6 +81,7 @@ Each row links to the package directory. The full API, with examples, is on
 
 | Package | What it gives you |
 |---|---|
+| [`agentweb`](agentweb/) | A site's public pages for crawlers and AI agents: robots.txt with Content Signals usage preferences, a sitemap with hreflang alternates, llms.txt and a streamed llms-full.txt, and middleware that answers `Accept: text/markdown` with the page's Markdown twin, all rendered from one page index. Standard library only. See [`agentweb/README.md`](agentweb/README.md) |
 | [`audit`](audit/) | The canonical audit-event envelope, the `Emitter` interface products compose behind `MultiEmitter`, a stdout emitter, and redaction helpers. Storage adapters stay in each product |
 | [`authkit`](authkit/) | Authentication. The root holds the shared `Identity` type, the `Authenticator` interface, the grants a personal access token carries, and the middleware services share. `authkit/jwt` verifies RS256 and ES256 tokens offline against a cached JWKS; `authkit/oidc` is the OIDC relying party with cookie sessions, token refresh, and the login handlers; `authkit/cli` is the token store and device-code login for command-line clients; `authkit/issuertest` is a stub issuer for tests; `authkit/conformance` is the verification suite a service runs against its own authenticator |
 | [`authz`](authz/) | The authorizer contract the open cores share: the request and decision envelope, a client with caching and fail-closed rules, the owner policy a self-hosted core falls back to, and a core's action table as data. A decision is narrowed by the grants the caller's credential carries. `authz/server` is the scaffold an authorization endpoint is written on, `authz/stub` a stub endpoint for test tiers, and `authz/conformance` the suite every endpoint passes |
@@ -147,8 +148,9 @@ layout are stable.
 ## Documentation
 
 - [pkg.go.dev](https://pkg.go.dev/latere.ai/x/pkg): the API of every package.
-- [`luxsdk`](luxsdk/README.md), [`md`](md/README.md), and
-  [`otel`](otel/README.md) carry a usage guide beside the code.
+- [`agentweb`](agentweb/README.md), [`luxsdk`](luxsdk/README.md),
+  [`md`](md/README.md), and [`otel`](otel/README.md) carry a usage guide
+  beside the code.
 - [`docs/health.md`](docs/health.md): the probe paths and how to adopt them.
 - [`docs/writing/registers.md`](docs/writing/registers.md): the writing rule
   for everything a Latere product emits, and the canonical statement that

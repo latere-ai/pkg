@@ -2,13 +2,25 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package agentweb serves a site's public pages to crawlers and AI agents in
-// the open conventions they read, starting with robots.txt carrying Content
-// Signals usage preferences.
+// the open conventions they read: robots.txt with Content Signals usage
+// preferences, a sitemap with hreflang alternates, llms.txt and
+// llms-full.txt, and Accept-header negotiation that answers an agent asking
+// for Markdown with the page's Markdown twin.
+//
+// Everything reads one [Index], the site's public pages in reading order. A
+// static build can emit it as JSON beside the pages and a server can decode
+// it with [ParseIndex]; a server that knows its routes can build the same
+// value in Go. The renderers ([WriteRobots], [WriteSitemap], [WriteLLMsTxt],
+// [WriteLLMsFull]) write to an io.Writer, and each has a handler that
+// validates once at construction, so a bad index fails at startup rather
+// than on the first crawl. [Negotiate] wraps the site's own handler.
 //
 // The package holds no policy. Which usage preferences a site states,
 // which crawlers it blocks, and whether it publishes the Content Signals
 // Policy text are the site's configuration; the zero value of every option
-// states nothing.
+// states nothing. It converts nothing either: a page's Markdown twin is
+// written by the site, which has the Markdown source, and this package only
+// routes to it.
 //
 // # Usage preferences
 //
@@ -31,8 +43,8 @@
 // (draft-romm-aipref-contentsignals-00, expired April 2026) defines only
 // the labels. The header in circulation is emitted by Cloudflare's Markdown
 // for Agents converter on the responses it converts, where it defaults to
-// ai-train=yes; a site that serves its own Markdown needs neither the
-// converter nor its header.
+// ai-train=yes; a site that serves its own Markdown through [Negotiate]
+// needs neither the converter nor its header.
 //
 // There is no Content-Usage field or rule either, which the IETF AIPREF
 // working group's attachment draft (draft-ietf-aipref-attach-05, August
@@ -62,4 +74,9 @@
 //   - IETF AIPREF vocabulary: https://datatracker.ietf.org/doc/draft-ietf-aipref-vocab/
 //   - IETF AIPREF attachment: https://datatracker.ietf.org/doc/draft-ietf-aipref-attach/
 //   - Robots Exclusion Protocol: RFC 9309
+//   - Sitemaps protocol 0.9: https://www.sitemaps.org/protocol.html
+//   - llms.txt, v2 of August 2026, including the rel="alternate" and
+//     rel="describedby" discovery links: https://llmstxt.org/
+//   - HTTP content negotiation and the Accept field: RFC 9110 section 12
+//   - The text/markdown media type: RFC 7763
 package agentweb
