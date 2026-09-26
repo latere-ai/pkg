@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.86.0 - 2026-09-26
+
 ### Fixed
 
 - `otel`: `Handler` with `WithRouteTemplate` puts the template on the
