@@ -181,12 +181,16 @@ type Sandbox interface {
 	// yields an empty stream rather than an error, because callers poll.
 	Output(context.Context, StageHandle, int64) (io.ReadCloser, error)
 
-	// Stop terminates a running stage with a grace period. Stopping a stage
-	// that has already exited is not an error.
+	// Stop terminates the stage with a grace period, together with every
+	// process it started that is still running, including one left running
+	// after the stage's main process exited. Stop leaves the exit status
+	// already recorded as it is. Stopping a stage that has exited and left
+	// nothing running is not an error.
 	Stop(context.Context, StageHandle) error
 
-	// Discard removes whatever the driver created for the stage. It never
-	// touches the log or the directory holding it, which are the consumer's.
+	// Discard ends whatever of the stage is still running, as Stop does, and
+	// removes whatever the driver created for the stage. It never touches
+	// the log or the directory holding it, which are the consumer's.
 	Discard(context.Context, StageHandle) error
 }
 

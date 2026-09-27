@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -330,44 +331,111 @@ func (d *Driver) Output(_ context.Context, handle StageHandle, offset int64) (io
 	return file, nil
 }
 
-// Stop ends a running stage together with its whole process group. srt starts
-// helper processes, and killing only the wrapper would leave the stage
-// running. Stop sends SIGTERM, waits for the status file for the grace period,
-// then sends SIGKILL to the group. The status file, not the leader's liveness,
-// is the signal that the stage has finished, because a leader can exit on
-// SIGTERM while a child it started keeps running.
+// Stop ends everything of the stage that is still running, together with its
+// whole process group: the stage while it runs, and after its main process
+// has exited, whatever it left running in the group. srt starts helper
+// processes, and a stage can leave a background process behind when it
+// exits, so signaling one pid would leave either running. Stop sends SIGTERM,
+// waits for the grace period for the group to empty, then sends SIGKILL.
+//
+// The group is signaled only while it provably is the stage's, as
+// stageGroup.alive describes, so a pid the operating system has handed to
+// another process is never signaled. A group whose leader died without
+// recording an exit status before Stop was called cannot be proven, and is
+// left alone.
 func (d *Driver) Stop(ctx context.Context, handle StageHandle) error {
 	pid, start, logPath, err := parseHandle(handle)
 	if err != nil {
 		return err
 	}
-	statusPath := sidecar(logPath, ".status")
-	if _, done := readStatus(statusPath); done {
-		return nil
-	}
-	if !isStage(pid, start) {
+	group := &stageGroup{pid: pid, start: start, statusPath: sidecar(logPath, ".status")}
+	if !group.alive() {
 		return nil
 	}
 	_ = syscall.Kill(-pid, syscall.SIGTERM)
 	deadline := time.Now().Add(d.config.StopGrace)
 	for time.Now().Before(deadline) {
-		if _, done := readStatus(statusPath); done {
-			return nil
-		}
 		select {
 		case <-ctx.Done():
-			_ = syscall.Kill(-pid, syscall.SIGKILL)
+			group.kill()
 			return ctx.Err()
 		case <-time.After(50 * time.Millisecond):
 		}
+		if !group.alive() {
+			return nil
+		}
 	}
-	_ = syscall.Kill(-pid, syscall.SIGKILL)
+	group.kill()
 	return nil
 }
 
-// Discard stops the stage. There is nothing else to remove: this driver
-// creates no image, container or volume, and the log directory is the
-// consumer's.
+// stageGroup is the process group a stage runs in. The wrapper starts under
+// setsid, so the group's id is the wrapper's pid, and every process the stage
+// starts belongs to the group unless it leaves the group itself.
+type stageGroup struct {
+	pid        int
+	start      int64
+	statusPath string
+	// seen is the latest time, in Unix seconds, at which the stage is known
+	// to have been running: when its leader was last observed alive, or
+	// when it recorded its exit status. Zero means no such time is known.
+	seen int64
+}
+
+// alive reports whether the group still holds a process of the stage.
+//
+// While the leader is alive, the pid and start time in the handle identify
+// it, as in Observe. A pid held by another process means the stage's group
+// has emptied: the operating system does not reuse a pid while a process
+// group of that id has members.
+//
+// Once the leader has exited, a group under its id is the stage's only if one
+// of its members started no later than seen. A group formed later under the
+// same id, by a process that received the pid after the stage's group
+// emptied, has only members started after the leader exited, which is after
+// seen. Start times are read in whole seconds, so a pid handed out again
+// within about a second of when the stage was last seen would pass; that
+// needs the whole pid space to be cycled in that second, and is the accepted
+// limit of the check.
+func (g *stageGroup) alive() bool {
+	if syscall.Kill(-g.pid, 0) != nil {
+		// The group has no member, or none this process may signal.
+		return false
+	}
+	if err := syscall.Kill(g.pid, 0); !errors.Is(err, syscall.ESRCH) {
+		started, err := startTime(g.pid)
+		if err == nil && started == g.start {
+			g.seen = max(g.seen, time.Now().Unix())
+			return true
+		}
+		if err == nil {
+			return false
+		}
+		// The leader exited between the two reads.
+	}
+	if info, err := os.Stat(g.statusPath); err == nil {
+		g.seen = max(g.seen, info.ModTime().Unix())
+	}
+	if g.seen == 0 {
+		return false
+	}
+	starts, err := groupStarts(g.pid)
+	if err != nil {
+		return false
+	}
+	return slices.ContainsFunc(starts, func(started int64) bool { return started <= g.seen })
+}
+
+// kill sends SIGKILL to the group if it still holds a process of the stage.
+func (g *stageGroup) kill() {
+	if g.alive() {
+		_ = syscall.Kill(-g.pid, syscall.SIGKILL)
+	}
+}
+
+// Discard stops the stage and whatever it left running. There is nothing
+// else to remove: this driver creates no image, container or volume, and the
+// log directory is the consumer's.
 func (d *Driver) Discard(ctx context.Context, handle StageHandle) error {
 	return d.Stop(ctx, handle)
 }
@@ -448,10 +516,55 @@ var startTime = func(pid int) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("read start time of pid %d: %w", pid, err)
 	}
-	text := strings.Join(strings.Fields(string(output)), " ")
+	started, err := parseStart(strings.Fields(string(output)))
+	if err != nil {
+		return 0, fmt.Errorf("read start time of pid %d: %w", pid, err)
+	}
+	return started, nil
+}
+
+// groupStarts is the start time, in Unix seconds, of every process in the
+// process group pgid, read through ps as startTime is. Every process is
+// listed and filtered here, because ps selects by process group differently
+// on macOS and on procps.
+var groupStarts = func(pgid int) ([]int64, error) {
+	command := exec.Command("ps", "-A", "-o", "pgid=,lstart=") //nolint:gosec,noctx // a fixed command
+	command.Env = append(os.Environ(), "LC_ALL=C")
+	output, err := command.Output()
+	if err != nil {
+		return nil, fmt.Errorf("list process group %d: %w", pgid, err)
+	}
+	starts, err := parseGroupStarts(string(output), pgid)
+	if err != nil {
+		return nil, fmt.Errorf("list process group %d: %w", pgid, err)
+	}
+	return starts, nil
+}
+
+// parseGroupStarts reads the start times of the processes in group pgid from
+// ps output with one process per line: the group id, then the start time.
+func parseGroupStarts(output string, pgid int) ([]int64, error) {
+	var starts []int64
+	for line := range strings.Lines(output) {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || fields[0] != strconv.Itoa(pgid) {
+			continue
+		}
+		started, err := parseStart(fields[1:])
+		if err != nil {
+			return nil, err
+		}
+		starts = append(starts, started)
+	}
+	return starts, nil
+}
+
+// parseStart reads a start time printed in psStartLayout, split into fields.
+func parseStart(fields []string) (int64, error) {
+	text := strings.Join(fields, " ")
 	started, err := time.ParseInLocation(psStartLayout, text, time.Local)
 	if err != nil {
-		return 0, fmt.Errorf("read start time of pid %d: ps printed %q: %w", pid, text, err)
+		return 0, fmt.Errorf("ps printed %q: %w", text, err)
 	}
 	return started.Unix(), nil
 }

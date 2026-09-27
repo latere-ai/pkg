@@ -327,16 +327,7 @@ func TestStopKillsAStageThatIgnoresSIGTERM(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Launch: %v", err)
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(marker); err == nil {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if _, err := os.Stat(marker); err != nil {
-		t.Fatalf("the stage never started ticking: %v", err)
-	}
+	appears(t, marker)
 	if status, err := driver.Observe(context.Background(), handle); err != nil || !status.Running {
 		t.Fatalf("a ticking stage is not running: %+v, %v", status, err)
 	}
@@ -358,15 +349,21 @@ func TestStopKillsAStageThatIgnoresSIGTERM(t *testing.T) {
 }
 
 // TestStopHonorsACancelledContext checks that a cancelled context ends the
-// grace period early with SIGKILL and reports the cancellation.
+// grace period early with SIGKILL and reports the cancellation. The stage
+// marks when it ignores SIGTERM, and Stop is called only then: a stage
+// signaled before its trap is set dies of SIGTERM, and Stop rightly returns
+// as soon as it has.
 func TestStopHonorsACancelledContext(t *testing.T) {
 	driver := New(Config{Home: t.TempDir(), Look: shim(t), Lookup: os.LookupEnv, StopGrace: 10 * time.Second})
 	dir := t.TempDir()
-	handle, err := driver.Launch(context.Background(), stage(t, dir, "/bin/sh", "-c", `trap "" TERM; sleep 30`))
+	marker := filepath.Join(dir, "trapped")
+	spec := stage(t, dir, "/bin/sh", "-c", `trap "" TERM; touch "$MARK"; sleep 30`)
+	spec.Env = map[string]string{"MARK": marker}
+	handle, err := driver.Launch(context.Background(), spec)
 	if err != nil {
 		t.Fatalf("Launch: %v", err)
 	}
-	time.Sleep(100 * time.Millisecond)
+	appears(t, marker)
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	if err := driver.Stop(ctx, handle); !errors.Is(err, context.DeadlineExceeded) {
@@ -375,6 +372,238 @@ func TestStopHonorsACancelledContext(t *testing.T) {
 	if status := waitFor(t, driver, handle); status.Running {
 		t.Fatalf("status = %+v", status)
 	}
+}
+
+// TestStopEndsWhatAnExitedStageLeftRunning checks that Stop ends a process a
+// stage left in its group after its main process exited: at once when the
+// process honors SIGTERM, and with SIGKILL after the grace when it does not.
+// The leftover appends to a marker, so its death is observed directly, and
+// the marker is seen to grow after the exit status is recorded, so the case
+// is not passed by a leftover that had already died.
+func TestStopEndsWhatAnExitedStageLeftRunning(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		trap  string
+		grace time.Duration
+	}{
+		{"it honors SIGTERM", "", 5 * time.Second},
+		{"it ignores SIGTERM", `trap "" TERM; `, 400 * time.Millisecond},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			driver := New(Config{Home: t.TempDir(), Look: shim(t), Lookup: os.LookupEnv, StopGrace: c.grace})
+			dir := t.TempDir()
+			marker := filepath.Join(dir, "ticks")
+			spec := stage(t, dir, "/bin/sh", "-c", `( `+c.trap+`while :; do echo tick >> "$MARK"; sleep 0.05; done ) & exit 0`)
+			spec.Env = map[string]string{"MARK": marker}
+			handle, err := driver.Launch(context.Background(), spec)
+			if err != nil {
+				t.Fatalf("Launch: %v", err)
+			}
+			if status := waitFor(t, driver, handle); !status.Succeeded() {
+				t.Fatalf("status = %+v", status)
+			}
+			appears(t, marker)
+			size := fileSize(t, marker)
+			time.Sleep(300 * time.Millisecond)
+			if grown := fileSize(t, marker); grown == size {
+				t.Fatal("the leftover is not running, so the case proves nothing")
+			}
+			start := time.Now()
+			if err := driver.Stop(context.Background(), handle); err != nil {
+				t.Fatalf("Stop: %v", err)
+			}
+			elapsed := time.Since(start)
+			if c.trap == "" && elapsed >= c.grace {
+				t.Errorf("Stop took %v, the whole grace, for a leftover that honors SIGTERM", elapsed)
+			}
+			if c.trap != "" && elapsed < c.grace {
+				t.Errorf("Stop returned in %v, before the %v grace", elapsed, c.grace)
+			}
+			size = fileSize(t, marker)
+			time.Sleep(300 * time.Millisecond)
+			if grown := fileSize(t, marker); grown != size {
+				t.Fatalf("the leftover kept running after Stop: marker grew from %d to %d", size, grown)
+			}
+			if status, err := driver.Observe(context.Background(), handle); err != nil || !status.Succeeded() {
+				t.Fatalf("Stop changed the recorded exit: %+v, %v", status, err)
+			}
+		})
+	}
+}
+
+// TestStopSignalsOnlyAGroupItCanProveIsTheStages checks the guard on a group
+// whose leader has exited: the group is signaled only when a member started no
+// later than the stage's recorded exit. The group here is a real one whose
+// leader has exited and been reaped, so the pid is free while the group
+// still has a member, which is the state a stage's leftovers are in.
+func TestStopSignalsOnlyAGroupItCanProveIsTheStages(t *testing.T) {
+	driver := New(Config{Home: t.TempDir(), Lookup: os.LookupEnv, Look: found(), StopGrace: 5 * time.Second})
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "worker-0.log")
+	statusPath := sidecar(logPath, ".status")
+
+	leader := exec.Command("/bin/sh", "-c", "sleep 30 & exit 0")
+	leader.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := leader.Start(); err != nil {
+		t.Fatal(err)
+	}
+	pid := leader.Process.Pid
+	t.Cleanup(func() { _ = syscall.Kill(-pid, syscall.SIGKILL) })
+	start, err := startTime(pid)
+	if err != nil {
+		t.Fatalf("start time: %v", err)
+	}
+	if err := leader.Wait(); err != nil {
+		t.Fatalf("the leader failed: %v", err)
+	}
+	if !errors.Is(syscall.Kill(pid, 0), syscall.ESRCH) || syscall.Kill(-pid, 0) != nil {
+		t.Fatal("the group does not outlive its reaped leader here")
+	}
+	handle := StageHandle{Driver: Host, ID: formatHandle(pid, start, logPath)}
+	groupAlive := func() bool { return syscall.Kill(-pid, 0) == nil }
+
+	// With no exit status recorded, nothing places the stage in time, and a
+	// group under a reused pid cannot be told from its leftovers.
+	if err := driver.Stop(context.Background(), handle); err != nil || !groupAlive() {
+		t.Fatalf("a group with no recorded exit was signaled: %v", err)
+	}
+	// An exit recorded before every member started is another group's.
+	if err := os.WriteFile(statusPath, []byte("0"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	earlier := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(statusPath, earlier, earlier); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Stop(context.Background(), handle); err != nil || !groupAlive() {
+		t.Fatalf("a group formed after the stage exited was signaled: %v", err)
+	}
+	// A group whose members cannot be listed is left alone. The listing is
+	// put back before the last case, and by the cleanup if the test fails
+	// first.
+	previous := groupStarts
+	t.Cleanup(func() { groupStarts = previous })
+	groupStarts = func(pgid int) ([]int64, error) { return nil, fmt.Errorf("ps refused group %d", pgid) }
+	now := time.Now()
+	if err := os.Chtimes(statusPath, now, now); err != nil {
+		t.Fatal(err)
+	}
+	err = driver.Stop(context.Background(), handle)
+	groupStarts = previous
+	if err != nil || !groupAlive() {
+		t.Fatalf("a group that could not be listed was signaled: %v", err)
+	}
+	// A member started no later than the recorded exit is the stage's
+	// leftover, and Stop ends it without waiting out the grace.
+	began := time.Now()
+	if err := driver.Stop(context.Background(), handle); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if elapsed := time.Since(began); elapsed >= 5*time.Second {
+		t.Errorf("Stop took the whole grace: %v", elapsed)
+	}
+	if groupAlive() {
+		t.Fatal("the stage's leftover is still running")
+	}
+}
+
+// TestStopLeavesAReusedPidAlone checks that a live process holding the
+// stage's pid with another start time is never signaled, together with its
+// group, even when the stage recorded its exit a moment ago.
+func TestStopLeavesAReusedPidAlone(t *testing.T) {
+	driver := New(Config{Home: t.TempDir(), Lookup: os.LookupEnv, Look: found(), StopGrace: time.Second})
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "worker-0.log")
+	if err := os.WriteFile(sidecar(logPath, ".status"), []byte("0"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sleeper := exec.Command("/bin/sh", "-c", "sleep 30")
+	sleeper.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := sleeper.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(-sleeper.Process.Pid, syscall.SIGKILL); _ = sleeper.Wait() })
+	actual, err := startTime(sleeper.Process.Pid)
+	if err != nil {
+		t.Fatalf("start time: %v", err)
+	}
+	reused := StageHandle{Driver: Host, ID: formatHandle(sleeper.Process.Pid, actual-1, logPath)}
+	for _, end := range []func(context.Context, StageHandle) error{driver.Stop, driver.Discard} {
+		if err := end(context.Background(), reused); err != nil {
+			t.Fatalf("Stop: %v", err)
+		}
+		if syscall.Kill(sleeper.Process.Pid, 0) != nil || syscall.Kill(-sleeper.Process.Pid, 0) != nil {
+			t.Fatal("a process that reused the stage's pid was signaled")
+		}
+	}
+}
+
+// TestGroupStartsReadsPS checks the listing of a process group against ps's
+// output: only the group asked for is read, a start time that does not parse
+// in that group is an error, and a missing ps is an error.
+func TestGroupStartsReadsPS(t *testing.T) {
+	output := "    1 Mon Sep 21 14:58:12 2026    \n\n  712 Sun Sep  6 09:00:01 2026\n  712 Sun Sep 27 19:44:15 2026\n  900 garbled\n"
+	starts, err := parseGroupStarts(output, 712)
+	if err != nil || len(starts) != 2 {
+		t.Fatalf("starts = %v, %v", starts, err)
+	}
+	if first := time.Unix(starts[0], 0).In(time.Local); first.Day() != 6 || first.Second() != 1 {
+		t.Errorf("a single-digit day parsed to %v", first)
+	}
+	if _, err := parseGroupStarts(output, 900); err == nil {
+		t.Error("a garbled start time in the group was accepted")
+	}
+	if starts, err := parseGroupStarts(output, 5); err != nil || len(starts) != 0 {
+		t.Errorf("an absent group = %v, %v", starts, err)
+	}
+	own, err := groupStarts(syscall.Getpgrp())
+	if err != nil || len(own) == 0 {
+		t.Fatalf("this process's own group = %v, %v", own, err)
+	}
+	t.Setenv("PATH", t.TempDir())
+	if _, err := groupStarts(syscall.Getpgrp()); err == nil {
+		t.Error("a machine with no ps listed a group")
+	}
+}
+
+// FuzzParseGroupStarts checks that reading ps output never panics and that a
+// line the layout formats is read back.
+func FuzzParseGroupStarts(f *testing.F) {
+	f.Add("  712 Sun Sep 27 19:44:15 2026\n", 712, int64(1790531055))
+	f.Add("1 Mon Jan  2 15:04:05 2006", 1, int64(0))
+	f.Add("\n\n 712", 712, int64(-1))
+	f.Fuzz(func(t *testing.T, output string, pgid int, unix int64) {
+		_, _ = parseGroupStarts(output, pgid)
+		stamp := time.Unix(unix, 0).In(time.Local)
+		if stamp.Year() < 1000 || stamp.Year() > 9999 {
+			return
+		}
+		// The comparison is of wall-clock text, because an hour that a
+		// daylight-saving change repeats reads back as either instant.
+		want := stamp.Format(psStartLayout)
+		line := fmt.Sprintf("%5d %s\n", pgid, want)
+		starts, err := parseGroupStarts(line, pgid)
+		if err != nil || len(starts) != 1 {
+			t.Fatalf("%q read back as %v, %v", line, starts, err)
+		}
+		if got := time.Unix(starts[0], 0).In(time.Local).Format(psStartLayout); got != want {
+			t.Fatalf("%q read back as %s", line, got)
+		}
+	})
+}
+
+// appears waits for a file a stage creates, which is how a test learns that
+// the stage has reached a given point.
+func appears(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("the stage never created %s", path)
 }
 
 func fileSize(t *testing.T, path string) int64 {

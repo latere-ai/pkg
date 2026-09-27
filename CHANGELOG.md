@@ -22,6 +22,34 @@ under **Removed** or **Changed** with what to do about it.
   replaces that row through `Config.Remedies`, or calls
   `Remedies.NotReady` with `bubblewrap`, names `bwrap` instead.
 
+### Changed
+
+- `hostsandbox.Driver.Stop`, and `Discard` with it, also ends the
+  processes a stage left running in its process group after its main
+  process exited. It returned at once for a stage with a recorded exit
+  status, so a consumer that wanted those processes gone had to parse the
+  `pid:<pid>@<start>:<log>` handle and signal the group itself; it calls
+  `Stop` instead. The group is signaled only while it provably is the
+  stage's: its leader is alive with the handle's start time, or the leader
+  is gone and a member of the group started no later than the stage was
+  last known to run, which is when `Stop` last saw the leader or the
+  modification time of the exit status file. A group formed later under a
+  reused pid has only members started after that, so it is never
+  signaled. A group whose leader was killed before it recorded a status,
+  outside `Stop`, is left alone for the same reason, and a process that
+  started its own session has left the group and is not reached. `Stop`
+  now waits for the group to empty rather than for the status file, so a
+  stage that exits on SIGTERM no longer costs the whole grace period. The
+  exit status recorded before `Stop` is kept.
+- `hostsandbox.Sandbox` states this for every driver: `Stop` ends every
+  process the stage started that is still running, including one left
+  after its main process exited, and `Discard` ends what `Stop` would.
+  `hostsandboxtest.Run` holds every driver to it, which needs a new
+  `Subject.Orphan` field: an argv whose main process exits zero at once,
+  leaving a process that writes to stdout at least every 100 milliseconds
+  for at least the given duration. A consumer's contract test sets it; the
+  two new cases fail while it is nil.
+
 ## v0.89.1 - 2026-09-27
 
 ### Fixed

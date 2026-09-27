@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package hostsandboxtest is the contract suite every hostsandbox.Sandbox is
-// held to. A consumer assumes four things of any driver: a stage outlives the
+// held to. A consumer assumes five things of any driver: a stage outlives the
 // process that launched it, its exit status is recoverable after that process
 // is gone, its output is readable from an offset out of a location the stage
-// cannot write, and its handle is refused by any other driver. Run drives one
-// driver through all four.
+// cannot write, nothing it started is left running once Stop or Discard
+// returns, even after its main process has exited, and its handle is refused
+// by any other driver. Run drives one driver through all five.
 package hostsandboxtest
 
 import (
@@ -34,6 +35,13 @@ type Subject struct {
 	Print func(text string, code int) []string
 	// Wait builds an argv that stays alive for at least the given duration.
 	Wait func(d time.Duration) []string
+	// Orphan builds an argv whose main process exits zero at once, leaving
+	// behind a process it started that writes to stdout at least every 100
+	// milliseconds for at least the given duration. Under a driver whose
+	// stage ends with its main process, as a container's does, the process
+	// ends there; under one where it outlives the main process, Stop and
+	// Discard must end it.
+	Orphan func(d time.Duration) []string
 	// Dir is a writable directory the stage may use. The suite puts the
 	// workspace and the log directory under it.
 	Dir string
@@ -41,6 +49,11 @@ type Subject struct {
 
 // Timeout bounds how long the suite waits for a stage to finish.
 const Timeout = 30 * time.Second
+
+// Settle is how long a stage's output must stay the same length for the suite
+// to take it that nothing is writing to it. It is several times the interval
+// at which Subject.Orphan writes.
+const Settle = 500 * time.Millisecond
 
 // Run drives one driver through the contract. newSubject is called once per
 // case, so every case starts from a fresh directory.
@@ -83,6 +96,32 @@ func Run(t *testing.T, newSubject func(t *testing.T) *Subject) {
 		// both succeed. A controller cancels without knowing the state.
 		must(t, subject.Driver.Stop(context.Background(), handle), "repeated Stop")
 	})
+
+	// A stage's main process can exit while a process it started keeps
+	// running. The suite does not require the process to outlive the main
+	// process, because under some drivers it cannot; it requires that
+	// nothing writes to the stage's output once Stop or Discard returns, and
+	// that the exit status recorded before is kept.
+	for _, end := range []struct {
+		name string
+		call func(hostsandbox.Sandbox) func(context.Context, hostsandbox.StageHandle) error
+	}{
+		{"Stop", func(s hostsandbox.Sandbox) func(context.Context, hostsandbox.StageHandle) error { return s.Stop }},
+		{"Discard", func(s hostsandbox.Sandbox) func(context.Context, hostsandbox.StageHandle) error { return s.Discard }},
+	} {
+		t.Run(strings.ToLower(end.name)+" ends what a stage left running after it exited", func(t *testing.T) {
+			subject := newSubject(t)
+			expect(t, subject.Orphan != nil, "Subject.Orphan is nil; every driver is held to what it does with a stage's leftovers")
+			handle := subject.launch(t, subject.Orphan(Timeout))
+			status := subject.waitFor(t, handle)
+			expect(t, status.Succeeded(), "status = %+v, want a zero exit", status)
+			must(t, end.call(subject.Driver)(context.Background(), handle), end.name)
+			subject.settles(t, handle)
+			after, err := subject.Driver.Observe(context.Background(), handle)
+			must(t, err, "Observe")
+			expect(t, after.Succeeded(), "%s changed the recorded exit: %+v", end.name, after)
+		})
+	}
 
 	t.Run("discard is idempotent and leaves the log", func(t *testing.T) {
 		subject := newSubject(t)
@@ -180,6 +219,25 @@ func (s *Subject) waitFor(t *testing.T, handle hostsandbox.StageHandle) hostsand
 	}
 	t.Fatalf("the stage did not finish within %v", Timeout)
 	return hostsandbox.StageStatus{}
+}
+
+// settles fails the test unless the stage's output stops growing: two reads
+// Settle apart return the same length. A driver that has just signaled a
+// process may see one more write land, so the reads are repeated until
+// Timeout rather than taken once.
+func (s *Subject) settles(t *testing.T, handle hostsandbox.StageHandle) {
+	t.Helper()
+	deadline := time.Now().Add(Timeout)
+	size := len(s.readAll(t, handle, 0))
+	for time.Now().Before(deadline) {
+		time.Sleep(Settle)
+		grown := len(s.readAll(t, handle, 0))
+		if grown == size {
+			return
+		}
+		size = grown
+	}
+	t.Fatalf("the stage's output kept growing for %v after it was ended; a process it started is still running", Timeout)
 }
 
 func (s *Subject) readAll(t *testing.T, handle hostsandbox.StageHandle, offset int64) []byte {

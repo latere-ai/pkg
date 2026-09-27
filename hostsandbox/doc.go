@@ -30,8 +30,17 @@
 // pid the operating system has reused is not mistaken for the stage and a
 // driver built after a restart recovers the stage from the handle alone.
 // Output reads the log from an offset. Stop signals the whole process group
-// with SIGTERM, waits for the status file for the grace period, then sends
-// SIGKILL. Discard is Stop: the driver creates nothing else.
+// with SIGTERM, waits for the grace period for the group to empty, then sends
+// SIGKILL, so it also ends a process the stage left running after its main
+// process exited. The group is signaled only while it provably is the
+// stage's: its leader is alive with the handle's start time, or the leader is
+// gone and a member started no later than the stage was last known to run,
+// when Stop last saw its leader or when it recorded its exit status. A group
+// formed later under a reused pid has only members started after that, so it
+// is never signaled; a group whose leader died without recording a status
+// before Stop was called is left alone for the same reason. A process that
+// left the group itself, by starting its own session, is not reached. Discard
+// is Stop: the driver creates nothing else.
 //
 // # The path policy
 //

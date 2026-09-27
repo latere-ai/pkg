@@ -35,6 +35,9 @@ func TestDriverMeetsTheContractUnderSRT(t *testing.T) {
 			Wait: func(d time.Duration) []string {
 				return []string{"/bin/sh", "-c", fmt.Sprintf("sleep %d", int(d.Seconds()))}
 			},
+			Orphan: func(d time.Duration) []string {
+				return []string{"/bin/sh", "-c", fmt.Sprintf("(i=0; while [ $i -lt %d ]; do echo tick; sleep 0.1; i=$((i+1)); done) & exit 0", int(d/(100*time.Millisecond)))}
+			},
 		}
 	})
 }
