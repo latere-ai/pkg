@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.89.0 - 2026-09-27
+
 ### Added
 
 - `llmdialect/bridge.Model` carries a model's figures, so a model list
