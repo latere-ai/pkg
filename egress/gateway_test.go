@@ -768,3 +768,59 @@ func doGet(t *testing.T, c *http.Client, url, auth string) string {
 	b, _ := io.ReadAll(resp.Body)
 	return string(b)
 }
+
+// A request inside a terminated tunnel whose Host names another authority is
+// refused 421 and never leaves the gateway: dialed to the tunnel's host with
+// that host's credential swapped in, a front routing by Host would hand the
+// credential to the other one.
+func TestGateway_MisdirectedHostIsRefused(t *testing.T) {
+	up := newUpstream(t)
+	ca, _, _, _ := GenerateCA("")
+	reg := NewRegistry()
+	reg.Set("p-1", []Entry{{
+		Placeholder:  []byte("cph_placeholder"),
+		Secret:       []byte("sk-realsecret"),
+		AllowedHosts: []string{up.hostIP(t)},
+	}})
+	proxy := newGateway(t, reg, ca, up, StaticAuth{"Bearer allow": "p-1"})
+	client := clientThrough(t, proxy.URL, "Bearer allow", bothRoots(ca, up))
+
+	req, _ := http.NewRequest("GET", up.server.URL+"/echo", nil)
+	req.Host = "other.example"
+	req.Header.Set("Authorization", "Bearer cph_placeholder")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMisdirectedRequest {
+		t.Fatalf("status = %d, want 421", resp.StatusCode)
+	}
+	if up.lastAuth != "" {
+		t.Fatalf("a misdirected request reached the upstream with %q", up.lastAuth)
+	}
+}
+
+func TestSameAuthority(t *testing.T) {
+	for _, c := range []struct {
+		host, tunnel string
+		want         bool
+	}{
+		{"", "api.example:443", true},
+		{"api.example", "api.example:443", true},
+		{"API.Example", "api.example:443", true},
+		{"api.example:443", "api.example", true},
+		{"api.example:8443", "api.example:8443", true},
+		{"api.example:8443", "api.example:443", false},
+		{"api.example", "api.example:8443", false},
+		{"other.example", "api.example:443", false},
+		{"api.example.", "api.example:443", false},
+		{"[::1]:443", "[::1]:443", true},
+		{"[::1]", "[::1]:443", true},
+		{"[::2]", "[::1]:443", false},
+	} {
+		if got := sameAuthority(c.host, c.tunnel); got != c.want {
+			t.Errorf("sameAuthority(%q, %q) = %v, want %v", c.host, c.tunnel, got, c.want)
+		}
+	}
+}

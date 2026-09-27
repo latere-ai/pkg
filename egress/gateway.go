@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"io"
 	"log/slog"
 	"maps"
@@ -236,6 +237,10 @@ func (g *Gateway) mitm(ctx context.Context, client net.Conn, hostport string, m 
 // request before it leaves, so a placeholder meant to be replaced is never
 // sent upstream.
 func (g *Gateway) forward(host, hostport string, req *http.Request, m *Map) (*http.Response, error) {
+	if !sameAuthority(req.Host, hostport) {
+		g.log().WarnContext(req.Context(), "egress misdirected request", "host", host, "request_host", req.Host)
+		return nil, errMisdirected
+	}
 	req.URL.Scheme = "https"
 	req.URL.Host = hostport
 	req.RequestURI = ""
@@ -257,6 +262,10 @@ func (g *Gateway) mitmH1(tlsClient *tls.Conn, host, hostport string, m *Map) {
 			return // EOF or client closed
 		}
 		resp, err := g.forward(host, hostport, req, m)
+		if errors.Is(err, errMisdirected) {
+			writeMisdirected(tlsClient)
+			return
+		}
 		if err != nil {
 			writeGatewayError(tlsClient)
 			return
@@ -277,6 +286,10 @@ func (g *Gateway) mitmH1(tlsClient *tls.Conn, host, hostport string, m *Map) {
 func (g *Gateway) mitmH2(tlsClient *tls.Conn, host, hostport string, m *Map) {
 	h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		resp, err := g.forward(host, hostport, req, m)
+		if errors.Is(err, errMisdirected) {
+			w.WriteHeader(http.StatusMisdirectedRequest)
+			return
+		}
 		if err != nil {
 			w.WriteHeader(http.StatusBadGateway)
 			return
@@ -339,6 +352,38 @@ func copyUpstreamResponse(w http.ResponseWriter, resp *http.Response) {
 
 func writeGatewayError(w io.Writer) {
 	_, _ = io.WriteString(w, "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+}
+
+// errMisdirected is a request inside a terminated tunnel whose Host names
+// another authority than the tunnel's. The request would be dialed to the
+// tunnel's host with that host's credentials swapped in, and a front that
+// routes by Host would hand them to the other one, so it is refused.
+var errMisdirected = errors.New("egress: the request names another host than its tunnel")
+
+func writeMisdirected(w io.Writer) {
+	_, _ = io.WriteString(w, "HTTP/1.1 421 Misdirected Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+}
+
+// sameAuthority reports whether a request's Host names the tunnel's authority:
+// the same host, compared without case, and the same port, 443 when either
+// leaves it out. An empty Host is the tunnel's, since the request is then sent
+// with the tunnel's authority.
+func sameAuthority(requestHost, tunnel string) bool {
+	if requestHost == "" {
+		return true
+	}
+	rh, rp := splitAuthority(requestHost)
+	th, tp := splitAuthority(tunnel)
+	return strings.EqualFold(rh, th) && rp == tp
+}
+
+// splitAuthority splits host:port, defaulting the port to 443 and removing the
+// brackets of a bare IPv6 literal.
+func splitAuthority(authority string) (host, port string) {
+	if h, p, err := net.SplitHostPort(authority); err == nil {
+		return h, p
+	}
+	return strings.TrimSuffix(strings.TrimPrefix(authority, "["), "]"), "443"
 }
 
 // isLoopbackTarget reports whether host names the local loopback (an IP in

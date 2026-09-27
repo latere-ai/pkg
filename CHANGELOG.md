@@ -10,6 +10,16 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Fixed
+
+- `egress.Gateway` refuses a request inside a terminated tunnel whose
+  `Host`, or `:authority` over HTTP/2, names another authority than the
+  tunnel's, answering `421 Misdirected Request`. The request was dialed to
+  the tunnel's host with that host's credentials swapped in and carried the
+  other name upstream, so a front that routes by `Host` could deliver the
+  credentials to another service. Hosts compare without case, and a missing
+  port is 443.
+
 ## v0.89.0 - 2026-09-27
 
 ### Added

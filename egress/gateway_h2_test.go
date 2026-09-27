@@ -296,3 +296,36 @@ func (f *failingWriter) Write([]byte) (int, error) {
 	f.writes++
 	return 0, io.ErrClosedPipe
 }
+
+// Over HTTP/2 the request's :authority is its Host: one naming another
+// authority than the tunnel's is refused 421 on its stream.
+func TestGateway_H2MisdirectedAuthorityIsRefused(t *testing.T) {
+	up := newH2Upstream(t)
+	ca, _, _, _ := GenerateCA("")
+	reg := NewRegistry()
+	reg.Set("p-1", []Entry{{
+		Placeholder:  []byte("cph_placeholder"),
+		Secret:       []byte("sk-realsecret"),
+		AllowedHosts: []string{up.hostIP(t)},
+	}})
+	proxy := newGateway(t, reg, ca, up, StaticAuth{"Bearer allow": "p-1"})
+	client := h2ClientThrough(t, proxy.URL, "Bearer allow", bothRoots(ca, up))
+
+	req, _ := http.NewRequest("GET", up.server.URL+"/echo", nil)
+	req.Host = "other.example"
+	req.Header.Set("Authorization", "Bearer cph_placeholder")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.ProtoMajor != 2 {
+		t.Fatalf("inner leg did not negotiate h2: ProtoMajor=%d", resp.ProtoMajor)
+	}
+	if resp.StatusCode != http.StatusMisdirectedRequest {
+		t.Fatalf("status = %d, want 421", resp.StatusCode)
+	}
+	if up.lastAuth != "" {
+		t.Fatalf("a misdirected request reached the upstream with %q", up.lastAuth)
+	}
+}
