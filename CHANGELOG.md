@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.89.1 - 2026-09-27
+
 ### Fixed
 
 - `egress.Gateway` refuses a request inside a terminated tunnel whose
