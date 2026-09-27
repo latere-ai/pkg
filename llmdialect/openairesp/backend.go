@@ -283,12 +283,14 @@ func encodeMessage(m ir.Message, req *ir.Request) ([]any, error) {
 // summaryOf reports whether blocks[i] is followed by a reasoning item of
 // this dialect, the item whose summary it holds.
 func summaryOf(blocks []ir.Block, i int) bool {
-	if i+1 >= len(blocks) {
-		return false
-	}
-	next := blocks[i+1].Opaque
-	return blocks[i+1].Type == ir.BlockOpaque && next != nil &&
-		next.Dialect == DialectName && next.Kind == kindReasoning
+	return i+1 < len(blocks) && reasoningItem(blocks[i+1])
+}
+
+// reasoningItem reports whether blk is an opaque reasoning item of this
+// dialect.
+func reasoningItem(blk ir.Block) bool {
+	return blk.Type == ir.BlockOpaque && blk.Opaque != nil &&
+		blk.Opaque.Dialect == DialectName && blk.Opaque.Kind == kindReasoning
 }
 
 func encodeToolResult(blk ir.Block, req *ir.Request) map[string]any {

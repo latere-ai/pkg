@@ -45,13 +45,13 @@ func TestLogProbsRequestRoundTrip(t *testing.T) {
 	}
 }
 
-// TestIncludeKeepsReportingWhatItCannotServe: the one entry this layer
-// answers comes off the loss report, the rest stay on it.
+// TestIncludeKeepsReportingWhatItCannotServe: the entries this layer
+// answers come off the loss report, the rest stay on it.
 func TestIncludeKeepsReportingWhatItCannotServe(t *testing.T) {
 	req := decode(t, `{"model":"m","input":"hi",
-		"include":["message.output_text.logprobs","reasoning.encrypted_content"]}`)
-	if !req.LogProbs {
-		t.Fatal("logprobs include was not honored")
+		"include":["message.output_text.logprobs","reasoning.encrypted_content","file_search_call.results"]}`)
+	if !req.LogProbs || !req.ReasoningReplay {
+		t.Fatalf("served include entries were not honored: logprobs %v, reasoning %v", req.LogProbs, req.ReasoningReplay)
 	}
 	if !slices.Contains(req.Loss.Strings(), "include") {
 		t.Fatalf("an unservable include entry vanished: %v", req.Loss.Strings())

@@ -67,15 +67,20 @@ func TestDecodeRequestCodexShape(t *testing.T) {
 	if len(req.System) != 1 || req.System[0].Text != "You are Codex" {
 		t.Fatalf("instructions wrong: %+v", req.System)
 	}
-	// user, assistant(2 tool calls), user(2 tool results + trailing
-	// text — consecutive same-role items coalesce into one turn).
+	// user, assistant(reasoning item + 2 tool calls), user(2 tool
+	// results + trailing text), since consecutive same-role items
+	// coalesce into one turn.
 	if len(req.Messages) != 3 {
 		t.Fatalf("want 3 messages, got %d: %+v", len(req.Messages), req.Messages)
 	}
 	asst := req.Messages[1]
-	if asst.Role != ir.RoleAssistant || len(asst.Blocks) != 2 ||
-		asst.Blocks[0].ToolUse.ID != "call_1" || asst.Blocks[1].ToolUse.ID != "call_2" {
+	if asst.Role != ir.RoleAssistant || len(asst.Blocks) != 3 ||
+		asst.Blocks[1].ToolUse.ID != "call_1" || asst.Blocks[2].ToolUse.ID != "call_2" {
 		t.Fatalf("folded tool calls wrong: %+v", asst)
+	}
+	if op := asst.Blocks[0].Opaque; asst.Blocks[0].Type != ir.BlockOpaque || op.Dialect != DialectName ||
+		op.Kind != "reasoning" || string(op.Raw) != `{"type":"reasoning","summary":[],"encrypted_content":"opaque"}` {
+		t.Fatalf("reasoning item not kept as opaque: %+v", asst.Blocks[0])
 	}
 	results := req.Messages[2]
 	if results.Role != ir.RoleUser || len(results.Blocks) != 3 ||
@@ -94,10 +99,13 @@ func TestDecodeRequestCodexShape(t *testing.T) {
 		t.Fatalf("tool choice wrong: %+v", req.ToolChoice)
 	}
 	loss := req.Loss.Fields()
-	for _, want := range []ir.LossField{"reasoning", "reasoning.summary", "tools.strict", "tools.web_search"} {
+	for _, want := range []ir.LossField{"reasoning.summary", "tools.strict", "tools.web_search"} {
 		if !slices.Contains(loss, want) {
 			t.Fatalf("loss %v missing %q", loss, want)
 		}
+	}
+	if slices.Contains(loss, ir.LossReasoningItems) {
+		t.Fatalf("a carried reasoning item is reported lost: %v", loss)
 	}
 }
 
@@ -377,6 +385,7 @@ func FuzzDecodeRequest(f *testing.F) {
 	f.Add([]byte(`{"model":"m","input":"hi"}`))
 	f.Add([]byte(`{"model":"m","input":[{"type":"function_call","call_id":"c","name":"f","arguments":"{}"}]}`))
 	f.Add([]byte(`{"model":"m","input":"hi","top_logprobs":2,"include":["message.output_text.logprobs"]}`))
+	f.Add([]byte(`{"model":"m","include":["reasoning.encrypted_content"],"input":[{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"gAAAAABo"},{"type":"reasoning","id":"rs_2"}]}`))
 	f.Add([]byte(`{`))
 	f.Fuzz(func(t *testing.T, body []byte) {
 		_, _ = NewFrontend().DecodeRequest(body) // must not panic

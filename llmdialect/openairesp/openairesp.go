@@ -5,11 +5,14 @@
 // llmdialect, the wire shape Codex speaks. It ships both codecs, and
 // only the stateless subset: requests carrying previous_response_id or
 // store:true are rejected, since the translation layer stores nothing.
-// Reasoning items a caller sends cannot be replayed across providers
-// (their content is provider-encrypted) and land in the loss report.
-// The backend keeps the reasoning items a model returns as opaque
-// blocks when the request asked (ir.Request.ReasoningReplay), and
-// replays those to this dialect as they came.
+// Reasoning items travel as opaque blocks of this dialect: the backend
+// keeps the ones a model returns when the request asked
+// (ir.Request.ReasoningReplay, which the frontend sets from include
+// reasoning.encrypted_content), the frontend writes them back to its
+// caller as the output items they were and reads the ones a caller
+// sends back, and the backend replays them to this dialect as they
+// came. Their content is provider-encrypted, so a backend of another
+// dialect drops them into the loss report.
 //
 // The frontend (caller side, openairesp.go) lets Codex point at the
 // compat surface. The backend (upstream side, backend.go) drives a
@@ -197,9 +200,12 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 // member is what makes the response carry any.
 const includeLogProbs = "message.output_text.logprobs"
 
-// decodeInclude reads the include list. The one entry this layer can
-// serve is honored; the rest name response parts that exist only in
-// the upstream's own store and land in the loss report.
+// decodeInclude reads the include list. The two entries this layer can
+// serve are honored: the logprobs one sets ir.Request.LogProbs, and the
+// reasoning one sets ir.Request.ReasoningReplay, which asks the backend
+// for reasoning the next request can carry back. The rest name response
+// parts that exist only in the upstream's own store and land in the
+// loss report.
 func decodeInclude(req *ir.Request, raw json.RawMessage) {
 	var want []string
 	if err := json.Unmarshal(raw, &want); err != nil {
@@ -207,11 +213,14 @@ func decodeInclude(req *ir.Request, raw json.RawMessage) {
 		return
 	}
 	for _, w := range want {
-		if w == includeLogProbs {
+		switch w {
+		case includeLogProbs:
 			req.LogProbs = true
-			continue
+		case includeReasoning:
+			req.ReasoningReplay = true
+		default:
+			req.Loss.Add(ir.LossInclude)
 		}
-		req.Loss.Add(ir.LossInclude)
 	}
 }
 
@@ -232,12 +241,23 @@ type respItem struct {
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`
 	Output    string `json:"output"`
+	// reasoning field.
+	EncryptedContent string `json:"encrypted_content"`
 }
 
 // decodeInput accepts the string form (one user message) and the item
 // list. Consecutive function_call items fold into one assistant turn
 // and consecutive function_call_output items into one user turn (the
 // Anthropic layout the IR uses).
+//
+// A reasoning item with its encrypted_content is kept as an opaque
+// block of kind reasoning in the assistant turn where it stands, in the
+// form ir.Opaque documents, so the backend replays it verbatim to a
+// Responses upstream and every other backend drops it with
+// ir.LossOpaque. A reasoning item without encrypted_content is dropped
+// with ir.LossReasoningItems: it names an item only the upstream's
+// store could resolve, and this surface stores nothing, so replaying it
+// would turn a lossy item into a request the upstream rejects.
 func decodeInput(req *ir.Request, raw json.RawMessage) error {
 	if len(raw) == 0 {
 		return nil
@@ -247,7 +267,7 @@ func decodeInput(req *ir.Request, raw json.RawMessage) error {
 		req.Messages = append(req.Messages, ir.Message{Role: ir.RoleUser, Blocks: []ir.Block{{Type: ir.BlockText, Text: s}}})
 		return nil
 	}
-	var items []respItem
+	var items []json.RawMessage
 	if err := json.Unmarshal(raw, &items); err != nil {
 		return fmt.Errorf("openairesp: input must be a string or item array")
 	}
@@ -267,7 +287,11 @@ func decodeInput(req *ir.Request, raw json.RawMessage) error {
 		pending.Blocks = append(pending.Blocks, blk)
 	}
 
-	for i, item := range items {
+	for i, rawItem := range items {
+		var item respItem
+		if err := json.Unmarshal(rawItem, &item); err != nil {
+			return fmt.Errorf("openairesp: input[%d]: item must be an object", i)
+		}
 		switch item.Type {
 		case "", "message":
 			role, blocks, err := decodeMessageItem(item, req)
@@ -290,8 +314,15 @@ func decodeInput(req *ir.Request, raw json.RawMessage) error {
 				Blocks:    []ir.Block{{Type: ir.BlockText, Text: item.Output}},
 			}})
 		case "reasoning":
-			// Provider-encrypted; cannot be replayed across providers.
-			req.Loss.Add(ir.LossReasoningItems)
+			if item.EncryptedContent == "" {
+				req.Loss.Add(ir.LossReasoningItems)
+				continue
+			}
+			blk, err := reasoningBlock(rawItem)
+			if err != nil {
+				return fmt.Errorf("openairesp: input[%d]: %w", i, err)
+			}
+			appendBlock(ir.RoleAssistant, blk)
 		default:
 			req.Loss.Add(ir.LossInputTypeOf(item.Type))
 		}
@@ -393,10 +424,14 @@ func decodeToolChoice(raw json.RawMessage) (*ir.ToolChoice, error) {
 
 // buildOutput renders IR blocks as Responses output items. Text blocks
 // coalesce into a single message item; thinking becomes a reasoning
-// item with a summary; tool calls become function_call items. Other
-// blocks, opaque ones included, have no output item here.
-func buildOutput(id string, blocks []ir.Block, probs []ir.TokenLogProb) []map[string]any {
-	var output []map[string]any
+// item with a summary; tool calls become function_call items; an
+// opaque reasoning item of this dialect is written as it came, where it
+// stands. A thinking block right before such an item is that item's
+// summary, as the backend decodes the pair, and the item carries it, so
+// it has no item of its own. Other blocks, opaque ones of other
+// dialects or kinds included, have no output item here.
+func buildOutput(id string, blocks []ir.Block, probs []ir.TokenLogProb) ([]any, error) {
+	output := []any{}
 	var texts []string
 	itemID := func(prefix string) string {
 		return fmt.Sprintf("%s_%s_%d", prefix, id, len(output))
@@ -414,12 +449,15 @@ func buildOutput(id string, blocks []ir.Block, probs []ir.TokenLogProb) []map[st
 		})
 		texts = nil
 	}
-	for _, b := range blocks {
+	for i, b := range blocks {
 		switch b.Type {
 		case ir.BlockText:
 			texts = append(texts, b.Text)
 		case ir.BlockThinking:
 			flushText()
+			if summaryOf(blocks, i) {
+				continue
+			}
 			output = append(output, map[string]any{
 				"type": "reasoning", "id": itemID("rs"),
 				"summary": []map[string]any{{"type": "summary_text", "text": b.Text}},
@@ -434,13 +472,19 @@ func buildOutput(id string, blocks []ir.Block, probs []ir.TokenLogProb) []map[st
 				"type": "function_call", "id": itemID("fc"), "status": "completed",
 				"call_id": b.ToolUse.ID, "name": b.ToolUse.Name, "arguments": args,
 			})
+		case ir.BlockOpaque:
+			if !reasoningItem(b) {
+				continue
+			}
+			if len(b.Opaque.Raw) == 0 {
+				return nil, fmt.Errorf("openairesp: opaque block carries no item")
+			}
+			flushText()
+			output = append(output, b.Opaque.Raw)
 		}
 	}
 	flushText()
-	if output == nil {
-		output = []map[string]any{}
-	}
-	return output
+	return output, nil
 }
 
 // encodeUsage renders IR usage in the Responses shape: input_tokens
@@ -464,7 +508,11 @@ func encodeUsage(u ir.Usage) map[string]any {
 	}
 }
 
-func responseEnvelope(resp *ir.Response) map[string]any {
+func responseEnvelope(resp *ir.Response) (map[string]any, error) {
+	output, err := buildOutput(resp.ID, resp.Blocks, resp.LogProbs)
+	if err != nil {
+		return nil, err
+	}
 	status := "completed"
 	var incomplete any
 	if resp.StopReason == ir.StopMaxTokens {
@@ -477,15 +525,19 @@ func responseEnvelope(resp *ir.Response) map[string]any {
 		"created_at":         0,
 		"status":             status,
 		"model":              resp.Model,
-		"output":             buildOutput(resp.ID, resp.Blocks, resp.LogProbs),
+		"output":             output,
 		"incomplete_details": incomplete,
 		"usage":              encodeUsage(resp.Usage),
-	}
+	}, nil
 }
 
 // EncodeResponse renders an IR response as a Responses API body.
 func (*Frontend) EncodeResponse(resp *ir.Response) ([]byte, error) {
-	return json.Marshal(responseEnvelope(resp))
+	envelope, err := responseEnvelope(resp)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(envelope)
 }
 
 // encodeLogProbs renders the per-token sequence this dialect declares.
@@ -534,6 +586,18 @@ func encodeTokenBytes(b []byte) any {
 // w. The Responses protocol requires complete items in its .done and
 // response.completed payloads, so the encoder accumulates the output
 // as it streams (bounded by the response size).
+//
+// An opaque reasoning item of this dialect is streamed as the output
+// item it is: response.output_item.added with its head (id, type, an
+// empty summary), then response.output_item.done with the item as it
+// came. A thinking block right before one is that item's summary, as
+// the backend decodes the pair, so the two share one output item: the
+// thinking block's added frame and summary deltas open it, and the done
+// frame carries the opaque item in place of the summary alone. The
+// thinking item's done frame therefore waits for the next event, which
+// says whether an item follows. The added frame names the item by a
+// synthetic id, since the upstream's id arrives only with the item; a
+// client takes the item from the done frame, as the backend does.
 func (*Frontend) NewEventEncoder(w io.Writer) ir.EventEncoder {
 	return &eventEncoder{w: sse.NewWriter(w)}
 }
@@ -552,11 +616,19 @@ type eventEncoder struct {
 	probsAcc    []ir.TokenLogProb
 	toolID      string
 	toolName    string
-	done        []map[string]any // completed output items, in order
+	opaqueRaw   json.RawMessage // the open opaque item, nil when it is not written
+	held        map[string]any  // a finished thinking item whose done frame waits
+	done        []any           // completed output items, in order
 }
 
 // Encode writes the SSE event(s) for one IR event.
 func (e *eventEncoder) Encode(ev ir.Event) error {
+	if e.held != nil && (ev.Type != ir.EventBlockStart || ev.Block == nil || !reasoningItem(*ev.Block)) {
+		if err := e.finishItem(e.held); err != nil {
+			return err
+		}
+		e.held = nil
+	}
 	switch ev.Type {
 	case ir.EventMessageStart:
 		e.id = "resp_" + ev.ID
@@ -577,6 +649,7 @@ func (e *eventEncoder) Encode(ev ir.Event) error {
 		e.textAcc.Reset()
 		e.argsAcc.Reset()
 		e.probsAcc = nil
+		e.opaqueRaw = nil
 		switch ev.Block.Type {
 		case ir.BlockText:
 			e.itemID = fmt.Sprintf("msg_%d", e.outputIndex)
@@ -606,10 +679,7 @@ func (e *eventEncoder) Encode(ev ir.Event) error {
 				"item":         map[string]any{"type": "reasoning", "id": e.itemID, "summary": []any{}},
 			})
 		case ir.BlockOpaque:
-			// Kept for replay to the backend that produced it; the
-			// caller's request never asked for such items, so no output
-			// item is written and its block_stop closes nothing.
-			return nil
+			return e.openOpaque(*ev.Block)
 		default:
 			return fmt.Errorf("openairesp: block type %q not streamable", ev.Block.Type)
 		}
@@ -664,17 +734,49 @@ func (e *eventEncoder) Encode(ev ir.Event) error {
 	}
 }
 
-func (e *eventEncoder) doneOutput() []map[string]any {
+func (e *eventEncoder) doneOutput() []any {
 	if e.done == nil {
-		return []map[string]any{}
+		return []any{}
 	}
 	return e.done
 }
 
+// openOpaque starts an opaque block. Only a reasoning item of this
+// dialect is written; any other opaque block is kept for replay to the
+// backend that produced it, has no output item here, and its block_stop
+// closes nothing. A thinking item held open is the item's summary, and
+// its added frame already opened the item.
+func (e *eventEncoder) openOpaque(blk ir.Block) error {
+	if !reasoningItem(blk) {
+		return nil
+	}
+	if len(blk.Opaque.Raw) == 0 {
+		return fmt.Errorf("openairesp: opaque block carries no item")
+	}
+	e.opaqueRaw = blk.Opaque.Raw
+	if e.held != nil {
+		e.held = nil
+		return nil
+	}
+	var head struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(blk.Opaque.Raw, &head); err != nil {
+		return fmt.Errorf("openairesp: reasoning item: %w", err)
+	}
+	e.itemID = head.ID
+	return e.write("response.output_item.added", map[string]any{
+		"output_index": e.outputIndex,
+		"item":         map[string]any{"type": "reasoning", "id": head.ID, "summary": []any{}},
+	})
+}
+
 // closeItem emits the .done events for the open block and records the
-// completed item for response.completed.
+// completed item for response.completed. A thinking item is held
+// instead, until the next event says whether a reasoning item carries
+// it.
 func (e *eventEncoder) closeItem() error {
-	var item map[string]any
+	var item any
 	switch e.openKind {
 	case ir.BlockText:
 		text := e.textAcc.String()
@@ -700,11 +802,25 @@ func (e *eventEncoder) closeItem() error {
 		item = map[string]any{"type": "function_call", "id": e.itemID, "status": "completed",
 			"call_id": e.toolID, "name": e.toolName, "arguments": args}
 	case ir.BlockThinking:
-		item = map[string]any{"type": "reasoning", "id": e.itemID,
+		e.held = map[string]any{"type": "reasoning", "id": e.itemID,
 			"summary": []map[string]any{{"type": "summary_text", "text": e.textAcc.String()}}}
+		e.openKind = ""
+		return nil
+	case ir.BlockOpaque:
+		if e.opaqueRaw == nil {
+			e.openKind = ""
+			return nil
+		}
+		item = e.opaqueRaw
 	default:
 		return nil
 	}
+	return e.finishItem(item)
+}
+
+// finishItem writes the done frame of the item at the current output
+// index and records it for response.completed.
+func (e *eventEncoder) finishItem(item any) error {
 	if err := e.write("response.output_item.done", map[string]any{
 		"output_index": e.outputIndex, "item": item,
 	}); err != nil {
@@ -713,6 +829,7 @@ func (e *eventEncoder) closeItem() error {
 	e.done = append(e.done, item)
 	e.outputIndex++
 	e.openKind = ""
+	e.opaqueRaw = nil
 	return nil
 }
 

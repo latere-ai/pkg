@@ -298,3 +298,208 @@ func TestOpaqueReasoningDroppedForOtherDialects(t *testing.T) {
 		}
 	}
 }
+
+// responsesTranslator is a Responses client in front of a Responses
+// upstream, the path a Responses client of the gateway takes to an
+// OpenAI reasoning model.
+func responsesTranslator() *Translator {
+	return &Translator{Frontend: openairesp.NewFrontend(), Backend: openairesp.NewBackend()}
+}
+
+// clientTurn is the Responses request that continues the conversation
+// after an assistant turn the client got back: the prior output items
+// as they came, then the tool's result. The first item is indented and
+// holds a <, as a client may write it, so the decoder has to bring it
+// into the form ir.Opaque documents.
+func clientTurn(t *testing.T, items ...json.RawMessage) []byte {
+	t.Helper()
+	input := []json.RawMessage{json.RawMessage(`{"type":"message","role":"user","content":"list the files"}`)}
+	input = append(input, items...)
+	input = append(input, json.RawMessage(`{"type":"function_call_output","call_id":"call_Qm3tW9","output":"a.txt\nb.txt"}`))
+	body, err := json.Marshal(map[string]any{
+		"model":   "gpt-5.6-sol",
+		"include": []string{"reasoning.encrypted_content"},
+		"input":   input,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
+}
+
+// indentedItem is a reasoning item written by a client with indentation
+// and a < in its summary; canonicalItem is the same item in the form
+// ir.Opaque documents.
+const (
+	indentedItem = `{
+		"id": "rs_1",
+		"type": "reasoning",
+		"summary": [{"type": "summary_text", "text": "a < b"}],
+		"encrypted_content": "gAAAAABo"
+	}`
+	canonicalItem = `{"id":"rs_1","type":"reasoning","summary":[{"type":"summary_text","text":"a \u003c b"}],"encrypted_content":"gAAAAABo"}`
+)
+
+var priorCall = json.RawMessage(`{"type":"function_call","call_id":"call_Qm3tW9","name":"shell","arguments":"{\"cmd\":\"ls\"}"}`)
+
+// A Responses client's request that asks for encrypted reasoning and
+// carries a prior reasoning item reaches a Responses upstream with the
+// ask and the item: include and store false upstream, the item in its
+// input where the client put it, with nothing lost.
+func TestResponsesClientReplaysReasoningUpstream(t *testing.T) {
+	out, req, err := responsesTranslator().Request(clientTurn(t, json.RawMessage(indentedItem), priorCall))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if losses := req.Loss.Strings(); losses != nil {
+		t.Fatalf("loss = %v, want none", losses)
+	}
+	var wire struct {
+		Input   []json.RawMessage `json:"input"`
+		Include []string          `json:"include"`
+		Store   *bool             `json:"store"`
+	}
+	if err := json.Unmarshal(out, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if len(wire.Input) != 4 || string(wire.Input[1]) != canonicalItem {
+		t.Fatalf("upstream input = %s", out)
+	}
+	if !slices.Equal(wire.Include, []string{"reasoning.encrypted_content"}) || wire.Store == nil || *wire.Store {
+		t.Fatalf("include = %v, store = %v", wire.Include, wire.Store)
+	}
+}
+
+// A reasoning item an upstream returns reaches the Responses client as
+// the output item it was, byte for byte, alone (its summary travels
+// inside it), and the client's next request replays it upstream
+// unchanged: Responses in, Responses out keeps the reasoning across
+// turns.
+func TestResponsesClientKeepsReasoningFromResponse(t *testing.T) {
+	body := readFixture(t, "reasoning_response.json")
+	client, err := responsesTranslator().Response(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire struct {
+		Output []json.RawMessage `json:"output"`
+	}
+	if err := json.Unmarshal(client, &wire); err != nil {
+		t.Fatal(err)
+	}
+	item := respondedReasoningItem(t, body)
+	if len(wire.Output) != 2 || !bytes.Equal(wire.Output[0], item) {
+		t.Fatalf("client output = %s\nwant the reasoning item %s first, then the call", client, item)
+	}
+	assertReplayedFromClient(t, wire.Output, item)
+}
+
+// The same holds for a streamed turn: the reasoning item's
+// output_item.done frame to the client carries the item exactly as the
+// upstream frame did, response.completed lists it once, and the next
+// request replays it.
+func TestResponsesClientKeepsReasoningFromStream(t *testing.T) {
+	sse := readFixture(t, "reasoning_stream.sse")
+	var buf bytes.Buffer
+	if err := responsesTranslator().Stream(&buf, bytes.NewReader(sse)); err != nil {
+		t.Fatal(err)
+	}
+	item := streamedReasoningItem(t, sse)
+	if got := streamedReasoningItem(t, buf.Bytes()); !bytes.Equal(got, item) {
+		t.Fatalf("client done frame item = %s\nwant %s", got, item)
+	}
+	var output []json.RawMessage
+	for line := range strings.SplitSeq(buf.String(), "\n") {
+		data, ok := strings.CutPrefix(line, "data: ")
+		if !ok {
+			continue
+		}
+		var frame struct {
+			Type     string `json:"type"`
+			Response struct {
+				Output []json.RawMessage `json:"output"`
+			} `json:"response"`
+		}
+		if err := json.Unmarshal([]byte(data), &frame); err != nil {
+			t.Fatal(err)
+		}
+		if frame.Type == "response.completed" {
+			output = frame.Response.Output
+		}
+	}
+	if len(output) != 2 || !bytes.Equal(output[0], item) {
+		t.Fatalf("completed output = %s", output)
+	}
+	assertReplayedFromClient(t, output, item)
+}
+
+// assertReplayedFromClient sends the client's output items back as the
+// next request's input and checks the upstream gets the reasoning item
+// byte for byte, with nothing lost.
+func assertReplayedFromClient(t *testing.T, output []json.RawMessage, item []byte) {
+	t.Helper()
+	out, req, err := responsesTranslator().Request(clientTurn(t, output...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if losses := req.Loss.Strings(); losses != nil {
+		t.Fatalf("next turn loss = %v, want none", losses)
+	}
+	var wire struct {
+		Input []json.RawMessage `json:"input"`
+	}
+	if err := json.Unmarshal(out, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if len(wire.Input) != 4 || !bytes.Equal(wire.Input[1], item) {
+		t.Fatalf("next turn upstream input = %s\nwant the reasoning item %s second", out, item)
+	}
+}
+
+// Toward an upstream of another dialect the client's reasoning item is
+// dropped as an opaque block and reported, and nothing of it reaches
+// the body. The replay ask needs nothing on the Messages side, whose
+// thinking blocks carry their signatures, and is reported on the Chat
+// side, which has no replayable reasoning.
+func TestResponsesClientReasoningToOtherDialects(t *testing.T) {
+	for _, tc := range []struct {
+		be   Backend
+		loss []ir.LossField
+	}{
+		{anthropic.NewBackend(anthropic.BackendOptions{}), []ir.LossField{ir.LossOpaque}},
+		{openaichat.NewBackend(openaichat.BackendOptions{}), []ir.LossField{ir.LossOpaque, ir.LossReasoningReplay}},
+	} {
+		tr := &Translator{Frontend: openairesp.NewFrontend(), Backend: tc.be}
+		out, req, err := tr.Request(clientTurn(t, json.RawMessage(indentedItem), priorCall))
+		if err != nil {
+			t.Fatalf("%s: %v", tc.be.Name(), err)
+		}
+		got := req.Loss.Fields()
+		slices.Sort(got)
+		if !slices.Equal(got, tc.loss) {
+			t.Errorf("%s: loss = %v, want %v", tc.be.Name(), got, tc.loss)
+		}
+		for _, trace := range []string{"rs_1", "gAAAAABo", "encrypted_content"} {
+			if strings.Contains(string(out), trace) {
+				t.Errorf("%s: body carries %q:\n%s", tc.be.Name(), trace, out)
+			}
+		}
+	}
+}
+
+// A reasoning item without encrypted_content names an item only the
+// upstream's store could resolve; the surface stores nothing, so the
+// item is reported lost rather than sent to be rejected.
+func TestResponsesClientReasoningWithoutContent(t *testing.T) {
+	out, req, err := responsesTranslator().Request(clientTurn(t,
+		json.RawMessage(`{"id":"rs_2","type":"reasoning","summary":[]}`), priorCall))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := req.Loss.Fields(); !slices.Equal(got, []ir.LossField{ir.LossReasoningItems}) {
+		t.Fatalf("loss = %v, want %v", got, ir.LossReasoningItems)
+	}
+	if strings.Contains(string(out), "rs_2") {
+		t.Fatalf("upstream body carries the item:\n%s", out)
+	}
+}

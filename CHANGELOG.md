@@ -10,6 +10,34 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Changed
+
+- `llmdialect/openairesp`: the Responses frontend keeps a reasoning
+  model's reasoning across turns, so a Responses client of the gateway
+  no longer loses it on the way to an OpenAI Responses upstream. `include:
+  ["reasoning.encrypted_content"]` sets `ir.Request.ReasoningReplay`
+  instead of recording `include` loss. An input item of type `reasoning`
+  that carries `encrypted_content` becomes an opaque block of dialect
+  `openai-responses` and kind `reasoning` in the assistant turn where it
+  stands, its JSON in the form `ir.Opaque` documents, so the backend
+  replays it as the client sent it and the other backends drop it with
+  `ir.LossOpaque` (`opaque`) instead of `reasoning`. A reasoning item
+  without `encrypted_content` is still dropped with
+  `ir.LossReasoningItems`: only the upstream's store could resolve it,
+  and this surface stores nothing. `EncodeResponse` writes such an opaque
+  block back as the output item it was, byte for byte, where it stands,
+  and a thinking block right before it no longer gets a reasoning item
+  of its own, since the item carries its summary. The stream does the
+  same: the thinking block's `response.output_item.added` and summary
+  deltas open the item, its `response.output_item.done` carries the
+  item as it came, and `response.completed` lists it; a reasoning item
+  without a thinking block before it gets an `output_item.added` with its
+  id and an empty summary. The `output_item.done` of a thinking block is
+  written when the next event arrives, not at its `block_stop`. The
+  `added` frame names the item by a synthetic id, since the upstream's
+  id arrives only with the item; take the item from the `done` frame.
+  Opaque blocks of other dialects or kinds are still left out.
+
 ## v0.88.0 - 2026-09-27
 
 ### Added

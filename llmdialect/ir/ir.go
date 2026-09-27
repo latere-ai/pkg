@@ -102,8 +102,11 @@ type Block struct {
 // re-emits Raw unchanged at the block's position; a backend of any other
 // dialect drops the block and records LossOpaque. The lux codecs carry
 // the block unchanged in both directions, because the lux dialect is
-// the IR on the wire; the other frontends drop it from the responses
-// and streams they encode. In a stream the block is a BlockStart whose
+// the IR on the wire. A frontend of Dialect writes an item of a kind it
+// knows back to its caller as the item it was and decodes the one its
+// caller sends back, so the item also survives a caller of that
+// dialect; the other frontends drop the block from the responses and
+// streams they encode. In a stream the block is a BlockStart whose
 // header carries the whole payload, followed by its BlockStop.
 type Opaque struct {
 	// Dialect is the dialect that produced the item.
@@ -337,13 +340,14 @@ type Request struct {
 	TopLogProbs int
 
 	// ReasoningReplay asks for the model's reasoning in a form a later
-	// request to the same dialect can replay. The Responses backend
-	// writes include reasoning.encrypted_content with store false, and
-	// each reasoning item that comes back with its encrypted_content is
-	// kept as a BlockOpaque, after the thinking block of its summary
-	// when it has one. The Messages backend needs no ask, since its
-	// thinking blocks carry their signatures. The Chat backend has no
-	// replayable reasoning to return and records LossReasoningReplay.
+	// request to the same dialect can replay. The Responses frontend
+	// sets it from include reasoning.encrypted_content. The Responses
+	// backend writes that include with store false, and each reasoning
+	// item that comes back with its encrypted_content is kept as a
+	// BlockOpaque, after the thinking block of its summary when it has
+	// one. The Messages backend needs no ask, since its thinking blocks
+	// carry their signatures. The Chat backend has no replayable
+	// reasoning to return and records LossReasoningReplay.
 	ReasoningReplay bool
 
 	// Loss accumulates fields dropped or approximated during decode

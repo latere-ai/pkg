@@ -6,10 +6,12 @@ package openairesp
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 
+	"latere.ai/x/pkg/llmdialect/internal/sse"
 	"latere.ai/x/pkg/llmdialect/ir"
 )
 
@@ -111,51 +113,311 @@ func TestBackendRejectsMalformedOpaque(t *testing.T) {
 	}
 }
 
-// The frontend's callers never asked for opaque items, so a response
-// and a stream carry none, and the stream's output indices stay dense.
-func TestFrontendSkipsOpaque(t *testing.T) {
-	raw, err := NewFrontend().EncodeResponse(&ir.Response{ID: "r1", Blocks: []ir.Block{
-		ownOpaque(ownItem), {Type: ir.BlockText, Text: "yes"},
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(raw), "rs_1") {
-		t.Fatalf("response carries the opaque item:\n%s", raw)
-	}
-
+// encodeStream runs events through the frontend's stream encoder and
+// returns the frames it wrote.
+func encodeStream(t *testing.T, events ...ir.Event) []sse.Event {
+	t.Helper()
 	var buf bytes.Buffer
 	enc := NewFrontend().NewEventEncoder(&buf)
-	blk := ownOpaque(ownItem)
-	for _, ev := range []ir.Event{
-		{Type: ir.EventMessageStart, ID: "r1", Model: "m"},
-		{Type: ir.EventBlockStart, Index: 0, Block: &blk},
-		{Type: ir.EventBlockStop, Index: 0},
-		{Type: ir.EventBlockStart, Index: 1, Block: &ir.Block{Type: ir.BlockText}},
-		{Type: ir.EventTextDelta, Index: 1, Delta: "yes"},
-		{Type: ir.EventBlockStop, Index: 1},
-	} {
+	for _, ev := range events {
 		if err := enc.Encode(ev); err != nil {
 			t.Fatal(err)
 		}
 	}
-	out := buf.String()
-	if strings.Contains(out, "rs_1") {
-		t.Fatalf("stream carries the opaque item:\n%s", out)
-	}
-	for _, f := range readFrames(t, out) {
-		if f.Name != "response.output_item.added" {
+	return readFrames(t, buf.String())
+}
+
+// outputFrame is the head of a response.output_item.added or .done
+// frame, with its item raw.
+type outputFrame struct {
+	name  string
+	index int
+	item  json.RawMessage
+}
+
+func outputFrames(t *testing.T, frames []sse.Event) []outputFrame {
+	t.Helper()
+	var out []outputFrame
+	for _, f := range frames {
+		if f.Name != "response.output_item.added" && f.Name != "response.output_item.done" {
 			continue
 		}
-		var added struct {
-			OutputIndex int `json:"output_index"`
+		var wire struct {
+			OutputIndex int             `json:"output_index"`
+			Item        json.RawMessage `json:"item"`
 		}
-		if err := json.Unmarshal(f.Data, &added); err != nil {
+		if err := json.Unmarshal(f.Data, &wire); err != nil {
 			t.Fatal(err)
 		}
-		if added.OutputIndex != 0 {
-			t.Fatalf("text item at output_index %d, want 0", added.OutputIndex)
+		out = append(out, outputFrame{f.Name, wire.OutputIndex, wire.Item})
+	}
+	return out
+}
+
+// completedOutput is the output list of the stream's final
+// response.completed or response.incomplete frame.
+func completedOutput(t *testing.T, frames []sse.Event) []json.RawMessage {
+	t.Helper()
+	last := frames[len(frames)-1]
+	var wire struct {
+		Response struct {
+			Output []json.RawMessage `json:"output"`
+		} `json:"response"`
+	}
+	if err := json.Unmarshal(last.Data, &wire); err != nil {
+		t.Fatal(err)
+	}
+	return wire.Response.Output
+}
+
+// responseOutput is the output list of an encoded response body.
+func responseOutput(t *testing.T, body []byte) []json.RawMessage {
+	t.Helper()
+	var wire struct {
+		Output []json.RawMessage `json:"output"`
+	}
+	if err := json.Unmarshal(body, &wire); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, body)
+	}
+	return wire.Output
+}
+
+func itemType(t *testing.T, item json.RawMessage) string {
+	t.Helper()
+	var head struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(item, &head); err != nil {
+		t.Fatal(err)
+	}
+	return head.Type
+}
+
+// Opaque blocks of another dialect, and of this dialect with a kind
+// that is not reasoning, have no output item: a response and a stream
+// carry none of them, and the stream's output indices stay dense.
+func TestFrontendSkipsOtherOpaque(t *testing.T) {
+	foreign := ir.Block{Type: ir.BlockOpaque, Opaque: &ir.Opaque{
+		Dialect: ir.DialectAnthropicMessages, Kind: "reasoning", Raw: json.RawMessage(`{"id":"w_1"}`),
+	}}
+	otherKind := ir.Block{Type: ir.BlockOpaque, Opaque: &ir.Opaque{
+		Dialect: DialectName, Kind: "compaction", Raw: json.RawMessage(`{"id":"cmp_1","type":"compaction"}`),
+	}}
+	for name, blk := range map[string]ir.Block{"foreign": foreign, "other kind": otherKind} {
+		raw, err := NewFrontend().EncodeResponse(&ir.Response{ID: "r1", Blocks: []ir.Block{
+			{Type: ir.BlockThinking, Text: "hm"}, blk, {Type: ir.BlockText, Text: "yes"},
+		}})
+		if err != nil {
+			t.Fatal(err)
 		}
+		if strings.Contains(string(raw), "w_1") || strings.Contains(string(raw), "cmp_1") {
+			t.Fatalf("%s: response carries the opaque item:\n%s", name, raw)
+		}
+		if got := len(responseOutput(t, raw)); got != 2 {
+			t.Fatalf("%s: want the thinking and text items, got %d:\n%s", name, got, raw)
+		}
+
+		frames := encodeStream(t,
+			ir.Event{Type: ir.EventMessageStart, ID: "r1", Model: "m"},
+			ir.Event{Type: ir.EventBlockStart, Index: 0, Block: &ir.Block{Type: ir.BlockThinking}},
+			ir.Event{Type: ir.EventThinkingDelta, Index: 0, Delta: "hm"},
+			ir.Event{Type: ir.EventBlockStop, Index: 0},
+			ir.Event{Type: ir.EventBlockStart, Index: 1, Block: &blk},
+			ir.Event{Type: ir.EventBlockStop, Index: 1},
+			ir.Event{Type: ir.EventBlockStart, Index: 2, Block: &ir.Block{Type: ir.BlockText}},
+			ir.Event{Type: ir.EventTextDelta, Index: 2, Delta: "yes"},
+			ir.Event{Type: ir.EventBlockStop, Index: 2},
+			ir.Event{Type: ir.EventMessageDelta, StopReason: ir.StopEndTurn},
+		)
+		var steps []string
+		for _, f := range outputFrames(t, frames) {
+			if strings.Contains(string(f.item), "w_1") || strings.Contains(string(f.item), "cmp_1") {
+				t.Fatalf("%s: stream carries the opaque item: %s", name, f.item)
+			}
+			steps = append(steps, fmt.Sprintf("%s %d %s", f.name, f.index, itemType(t, f.item)))
+		}
+		want := []string{
+			"response.output_item.added 0 reasoning", "response.output_item.done 0 reasoning",
+			"response.output_item.added 1 message", "response.output_item.done 1 message",
+		}
+		if !reflect.DeepEqual(steps, want) {
+			t.Fatalf("%s: frames = %v\nwant %v", name, steps, want)
+		}
+	}
+}
+
+// A reasoning item of this dialect is written back as the output item
+// it was, byte for byte, where it stands. The thinking block before it
+// is its summary and has no item of its own; thinking that no item
+// follows keeps its own reasoning item.
+func TestFrontendWritesReasoningItem(t *testing.T) {
+	const second = `{"id":"rs_2","type":"reasoning","summary":[],"encrypted_content":"gAAAAABp"}`
+	raw, err := NewFrontend().EncodeResponse(&ir.Response{ID: "r1", Blocks: []ir.Block{
+		{Type: ir.BlockThinking, Text: "hm"},
+		ownOpaque(ownItem),
+		{Type: ir.BlockText, Text: "yes"},
+		ownOpaque(second),
+		{Type: ir.BlockThinking, Text: "alone"},
+		{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "call_1", Name: "shell", Args: json.RawMessage(`{}`)}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := responseOutput(t, raw)
+	var kinds []string
+	for _, it := range output {
+		kinds = append(kinds, itemType(t, it))
+	}
+	if want := []string{"reasoning", "message", "reasoning", "reasoning", "function_call"}; !reflect.DeepEqual(kinds, want) {
+		t.Fatalf("output = %v, want %v\n%s", kinds, want, raw)
+	}
+	if string(output[0]) != ownItem || string(output[2]) != second {
+		t.Fatalf("reasoning items not written verbatim:\n%s", raw)
+	}
+	if !strings.Contains(string(output[3]), `"alone"`) {
+		t.Fatalf("thinking without an item lost its own item: %s", output[3])
+	}
+}
+
+func TestFrontendRejectsEmptyReasoningItem(t *testing.T) {
+	if _, err := NewFrontend().EncodeResponse(&ir.Response{ID: "r1", Blocks: []ir.Block{ownOpaque("")}}); err == nil {
+		t.Fatal("response: want error for a reasoning item with no JSON")
+	}
+	enc := NewFrontend().NewEventEncoder(&bytes.Buffer{})
+	for name, raw := range map[string]string{"empty": "", "not an object": `"rs_1"`} {
+		blk := ownOpaque(raw)
+		if err := enc.Encode(ir.Event{Type: ir.EventBlockStart, Block: &blk}); err == nil {
+			t.Errorf("stream, %s: want error", name)
+		}
+	}
+}
+
+// In a stream the thinking block and the reasoning item after it are
+// one output item: added with the summary's deltas, then done carrying
+// the item byte for byte. A reasoning item alone gets its own added
+// frame with the item's head. response.completed lists the items as the
+// done frames carried them, and indices stay dense.
+func TestFrontendStreamsReasoningItem(t *testing.T) {
+	const second = `{"id":"rs_2","type":"reasoning","summary":[],"encrypted_content":"gAAAAABp"}`
+	first, alone := ownOpaque(ownItem), ownOpaque(second)
+	frames := encodeStream(t,
+		ir.Event{Type: ir.EventMessageStart, ID: "r1", Model: "m"},
+		ir.Event{Type: ir.EventBlockStart, Index: 0, Block: &ir.Block{Type: ir.BlockThinking}},
+		ir.Event{Type: ir.EventThinkingDelta, Index: 0, Delta: "hm"},
+		ir.Event{Type: ir.EventBlockStop, Index: 0},
+		ir.Event{Type: ir.EventBlockStart, Index: 1, Block: &first},
+		ir.Event{Type: ir.EventBlockStop, Index: 1},
+		ir.Event{Type: ir.EventBlockStart, Index: 2, Block: &alone},
+		ir.Event{Type: ir.EventBlockStop, Index: 2},
+		ir.Event{Type: ir.EventBlockStart, Index: 3, Block: &ir.Block{Type: ir.BlockText}},
+		ir.Event{Type: ir.EventTextDelta, Index: 3, Delta: "yes"},
+		ir.Event{Type: ir.EventBlockStop, Index: 3},
+		ir.Event{Type: ir.EventMessageDelta, StopReason: ir.StopEndTurn},
+		ir.Event{Type: ir.EventMessageStop},
+	)
+	var names []string
+	for _, f := range frames {
+		names = append(names, f.Name)
+	}
+	wantNames := []string{
+		"response.created", "response.in_progress",
+		"response.output_item.added", "response.reasoning_summary_text.delta", "response.output_item.done",
+		"response.output_item.added", "response.output_item.done",
+		"response.output_item.added", "response.content_part.added", "response.output_text.delta",
+		"response.output_text.done", "response.output_item.done",
+		"response.completed",
+	}
+	if !reflect.DeepEqual(names, wantNames) {
+		t.Fatalf("frames = %v\nwant %v", names, wantNames)
+	}
+	items := outputFrames(t, frames)
+	if items[0].index != 0 || items[1].index != 0 || string(items[1].item) != ownItem {
+		t.Fatalf("summary and item not one output item: %+v", items[:2])
+	}
+	if items[2].index != 1 || string(items[2].item) != `{"id":"rs_2","summary":[],"type":"reasoning"}` {
+		t.Fatalf("added frame of a lone item = %d %s", items[2].index, items[2].item)
+	}
+	if items[3].index != 1 || string(items[3].item) != second {
+		t.Fatalf("done frame of a lone item = %d %s", items[3].index, items[3].item)
+	}
+	if items[4].index != 2 || items[5].index != 2 {
+		t.Fatalf("message item at %d/%d, want 2", items[4].index, items[5].index)
+	}
+	output := completedOutput(t, frames)
+	if len(output) != 3 || string(output[0]) != ownItem || string(output[1]) != second {
+		t.Fatalf("completed output = %s", output)
+	}
+	for i, f := range frames {
+		var head struct {
+			Seq int `json:"sequence_number"`
+		}
+		if err := json.Unmarshal(f.Data, &head); err != nil || head.Seq != i {
+			t.Fatalf("sequence_number[%d] = %d (%v)", i, head.Seq, err)
+		}
+	}
+}
+
+// Thinking that ends the stream still gets its done frame, before the
+// response's final frame lists it.
+func TestFrontendStreamsTrailingThinking(t *testing.T) {
+	frames := encodeStream(t,
+		ir.Event{Type: ir.EventMessageStart, ID: "r1", Model: "m"},
+		ir.Event{Type: ir.EventBlockStart, Index: 0, Block: &ir.Block{Type: ir.BlockThinking}},
+		ir.Event{Type: ir.EventThinkingDelta, Index: 0, Delta: "hm"},
+		ir.Event{Type: ir.EventBlockStop, Index: 0},
+		ir.Event{Type: ir.EventMessageDelta, StopReason: ir.StopEndTurn},
+	)
+	items := outputFrames(t, frames)
+	if len(items) != 2 || items[1].name != "response.output_item.done" || !strings.Contains(string(items[1].item), `"hm"`) {
+		t.Fatalf("output frames = %+v", items)
+	}
+	if output := completedOutput(t, frames); len(output) != 1 {
+		t.Fatalf("completed output = %s", output)
+	}
+}
+
+// A caller's reasoning item with its encrypted_content is kept as an
+// opaque block of this dialect in the assistant turn where it stands,
+// in the form ir.Opaque documents: the body's indentation is gone and <
+// is escaped. One without encrypted_content names an item only the
+// upstream's store could resolve and is reported lost.
+func TestFrontendDecodesReasoningItem(t *testing.T) {
+	req := decode(t, `{"model":"m","include":["reasoning.encrypted_content"],"input":[
+		{"type":"message","role":"user","content":"hi"},
+		{"type":"message","role":"assistant","content":[{"type":"output_text","text":"looking"}]},
+		{
+			"id": "rs_1",
+			"type": "reasoning",
+			"summary": [{"type": "summary_text", "text": "a < b"}],
+			"encrypted_content": "gAAAAABo"
+		},
+		{"id":"rs_2","type":"reasoning","summary":[]},
+		{"type":"function_call","call_id":"call_1","name":"shell","arguments":"{}"},
+		{"type":"function_call_output","call_id":"call_1","output":"ok"}
+	]}`)
+	if !req.ReasoningReplay {
+		t.Fatal("include reasoning.encrypted_content did not ask for replay")
+	}
+	if want := []string{string(ir.LossReasoningItems)}; !reflect.DeepEqual(req.Loss.Strings(), want) {
+		t.Fatalf("loss = %v, want %v", req.Loss.Strings(), want)
+	}
+	if len(req.Messages) != 3 {
+		t.Fatalf("messages = %+v", req.Messages)
+	}
+	asst := req.Messages[1]
+	if got := blockKinds(asst.Blocks); asst.Role != ir.RoleAssistant || !reflect.DeepEqual(got, []string{"text", "opaque", "tool_use"}) {
+		t.Fatalf("assistant turn = %s %v", asst.Role, got)
+	}
+	op := asst.Blocks[1].Opaque
+	const want = `{"id":"rs_1","type":"reasoning","summary":[{"type":"summary_text","text":"a \u003c b"}],"encrypted_content":"gAAAAABo"}`
+	if op.Dialect != DialectName || op.Kind != "reasoning" || string(op.Raw) != want {
+		t.Fatalf("opaque = %s %s %s", op.Dialect, op.Kind, op.Raw)
+	}
+}
+
+func TestFrontendRejectsNonObjectItem(t *testing.T) {
+	if _, err := NewFrontend().DecodeRequest([]byte(`{"model":"m","input":["rs_1"]}`)); err == nil {
+		t.Fatal("want error for an input item that is not an object")
 	}
 }
 
