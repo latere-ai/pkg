@@ -113,7 +113,9 @@ func DefaultRemedies() Remedies {
 			// "command not found: echo ok".
 			Verify: "srt echo ok",
 		},
-		"bubblewrap": {Install: map[Platform][]string{
+		// The row is keyed by the program Preflight looks up. Bubblewrap's
+		// program is bwrap; the package that installs it is bubblewrap.
+		"bwrap": {Install: map[Platform][]string{
 			Linux: {"sudo apt-get install -y bubblewrap      # Debian, Ubuntu", "sudo dnf install -y bubblewrap          # Fedora, RHEL"},
 		}},
 		"socat": {Install: map[Platform][]string{

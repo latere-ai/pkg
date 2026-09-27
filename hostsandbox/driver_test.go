@@ -88,7 +88,10 @@ func TestPreflightRefusalsAreActionable(t *testing.T) {
 		want     []string
 	}{
 		{"no srt on macOS", Darwin, found(), []string{"(srt: missing)", "npm install -g @anthropic-ai/sandbox-runtime"}},
-		{"no bubblewrap on Linux", Linux, found("srt", "rg"), []string{"(bubblewrap, socat: missing)", "apt-get"}},
+		{"no bubblewrap on Linux", Linux, found("srt", "rg"), []string{"(bwrap, socat: missing)", "bwrap is not installed", "apt-get install -y bubblewrap"}},
+		// Bubblewrap's program is bwrap. An executable named after the
+		// package satisfies nothing, and the refusal names the program.
+		{"bubblewrap under its package name on Linux", Linux, found("srt", "rg", "bubblewrap", "socat"), []string{"(bwrap: missing)", "apt-get install -y bubblewrap"}},
 		{"no ripgrep on macOS", Darwin, found("srt"), []string{"(rg: missing)", "brew install ripgrep"}},
 		{"no required program", Darwin, found("srt", "rg"), []string{"(claude: missing)", "npm install -g @anthropic-ai/claude-code", "claude --version"}},
 	}
@@ -114,6 +117,10 @@ func TestPreflightRefusalsAreActionable(t *testing.T) {
 	ready := New(Config{Platform: Darwin, Look: found("srt", "rg", "claude"), Requires: []string{" claude "}, Home: "/home/x"})
 	if err := ready.Preflight(context.Background()); err != nil {
 		t.Fatalf("a ready machine was refused: %v", err)
+	}
+	linux := New(Config{Platform: Linux, Look: found("srt", "bwrap", "socat", "rg"), Home: "/home/x"})
+	if err := linux.Preflight(context.Background()); err != nil {
+		t.Fatalf("a Linux machine with bwrap installed was refused: %v", err)
 	}
 	if ready.Name() != Host || ready.Capabilities().NetworkModes[NetworkOpen] || !ready.Capabilities().NetworkModes[NetworkAllowlist] {
 		t.Errorf("declaration = %s %+v", ready.Name(), ready.Capabilities())
@@ -492,9 +499,9 @@ func TestLaunchRefusesWhatItCannotRun(t *testing.T) {
 	// Every dependency of every platform resolves, because these cases are
 	// about what Launch refuses before it starts a process, not about
 	// readiness, and Launch runs Preflight first. A driver that named only
-	// the macOS dependencies would be refused on Linux for a missing
-	// bubblewrap before it read the stage at all.
-	driver := New(Config{Home: t.TempDir(), Look: found("srt", "rg", "bubblewrap", "socat"), Lookup: os.LookupEnv})
+	// the macOS dependencies would be refused on Linux for a missing bwrap
+	// before it read the stage at all.
+	driver := New(Config{Home: t.TempDir(), Look: found("srt", "rg", "bwrap", "socat"), Lookup: os.LookupEnv})
 	spec := stage(t, dir)
 	if _, err := driver.Launch(context.Background(), spec); err == nil || !strings.Contains(err.Error(), "argv") {
 		t.Fatalf("a stage with no command was launched: %v", err)
@@ -511,7 +518,7 @@ func TestLaunchRefusesWhatItCannotRun(t *testing.T) {
 	// A stage with no PATH resolves nothing, not even srt, whose shebang
 	// needs node. It used to fail with exit code 127 and an empty log.
 	for _, lookup := range []func(string) (string, bool){nil, func(name string) (string, bool) { return "/x", name == "HOME" }} {
-		noPath := New(Config{Home: t.TempDir(), Look: found("srt", "rg", "bubblewrap", "socat"), Lookup: lookup})
+		noPath := New(Config{Home: t.TempDir(), Look: found("srt", "rg", "bwrap", "socat"), Lookup: lookup})
 		_, err := noPath.Launch(context.Background(), stage(t, dir, "/bin/sh"))
 		if !errors.Is(err, ErrNotReady) || !strings.Contains(err.Error(), "PATH") {
 			t.Fatalf("Launch with no PATH = %v", err)

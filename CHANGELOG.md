@@ -10,6 +10,18 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Fixed
+
+- `hostsandbox.Driver.Preflight` looks for `bwrap` on Linux, the program
+  the `bubblewrap` package installs. It looked for an executable named
+  `bubblewrap`, which no package provides, so a Linux machine with
+  Bubblewrap installed was refused. The refusal names the component
+  `bwrap`, and `DefaultRemedies` keys its row `bwrap`, with install lines
+  that still name the `bubblewrap` package. A consumer whose `Config.Look`
+  mapped `bubblewrap` to `bwrap` can drop the mapping; one that adds or
+  replaces that row through `Config.Remedies`, or calls
+  `Remedies.NotReady` with `bubblewrap`, names `bwrap` instead.
+
 ## v0.89.1 - 2026-09-27
 
 ### Fixed

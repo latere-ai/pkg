@@ -67,8 +67,9 @@
 //
 // # Readiness
 //
-// Preflight resolves srt, the executables srt needs on the platform
-// (bubblewrap, socat and ripgrep on Linux, ripgrep on macOS), and
+// Preflight resolves srt, the executables srt needs on the platform (bwrap,
+// which the bubblewrap package installs, socat and ripgrep on Linux, ripgrep
+// on macOS), and
 // Config.Requires. When one is missing it returns a *NotReadyError whose
 // Remediation holds the install commands for the platform and whose
 // Alternative is Config.Alternative verbatim, so the consumer names its own

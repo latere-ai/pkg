@@ -76,12 +76,13 @@ func New(config Config) *Driver {
 // Name is the driver's canonical name.
 func (d *Driver) Name() DriverName { return Host }
 
-// dependencies returns the executables srt itself needs on a platform. macOS
-// uses Seatbelt, which is part of the operating system; Linux needs bubblewrap
-// and a socket relay. Both need ripgrep.
+// dependencies returns the executables srt itself needs on a platform, by the
+// name each is looked up under. macOS uses Seatbelt, which is part of the
+// operating system; Linux needs bwrap, the program the bubblewrap package
+// installs, and socat, a socket relay. Both need ripgrep.
 func dependencies(platform Platform) []string {
 	if platform == Linux {
-		return []string{"bubblewrap", "socat", "rg"}
+		return []string{"bwrap", "socat", "rg"}
 	}
 	return []string{"rg"}
 }

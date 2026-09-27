@@ -24,8 +24,10 @@ func TestEveryRefusalNamesItsRemedy(t *testing.T) {
 			// The verify command is bare words, not a quoted string. srt
 			// accepts a string only after -c.
 			[]string{"srt is not installed", "npm install -g @anthropic-ai/sandbox-runtime", "brew install ripgrep", "Then confirm with: srt echo ok"}},
-		{Linux, []string{"bubblewrap", "socat"},
-			[]string{"apt-get install -y bubblewrap", "dnf install -y socat"}},
+		// The component is the program, bwrap; the install line names the
+		// package, bubblewrap.
+		{Linux, []string{"bwrap", "socat"},
+			[]string{"bwrap is not installed", "apt-get install -y bubblewrap", "dnf install -y bubblewrap", "dnf install -y socat"}},
 		{Linux, []string{"rg"}, []string{"apt-get install -y ripgrep"}},
 	}
 	for _, c := range cases {
@@ -59,7 +61,7 @@ func TestAnUntabulatedComponentStillSaysSomething(t *testing.T) {
 	if !strings.Contains(message, "some-new-tool") || !strings.Contains(message, "PATH") {
 		t.Fatalf("no fallback instruction:\n%s", message)
 	}
-	message = remedies.NotReady(Darwin, Host, ConditionMissing, "bubblewrap").Error()
+	message = remedies.NotReady(Darwin, Host, ConditionMissing, "bwrap").Error()
 	if !strings.Contains(message, "packaged for linux") {
 		t.Fatalf("cross-platform fallback lost the platform it is packaged for:\n%s", message)
 	}
@@ -131,5 +133,20 @@ func TestTheErrorPrintsEverySectionItCarries(t *testing.T) {
 	}
 	if CurrentPlatform() == "" {
 		t.Fatal("no current platform")
+	}
+}
+
+// TestEveryDependencyHasARemedy checks that every executable Preflight looks
+// up on a platform has a row under the same name with install lines for that
+// platform, so a refusal for a missing dependency never falls back to the
+// generic line.
+func TestEveryDependencyHasARemedy(t *testing.T) {
+	remedies := DefaultRemedies()
+	for _, platform := range []Platform{Darwin, Linux} {
+		for _, name := range append([]string{"srt"}, dependencies(platform)...) {
+			if len(remedies[name].Install[platform]) == 0 {
+				t.Errorf("%s looks up %s, which has no install lines for it", platform, name)
+			}
+		}
 	}
 }
