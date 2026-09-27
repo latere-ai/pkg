@@ -1,0 +1,47 @@
+{
+  "id": "resp_68d7a1c2e4f0819a",
+  "object": "response",
+  "created_at": 1758960000,
+  "status": "completed",
+  "error": null,
+  "incomplete_details": null,
+  "model": "gpt-5.6-sol",
+  "output": [
+    {
+      "id": "rs_68d7a1c3b1d8819a",
+      "type": "reasoning",
+      "summary": [
+        {
+          "type": "summary_text",
+          "text": "**Listing the directory**\n\nThe user wants the files here, so I will run ls."
+        }
+      ],
+      "encrypted_content": "gAAAAABo2k7R0Yq1nH3Zc8mVbW4sJt6uXe2LdKf9Pa0QwRy5TgIhUjOlMn7BvCxDz1Ae3Fs+Gk/Hl8Jm4No2Pq6Rs0Tu9Vw1Xy3Za5bC7dE9fG2hI4jK6lM8nO0pQ2rS4tU6vW8xY0zA=="
+    },
+    {
+      "id": "fc_68d7a1c4a2b0819a",
+      "type": "function_call",
+      "status": "completed",
+      "arguments": "{\"cmd\":\"ls\"}",
+      "call_id": "call_Qm3tW9",
+      "name": "shell"
+    }
+  ],
+  "parallel_tool_calls": true,
+  "reasoning": {
+    "effort": "medium",
+    "summary": "auto"
+  },
+  "store": false,
+  "usage": {
+    "input_tokens": 312,
+    "input_tokens_details": {
+      "cached_tokens": 0
+    },
+    "output_tokens": 96,
+    "output_tokens_details": {
+      "reasoning_tokens": 64
+    },
+    "total_tokens": 408
+  }
+}

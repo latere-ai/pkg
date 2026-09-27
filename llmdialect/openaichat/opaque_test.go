@@ -98,3 +98,21 @@ func TestEventEncoderSkipsOpaque(t *testing.T) {
 		t.Fatalf("stream = %s", out)
 	}
 }
+
+// Chat Completions returns no reasoning a later request can carry back,
+// so the ask is recorded as loss and nothing reaches the body.
+func TestBackendReportsReasoningReplay(t *testing.T) {
+	req := &ir.Request{Model: "qwen3", ReasoningReplay: true, Messages: []ir.Message{
+		{Role: ir.RoleUser, Blocks: []ir.Block{{Type: ir.BlockText, Text: "hi"}}},
+	}}
+	raw, err := NewBackend(BackendOptions{}).EncodeRequest(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{string(ir.LossReasoningReplay)}; !reflect.DeepEqual(req.Loss.Strings(), want) {
+		t.Fatalf("loss = %v, want %v", req.Loss.Strings(), want)
+	}
+	if strings.Contains(string(raw), "reasoning") || strings.Contains(string(raw), "store") {
+		t.Fatalf("body = %s", raw)
+	}
+}

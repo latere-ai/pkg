@@ -5,8 +5,11 @@
 // Responses dialect: encoding an IR request as a Responses API body,
 // decoding the response, and decoding the Responses SSE stream into
 // canonical IR events. It is the inverse of the frontend in
-// openairesp.go and, like it, operates statelessly — full history is
-// encoded per request, no previous_response_id / store. Its reason to
+// openairesp.go and, like it, operates statelessly: full history is
+// encoded per request, never a previous_response_id. A request that
+// asks for ir.Request.ReasoningReplay is sent with store false, and the
+// reasoning items that come back are kept as opaque blocks, which this
+// backend replays as the input items they were. Its reason to
 // exist is that OpenAI reasoning models require the Responses API for
 // function tools (Chat Completions rejects tools + reasoning_effort),
 // so a Messages- or Chat-dialect client can only drive them through
@@ -147,14 +150,25 @@ func (*Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 		}
 		body["text"] = map[string]any{"format": format}
 	}
+	var include []string
 	if req.LogProbs {
 		// The count alone reports nothing on this dialect: include is
 		// what makes a response carry logprobs, and top_logprobs only
 		// sizes the alternatives, so the pair travels together.
-		body["include"] = []string{includeLogProbs}
+		include = append(include, includeLogProbs)
 		if req.TopLogProbs > 0 {
 			body["top_logprobs"] = req.TopLogProbs
 		}
+	}
+	if req.ReasoningReplay {
+		// encrypted_content is what lets a later request carry the item
+		// back without the upstream holding it, so nothing is stored
+		// there either.
+		include = append(include, includeReasoning)
+		body["store"] = false
+	}
+	if include != nil {
+		body["include"] = include
 	}
 	if req.UserID != "" {
 		// The Responses API caps `user` at 64 chars; harnesses send
@@ -212,7 +226,7 @@ func encodeMessage(m ir.Message, req *ir.Request) ([]any, error) {
 		}
 	}
 
-	for _, blk := range m.Blocks {
+	for i, blk := range m.Blocks {
 		if blk.CacheHint {
 			req.Loss.Add(ir.LossCacheControl)
 		}
@@ -238,7 +252,13 @@ func encodeMessage(m ir.Message, req *ir.Request) ([]any, error) {
 			flush()
 			out = append(out, encodeToolResult(blk, req))
 		case ir.BlockThinking, ir.BlockRedactedThinking:
-			// Provider-encrypted; never replayed toward a fresh backend.
+			// A thinking block right before a reasoning item of this
+			// dialect is that item's summary, as the decoders emit the
+			// pair, and the item carries the summary itself. Any other
+			// thinking has no item to travel in and is never replayed.
+			if blk.Type == ir.BlockThinking && summaryOf(m.Blocks, i) {
+				continue
+			}
 			req.Loss.Add(ir.LossThinking)
 		case ir.BlockOpaque:
 			switch {
@@ -258,6 +278,17 @@ func encodeMessage(m ir.Message, req *ir.Request) ([]any, error) {
 	}
 	flush()
 	return out, nil
+}
+
+// summaryOf reports whether blocks[i] is followed by a reasoning item of
+// this dialect, the item whose summary it holds.
+func summaryOf(blocks []ir.Block, i int) bool {
+	if i+1 >= len(blocks) {
+		return false
+	}
+	next := blocks[i+1].Opaque
+	return blocks[i+1].Type == ir.BlockOpaque && next != nil &&
+		next.Dialect == DialectName && next.Kind == kindReasoning
 }
 
 func encodeToolResult(blk ir.Block, req *ir.Request) map[string]any {
@@ -299,6 +330,29 @@ type respOutputItem struct {
 	Summary []struct {
 		Text string `json:"text"`
 	} `json:"summary"`
+	EncryptedContent string `json:"encrypted_content"`
+}
+
+// kindReasoning is the Kind of the opaque block a reasoning item is
+// kept as.
+const kindReasoning = "reasoning"
+
+// includeReasoning is the include member that makes a reasoning item
+// carry its encrypted_content.
+const includeReasoning = "reasoning.encrypted_content"
+
+// reasoningBlock keeps a reasoning item as an opaque block for replay,
+// in the form ir.Opaque documents. The decoders call it only for an
+// item with encrypted_content: that member arrives only when the
+// request asked for it, and without it a request that stores nothing
+// upstream has nothing to resolve the item by, so a caller that did not
+// ask sees no opaque block.
+func reasoningBlock(item json.RawMessage) (ir.Block, error) {
+	raw, err := json.Marshal(item)
+	if err != nil {
+		return ir.Block{}, fmt.Errorf("openairesp: reasoning item: %w", err)
+	}
+	return ir.Block{Type: ir.BlockOpaque, Opaque: &ir.Opaque{Dialect: DialectName, Kind: kindReasoning, Raw: raw}}, nil
 }
 
 // respUsage is the Responses usage object. input_tokens_details and its
@@ -367,9 +421,9 @@ func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 		IncompleteDetails *struct {
 			Reason string `json:"reason"`
 		} `json:"incomplete_details"`
-		Output []respOutputItem `json:"output"`
-		Usage  *respUsage       `json:"usage"`
-		Error  *respError       `json:"error"`
+		Output []json.RawMessage `json:"output"`
+		Usage  *respUsage        `json:"usage"`
+		Error  *respError        `json:"error"`
 	}
 	if err := json.Unmarshal(body, &wire); err != nil {
 		return nil, fmt.Errorf("openairesp: invalid response JSON: %w", err)
@@ -380,7 +434,11 @@ func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 
 	resp := &ir.Response{ID: strings.TrimPrefix(wire.ID, "resp_"), Model: wire.Model}
 	sawTool := false
-	for _, item := range wire.Output {
+	for _, rawItem := range wire.Output {
+		var item respOutputItem
+		if err := json.Unmarshal(rawItem, &item); err != nil {
+			return nil, fmt.Errorf("openairesp: invalid response JSON: %w", err)
+		}
 		switch item.Type {
 		case "reasoning":
 			var texts []string
@@ -389,6 +447,13 @@ func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 			}
 			if t := strings.Join(texts, "\n\n"); t != "" {
 				resp.Blocks = append(resp.Blocks, ir.Block{Type: ir.BlockThinking, Text: t})
+			}
+			if item.EncryptedContent != "" {
+				blk, err := reasoningBlock(rawItem)
+				if err != nil {
+					return nil, err
+				}
+				resp.Blocks = append(resp.Blocks, blk)
 			}
 		case "message":
 			for _, t := range decodeOutputText(item.Content) {
@@ -608,15 +673,24 @@ func (d *EventDecoder) consume(data []byte) error {
 			Usage *respUsage `json:"usage"`
 			Error *respError `json:"error"`
 		} `json:"response"`
-		Item struct {
-			Type   string `json:"type"`
-			CallID string `json:"call_id"`
-			Name   string `json:"name"`
-		} `json:"item"`
-		Error *respError `json:"error"`
+		Item  json.RawMessage `json:"item"`
+		Error *respError      `json:"error"`
 	}
 	if err := json.Unmarshal(data, &ev); err != nil {
 		return fmt.Errorf("openairesp: invalid stream frame: %w", err)
+	}
+	// The item stays raw beside its typed head, so a finished reasoning
+	// item is kept as this frame carried it.
+	var item struct {
+		Type             string `json:"type"`
+		CallID           string `json:"call_id"`
+		Name             string `json:"name"`
+		EncryptedContent string `json:"encrypted_content"`
+	}
+	if len(ev.Item) > 0 {
+		if err := json.Unmarshal(ev.Item, &item); err != nil {
+			return fmt.Errorf("openairesp: invalid stream frame: %w", err)
+		}
 	}
 	if ev.Error != nil {
 		d.finished = true
@@ -637,7 +711,7 @@ func (d *EventDecoder) consume(data []byte) error {
 		}
 	case "response.output_item.added":
 		d.closeOpen()
-		switch ev.Item.Type {
+		switch item.Type {
 		case "message":
 			d.open = true
 			d.pending = append(d.pending, ir.Event{Type: ir.EventBlockStart, Index: d.openIdx, Block: &ir.Block{Type: ir.BlockText}})
@@ -645,7 +719,7 @@ func (d *EventDecoder) consume(data []byte) error {
 			d.open = true
 			d.sawTool = true
 			d.pending = append(d.pending, ir.Event{Type: ir.EventBlockStart, Index: d.openIdx, Block: &ir.Block{
-				Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: ev.Item.CallID, Name: ev.Item.Name},
+				Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: item.CallID, Name: item.Name},
 			}})
 		case "reasoning":
 			d.open = true
@@ -665,6 +739,20 @@ func (d *EventDecoder) consume(data []byte) error {
 		if d.open {
 			d.pending = append(d.pending, ir.Event{Type: ir.EventBlockStop, Index: d.openIdx})
 			d.open = false
+			d.openIdx++
+		}
+		if item.Type == "reasoning" && item.EncryptedContent != "" {
+			// The item is complete only now, so its opaque block follows
+			// the summary's thinking block: one header with the payload,
+			// then its stop.
+			blk, err := reasoningBlock(ev.Item)
+			if err != nil {
+				return err
+			}
+			d.pending = append(d.pending,
+				ir.Event{Type: ir.EventBlockStart, Index: d.openIdx, Block: &blk},
+				ir.Event{Type: ir.EventBlockStop, Index: d.openIdx},
+			)
 			d.openIdx++
 		}
 	case "response.completed", "response.incomplete":

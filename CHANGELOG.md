@@ -32,6 +32,23 @@ under **Removed** or **Changed** with what to do about it.
   it so they stay dense. `ir.PrefixCacheKeys` hashes the block's
   dialect, kind and raw JSON after the fields every block contributes;
   keys of requests without opaque blocks are unchanged.
+- `llmdialect/ir.Request.ReasoningReplay` asks for the model's reasoning
+  in a form the next request of the conversation can carry back, which
+  a reasoning model served over OpenAI Responses needs to keep its
+  reasoning across turns. The `openairesp` backend then writes `include:
+  ["reasoning.encrypted_content"]` (beside the logprobs member when that
+  is asked too) and `store: false`, and keeps each reasoning item that
+  comes back with `encrypted_content` as an opaque block of kind
+  `reasoning`, from the response body and from the stream's
+  `response.output_item.done` frame alike, after the summary's thinking
+  block. Encoding a request replays such a block as its input item, and
+  the thinking block right before it travels inside the item instead of
+  being reported as `thinking` loss. A reasoning item without
+  `encrypted_content` is not kept, so a caller that does not ask sees
+  the same blocks and streams as before. The lux dialect carries the
+  ask as `reasoning_replay`; the `anthropic` backend needs no ask, since
+  its thinking blocks carry their signatures; the `openaichat` backend
+  records `ir.LossReasoningReplay` (`reasoning_replay`).
 
 ## v0.87.0 - 2026-09-27
 

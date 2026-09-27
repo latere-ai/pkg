@@ -31,17 +31,18 @@ func (*Backend) Name() ir.Dialect { return DialectName }
 // dialect is the IR, so encoding is lossless.
 func (*Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 	wire := Request{
-		Model:         req.Model,
-		MaxTokens:     req.MaxTokens,
-		Temperature:   req.Temperature,
-		TopP:          req.TopP,
-		TopK:          req.TopK,
-		StopSequences: req.StopSequences,
-		Stream:        req.Stream,
-		UserID:        req.UserID,
-		CacheKey:      req.CacheKey,
-		LogProbs:      req.LogProbs,
-		TopLogProbs:   req.TopLogProbs,
+		Model:           req.Model,
+		MaxTokens:       req.MaxTokens,
+		Temperature:     req.Temperature,
+		TopP:            req.TopP,
+		TopK:            req.TopK,
+		StopSequences:   req.StopSequences,
+		Stream:          req.Stream,
+		UserID:          req.UserID,
+		CacheKey:        req.CacheKey,
+		LogProbs:        req.LogProbs,
+		TopLogProbs:     req.TopLogProbs,
+		ReasoningReplay: req.ReasoningReplay,
 	}
 	for _, b := range req.System {
 		blk, err := blockFromIR(b)

@@ -280,6 +280,8 @@ func blockKinds(blocks []ir.Block) []string {
 			out = append(out, "thinking")
 		case ir.BlockToolUse:
 			out = append(out, "tool_use")
+		case ir.BlockOpaque:
+			out = append(out, "opaque")
 		}
 	}
 	return out

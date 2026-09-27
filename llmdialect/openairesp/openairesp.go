@@ -5,8 +5,11 @@
 // llmdialect, the wire shape Codex speaks. It ships both codecs, and
 // only the stateless subset: requests carrying previous_response_id or
 // store:true are rejected, since the translation layer stores nothing.
-// Reasoning items cannot be replayed across providers (their content is
-// provider-encrypted) and land in the loss report.
+// Reasoning items a caller sends cannot be replayed across providers
+// (their content is provider-encrypted) and land in the loss report.
+// The backend keeps the reasoning items a model returns as opaque
+// blocks when the request asked (ir.Request.ReasoningReplay), and
+// replays those to this dialect as they came.
 //
 // The frontend (caller side, openairesp.go) lets Codex point at the
 // compat surface. The backend (upstream side, backend.go) drives a

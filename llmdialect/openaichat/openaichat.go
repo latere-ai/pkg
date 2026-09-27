@@ -170,6 +170,11 @@ func (b *Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 			body["top_logprobs"] = req.TopLogProbs
 		}
 	}
+	if req.ReasoningReplay {
+		// Chat Completions returns no reasoning a later request can
+		// carry back.
+		req.Loss.Add(ir.LossReasoningReplay)
+	}
 	if req.Stream {
 		body["stream"] = true
 		// Always opt into the final usage chunk so gateways can meter

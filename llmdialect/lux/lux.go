@@ -44,7 +44,7 @@ var requestKeys = map[string]bool{
 	"tool_choice": true, "max_tokens": true, "temperature": true,
 	"top_p": true, "top_k": true, "stop_sequences": true, "stream": true,
 	"reasoning": true, "schema": true, "user_id": true, "cache_key": true,
-	"logprobs": true, "top_logprobs": true,
+	"logprobs": true, "top_logprobs": true, "reasoning_replay": true,
 }
 
 // DecodeRequest parses a lux request body into the IR.
@@ -82,6 +82,7 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	req.CacheKey = wire.CacheKey
 	req.LogProbs = wire.LogProbs
 	req.TopLogProbs = wire.TopLogProbs
+	req.ReasoningReplay = wire.ReasoningReplay
 	if wire.TopLogProbs < 0 {
 		return nil, fmt.Errorf("lux: top_logprobs is %d; it is a count of alternatives", wire.TopLogProbs)
 	}

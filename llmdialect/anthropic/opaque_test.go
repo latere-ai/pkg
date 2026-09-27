@@ -138,3 +138,24 @@ func TestEventEncoderRejectsReusedOpaqueIndex(t *testing.T) {
 		t.Fatal("want error for a block start at a dropped index")
 	}
 }
+
+// Messages thinking blocks carry their signatures whether asked or not,
+// so the replay ask changes nothing in the body and loses nothing.
+func TestBackendServesReasoningReplayUnasked(t *testing.T) {
+	build := func(replay bool) (*ir.Request, []byte) {
+		req := &ir.Request{Model: "claude-sonnet-5", ReasoningReplay: replay, Messages: []ir.Message{userMsg("hi")}}
+		raw, err := NewBackend(BackendOptions{}).EncodeRequest(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return req, raw
+	}
+	req, asked := build(true)
+	_, plain := build(false)
+	if losses := req.Loss.Strings(); losses != nil {
+		t.Fatalf("loss = %v", losses)
+	}
+	if !bytes.Equal(asked, plain) {
+		t.Fatalf("body changed:\n%s\nvs\n%s", asked, plain)
+	}
+}

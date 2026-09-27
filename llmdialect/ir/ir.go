@@ -336,6 +336,16 @@ type Request struct {
 	LogProbs    bool
 	TopLogProbs int
 
+	// ReasoningReplay asks for the model's reasoning in a form a later
+	// request to the same dialect can replay. The Responses backend
+	// writes include reasoning.encrypted_content with store false, and
+	// each reasoning item that comes back with its encrypted_content is
+	// kept as a BlockOpaque, after the thinking block of its summary
+	// when it has one. The Messages backend needs no ask, since its
+	// thinking blocks carry their signatures. The Chat backend has no
+	// replayable reasoning to return and records LossReasoningReplay.
+	ReasoningReplay bool
+
 	// Loss accumulates fields dropped or approximated during decode
 	// and encode.
 	Loss Loss
@@ -357,6 +367,7 @@ const (
 	LossOpaque            LossField = "opaque"
 	LossReasoningEffort   LossField = "reasoning_effort"
 	LossReasoningItems    LossField = "reasoning"
+	LossReasoningReplay   LossField = "reasoning_replay"
 	LossReasoningSummary  LossField = "reasoning.summary"
 	LossStopSequences     LossField = "stop_sequences"
 	LossTemperature       LossField = "temperature"
