@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.88.0 - 2026-09-27
+
 ### Added
 
 - `llmdialect/ir.BlockOpaque`, a content block that carries one
