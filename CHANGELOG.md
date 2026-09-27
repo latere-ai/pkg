@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.90.0 - 2026-09-27
+
 ### Fixed
 
 - `hostsandbox.Driver.Preflight` looks for `bwrap` on Linux, the program
