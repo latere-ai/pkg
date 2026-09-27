@@ -48,6 +48,46 @@ func TestModelDefaults(t *testing.T) {
 	}
 }
 
+// TestModelFigures: each wire writes the figures after the members its
+// clients read, in the members Model documents for it, with every price
+// per 1,000,000 tokens and per written; a figure left zero, and a price
+// left empty, has no member; the Google shape has no modalities or
+// prices; a list carries each entry as the entry renders it.
+func TestModelFigures(t *testing.T) {
+	m := Model{Name: "m", ContextWindow: 400000, MaxOutputTokens: 128000, InputModalities: []string{"text", "image"},
+		Pricing: &ModelPricing{Currency: "USD", Input: "1.25", Output: "10", CachedInput: "0.125", CacheWrite: "1.25"}}
+	const snake = `"pricing":{"currency":"USD","per":1000000,"input":"1.25","output":"10","cached_input":"0.125","cache_write":"1.25"}`
+	want := map[Wire]string{
+		WireOpenAI: `{"id":"m","object":"model","created":0,"owned_by":"owner",` +
+			`"context_window":400000,"max_output_tokens":128000,"input_modalities":["text","image"],` + snake + `}`,
+		WireAnthropic: `{"type":"model","id":"m","display_name":"m","created_at":"1970-01-01T00:00:00Z",` +
+			`"max_input_tokens":400000,"max_tokens":128000,"input_modalities":["text","image"],` + snake + `}`,
+		WireGoogle: `{"name":"models/m","displayName":"m","supportedGenerationMethods":["generateContent","countTokens"],` +
+			`"inputTokenLimit":400000,"outputTokenLimit":128000}`,
+		WireLux: `{"id":"m","object":"model","created":0,"owned_by":"owner",` +
+			`"contextWindow":400000,"maxOutputTokens":128000,"modalities":{"input":["text","image"]},` +
+			`"pricing":{"currency":"USD","per":1000000,"input":"1.25","output":"10","cachedInput":"0.125","cacheWrite":"1.25"}}`,
+	}
+	for w, entry := range want {
+		if got := string(ModelEntry(w, m)); got != entry+"\n" {
+			t.Errorf("%s entry:\n got %s\nwant %s", w, got, entry)
+		}
+		if got := string(ModelList(w, []Model{m})); !strings.Contains(got, entry) {
+			t.Errorf("%s list does not carry the entry: %s", w, got)
+		}
+	}
+	partial := Model{Name: "m", ContextWindow: 8192, Pricing: &ModelPricing{Input: "1", Output: "2"}}
+	for w, entry := range map[Wire]string{
+		WireOpenAI: `{"id":"m","object":"model","created":0,"owned_by":"owner","context_window":8192,"pricing":{"per":1000000,"input":"1","output":"2"}}`,
+		WireLux:    `{"id":"m","object":"model","created":0,"owned_by":"owner","contextWindow":8192,"pricing":{"per":1000000,"input":"1","output":"2"}}`,
+		WireGoogle: `{"name":"models/m","displayName":"m","supportedGenerationMethods":["generateContent","countTokens"],"inputTokenLimit":8192}`,
+	} {
+		if got := string(ModelEntry(w, partial)); got != entry+"\n" {
+			t.Errorf("%s partial:\n got %s\nwant %s", w, got, entry)
+		}
+	}
+}
+
 // TestMarshalPanicsOnABug: a value that cannot marshal is a bug in this
 // package, not a shape any wire writes, and marshal says so.
 func TestMarshalPanicsOnABug(t *testing.T) {

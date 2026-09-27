@@ -10,6 +10,26 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `llmdialect/bridge.Model` carries a model's figures, so a model list
+  can tell a client its window and its prices: `ContextWindow`,
+  `MaxOutputTokens`, `InputModalities`, and `Pricing`, a
+  `bridge.ModelPricing` of decimal strings per 1,000,000 tokens
+  (`Currency`, `Input`, `Output`, `CachedInput`, `CacheWrite`); a price
+  quoted per another count is the caller's to convert. `ModelList` and
+  `ModelEntry` write them after the members each wire's clients read:
+  OpenAI's as `context_window`, `max_output_tokens`, `input_modalities`
+  and `pricing` (`cached_input`, `cache_write`); Anthropic's as its own
+  `max_input_tokens` and `max_tokens` beside the same `input_modalities`
+  and `pricing`; Google's as its own `inputTokenLimit` and
+  `outputTokenLimit`, with no modalities or prices; the lux wire's as
+  the Lux Model kind names them, `contextWindow`, `maxOutputTokens`,
+  `modalities.input`, and `pricing` (`cachedInput`, `cacheWrite`). Every
+  pricing member writes `per: 1000000`. A zero figure or an empty price
+  is left out, so an entry without figures renders byte for byte as
+  before.
+
 ### Changed
 
 - `llmdialect/openairesp`: the Responses frontend keeps a reasoning

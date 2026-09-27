@@ -71,7 +71,9 @@
 //	f, ok := bridge.ParseEnvelope(bridge.WireOpenAI, body)
 //	frame := bridge.ErrorFrame(bridge.WireAnthropic, f)
 //
-// ModelList and ModelEntry render a wire's model list and one entry;
+// ModelList and ModelEntry render a wire's model list and one entry,
+// with the window, the output limit, the input modalities, and the
+// prices a Model carries in the members that wire names them by;
 // CountTokens estimates a request's input tokens for a wire whose
 // upstream cannot count, and CountBody renders the answer:
 //
