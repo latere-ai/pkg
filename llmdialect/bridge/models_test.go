@@ -65,8 +65,7 @@ func TestModelFigures(t *testing.T) {
 		WireGoogle: `{"name":"models/m","displayName":"m","supportedGenerationMethods":["generateContent","countTokens"],` +
 			`"inputTokenLimit":400000,"outputTokenLimit":128000}`,
 		WireLux: `{"id":"m","object":"model","created":0,"owned_by":"owner",` +
-			`"contextWindow":400000,"maxOutputTokens":128000,"modalities":{"input":["text","image"]},` +
-			`"pricing":{"currency":"USD","per":1000000,"input":"1.25","output":"10","cachedInput":"0.125","cacheWrite":"1.25"}}`,
+			`"context_window":400000,"max_output_tokens":128000,"input_modalities":["text","image"],` + snake + `}`,
 	}
 	for w, entry := range want {
 		if got := string(ModelEntry(w, m)); got != entry+"\n" {
@@ -79,7 +78,7 @@ func TestModelFigures(t *testing.T) {
 	partial := Model{Name: "m", ContextWindow: 8192, Pricing: &ModelPricing{Input: "1", Output: "2"}}
 	for w, entry := range map[Wire]string{
 		WireOpenAI: `{"id":"m","object":"model","created":0,"owned_by":"owner","context_window":8192,"pricing":{"per":1000000,"input":"1","output":"2"}}`,
-		WireLux:    `{"id":"m","object":"model","created":0,"owned_by":"owner","contextWindow":8192,"pricing":{"per":1000000,"input":"1","output":"2"}}`,
+		WireLux:    `{"id":"m","object":"model","created":0,"owned_by":"owner","context_window":8192,"pricing":{"per":1000000,"input":"1","output":"2"}}`,
 		WireGoogle: `{"name":"models/m","displayName":"m","supportedGenerationMethods":["generateContent","countTokens"],"inputTokenLimit":8192}`,
 	} {
 		if got := string(ModelEntry(w, partial)); got != entry+"\n" {

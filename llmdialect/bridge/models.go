@@ -22,10 +22,10 @@ import "time"
 //	openai     context_window    max_output_tokens  input_modalities   pricing, snake case
 //	anthropic  max_input_tokens  max_tokens         input_modalities   pricing, snake case
 //	google     inputTokenLimit   outputTokenLimit   none               none
-//	lux        contextWindow     maxOutputTokens    modalities.input   pricing, camel case
+//	lux        context_window    max_output_tokens  input_modalities   pricing, snake case
 //
-// The Anthropic and Google members are those APIs' own; the lux wire
-// names them as the Lux Model kind does.
+// The Anthropic and Google members are those APIs' own; the lux wire's
+// entry is the OpenAI one, since the lux dialect's JSON is snake case.
 type Model struct {
 	Name        string
 	DisplayName string    // the Anthropic and Google shapes
@@ -86,28 +86,6 @@ type openaiModelList struct {
 	Data   []openaiModel `json:"data"`
 }
 
-// luxModel is the OpenAI entry with the figures named as the Lux Model
-// kind names them.
-type luxModel struct {
-	ID              string         `json:"id"`
-	Object          string         `json:"object"`
-	Created         int64          `json:"created"`
-	OwnedBy         string         `json:"owned_by"`
-	ContextWindow   int            `json:"contextWindow,omitempty"`
-	MaxOutputTokens int            `json:"maxOutputTokens,omitempty"`
-	Modalities      *luxModalities `json:"modalities,omitempty"`
-	Pricing         *camelPricing  `json:"pricing,omitempty"`
-}
-
-type luxModalities struct {
-	Input []string `json:"input"`
-}
-
-type luxModelList struct {
-	Object string     `json:"object"`
-	Data   []luxModel `json:"data"`
-}
-
 type anthropicModel struct {
 	Type            string        `json:"type"`
 	ID              string        `json:"id"`
@@ -129,29 +107,11 @@ type snakePricing struct {
 	CacheWrite  string `json:"cache_write,omitempty"`
 }
 
-// camelPricing is the pricing member of the lux shape, the Lux Model
-// kind's spec.pricing.
-type camelPricing struct {
-	Currency    string `json:"currency,omitempty"`
-	Per         int    `json:"per"`
-	Input       string `json:"input,omitempty"`
-	Output      string `json:"output,omitempty"`
-	CachedInput string `json:"cachedInput,omitempty"`
-	CacheWrite  string `json:"cacheWrite,omitempty"`
-}
-
 func (p *ModelPricing) snake() *snakePricing {
 	if p == nil {
 		return nil
 	}
 	return &snakePricing{Currency: p.Currency, Per: pricePer, Input: p.Input, Output: p.Output, CachedInput: p.CachedInput, CacheWrite: p.CacheWrite}
-}
-
-func (p *ModelPricing) camel() *camelPricing {
-	if p == nil {
-		return nil
-	}
-	return &camelPricing{Currency: p.Currency, Per: pricePer, Input: p.Input, Output: p.Output, CachedInput: p.CachedInput, CacheWrite: p.CacheWrite}
 }
 
 type anthropicModelList struct {
@@ -182,16 +142,6 @@ func openaiEntry(m Model) openaiModel {
 	}
 	if !m.Created.IsZero() {
 		e.Created = m.Created.Unix()
-	}
-	return e
-}
-
-func luxEntry(m Model) luxModel {
-	o := openaiEntry(m)
-	e := luxModel{ID: o.ID, Object: o.Object, Created: o.Created, OwnedBy: o.OwnedBy,
-		ContextWindow: m.ContextWindow, MaxOutputTokens: m.MaxOutputTokens, Pricing: m.Pricing.camel()}
-	if len(m.InputModalities) > 0 {
-		e.Modalities = &luxModalities{Input: m.InputModalities}
 	}
 	return e
 }
@@ -230,16 +180,10 @@ func googleEntry(m Model) googleModel {
 // documents. A wire that is none of the four renders nil.
 func ModelList(w Wire, models []Model) []byte {
 	switch w {
-	case WireOpenAI:
+	case WireOpenAI, WireLux:
 		list := openaiModelList{Object: "list", Data: make([]openaiModel, 0, len(models))}
 		for _, m := range models {
 			list.Data = append(list.Data, openaiEntry(m))
-		}
-		return append(marshal(list), '\n')
-	case WireLux:
-		list := luxModelList{Object: "list", Data: make([]luxModel, 0, len(models))}
-		for _, m := range models {
-			list.Data = append(list.Data, luxEntry(m))
 		}
 		return append(marshal(list), '\n')
 	case WireAnthropic:
@@ -265,10 +209,8 @@ func ModelList(w Wire, models []Model) []byte {
 // newline, and nil for a wire that is none of the four.
 func ModelEntry(w Wire, m Model) []byte {
 	switch w {
-	case WireOpenAI:
+	case WireOpenAI, WireLux:
 		return append(marshal(openaiEntry(m)), '\n')
-	case WireLux:
-		return append(marshal(luxEntry(m)), '\n')
 	case WireAnthropic:
 		return append(marshal(anthropicEntry(m)), '\n')
 	case WireGoogle:
