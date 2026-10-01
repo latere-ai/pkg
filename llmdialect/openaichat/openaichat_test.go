@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -765,4 +766,42 @@ func FuzzEventDecoder(f *testing.F) {
 			}
 		}
 	})
+}
+
+// TestANativeOutputLimitIsMaxTokens: a stream an aggregator normalized,
+// captured from OpenRouter, where the model ran to its output limit
+// inside a tool call's string argument. finish_reason says tool_calls;
+// native_finish_reason says max_output_tokens, and that wins, so a
+// harness reads a response cut at the limit, not a call to run.
+func TestANativeOutputLimitIsMaxTokens(t *testing.T) {
+	raw, err := os.ReadFile("testdata/runaway-arguments.sse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := drain(t, string(raw))
+	md := events[len(events)-2]
+	if md.Type != ir.EventMessageDelta || md.StopReason != ir.StopMaxTokens {
+		t.Fatalf("message delta %+v, want max_tokens", md)
+	}
+	for _, c := range []struct {
+		finish, native string
+		want           ir.StopReason
+	}{
+		{"tool_calls", "max_output_tokens", ir.StopMaxTokens},
+		{"stop", "MAX_TOKENS", ir.StopMaxTokens},
+		{"tool_calls", "max_tokens", ir.StopMaxTokens},
+		{"stop", "length", ir.StopMaxTokens},
+		{"tool_calls", "completed", ir.StopToolUse},
+		{"stop", "", ir.StopToolUse},
+	} {
+		body := `{"id":"x","choices":[{"finish_reason":"` + c.finish + `","native_finish_reason":"` + c.native + `","message":{
+			"tool_calls":[{"id":"t","function":{"name":"f","arguments":"{}"}}]}}]}`
+		resp, err := NewBackend(BackendOptions{}).DecodeResponse([]byte(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StopReason != c.want {
+			t.Fatalf("%s/%s: %v, want %v", c.finish, c.native, resp.StopReason, c.want)
+		}
+	}
 }

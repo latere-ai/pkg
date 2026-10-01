@@ -469,8 +469,9 @@ func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 				Reasoning        json.RawMessage `json:"reasoning"`
 				ToolCalls        []wireToolCall  `json:"tool_calls"`
 			} `json:"message"`
-			LogProbs     *wireLogProbs `json:"logprobs"`
-			FinishReason string        `json:"finish_reason"`
+			LogProbs           *wireLogProbs `json:"logprobs"`
+			FinishReason       string        `json:"finish_reason"`
+			NativeFinishReason string        `json:"native_finish_reason"`
 		} `json:"choices"`
 		Usage *wireUsage `json:"usage"`
 		Error *wireError `json:"error"`
@@ -504,7 +505,7 @@ func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 	}
 	resp.LogProbs = choice.LogProbs.toIR()
 	if resp.StopReason == "" {
-		resp.StopReason = stopReason(choice.FinishReason, len(choice.Message.ToolCalls) > 0)
+		resp.StopReason = stopReason(choice.FinishReason, choice.NativeFinishReason, len(choice.Message.ToolCalls) > 0)
 	}
 	if wire.Usage != nil {
 		resp.Usage = *wire.Usage.toUsage()
@@ -543,8 +544,15 @@ func (e *wireError) Error() string {
 // stopReason maps finish_reason to the IR vocabulary. Some
 // openai-compatible runtimes report "stop" even when tool calls were
 // emitted; the presence of tool calls wins so harnesses run their tool
-// loop.
-func stopReason(finish string, hasToolCalls bool) ir.StopReason {
+// loop. A native finish reason that names the output limit wins over
+// both: an aggregator that normalizes finish_reason, as OpenRouter does,
+// reports a response cut at the limit inside a tool call's arguments as
+// tool_calls, and passes the provider's own reason in
+// native_finish_reason.
+func stopReason(finish, native string, hasToolCalls bool) ir.StopReason {
+	if atOutputLimit(native) {
+		return ir.StopMaxTokens
+	}
 	switch finish {
 	case "tool_calls", "function_call":
 		return ir.StopToolUse
@@ -558,6 +566,17 @@ func stopReason(finish string, hasToolCalls bool) ir.StopReason {
 		}
 		return ir.StopEndTurn
 	}
+}
+
+// atOutputLimit reports whether a provider's native finish reason names
+// the output limit: Chat Completions' length, the Responses API's
+// max_output_tokens, Messages' max_tokens and Gemini's MAX_TOKENS.
+func atOutputLimit(native string) bool {
+	switch strings.ToLower(native) {
+	case "length", "max_tokens", "max_output_tokens":
+		return true
+	}
+	return false
 }
 
 // NewEventDecoder returns a decoder for a Chat Completions SSE stream.
@@ -652,8 +671,9 @@ func (d *EventDecoder) consume(data []byte) error {
 				Reasoning        json.RawMessage `json:"reasoning"`
 				ToolCalls        []wireToolCall  `json:"tool_calls"`
 			} `json:"delta"`
-			LogProbs     *wireLogProbs `json:"logprobs"`
-			FinishReason string        `json:"finish_reason"`
+			LogProbs           *wireLogProbs `json:"logprobs"`
+			FinishReason       string        `json:"finish_reason"`
+			NativeFinishReason string        `json:"native_finish_reason"`
 		} `json:"choices"`
 		Usage *wireUsage `json:"usage"`
 		Error *wireError `json:"error"`
@@ -690,8 +710,8 @@ func (d *EventDecoder) consume(data []byte) error {
 		for _, tc := range c.Delta.ToolCalls {
 			d.consumeToolDelta(tc)
 		}
-		if c.FinishReason != "" {
-			d.stop = stopReason(c.FinishReason, len(d.toolIndex) > 0)
+		if c.FinishReason != "" || c.NativeFinishReason != "" {
+			d.stop = stopReason(c.FinishReason, c.NativeFinishReason, len(d.toolIndex) > 0)
 		}
 	}
 	return nil
