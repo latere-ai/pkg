@@ -584,6 +584,16 @@ func (*Backend) NewEventDecoder(r io.Reader) ir.EventDecoder {
 	return &EventDecoder{r: sse.NewReader(r), openTool: -1}
 }
 
+// toolCall is one tool call the stream announced, by its upstream
+// tool_calls index.
+type toolCall struct {
+	id, name string
+	// args are the arguments received so far.
+	args strings.Builder
+	// block is the call's IR block index, -1 while the call waits.
+	block int
+}
+
 // blockKind tracks which output block is currently open while decoding
 // the stream.
 type blockKind int
@@ -597,6 +607,18 @@ const (
 
 // EventDecoder converts Chat Completions chunks into canonical IR
 // events incrementally: one chunk in, zero or more events out.
+//
+// The IR stream holds one open block at a time, while Chat Completions
+// addresses each tool call's arguments by its index, so parallel calls
+// may interleave: a provider can announce every call before any
+// arguments, or alternate fragments. A call announced while the open
+// call's arguments are not yet one JSON value waits, its arguments
+// buffered, and its block starts once the open call's arguments are
+// complete or the stream ends. Calls that arrive one after another, the
+// common case, stream with no wait. A call whose block a text or
+// thinking delta closed, and whose arguments continue after, still gets
+// them as args deltas for its stopped block: the IR has no place for
+// them, and a consumer that keeps blocks by index can take them.
 type EventDecoder struct {
 	r *sse.Reader
 
@@ -607,7 +629,8 @@ type EventDecoder struct {
 	open      blockKind
 	openIndex int
 	openTool  int // upstream tool_calls index of the open tool block
-	toolIndex map[int]int
+	calls     map[int]*toolCall
+	waiting   []int // upstream indexes of the calls that wait, in order
 	stop      ir.StopReason
 	usage     *ir.Usage
 }
@@ -645,6 +668,10 @@ func (d *EventDecoder) Next() (ir.Event, error) {
 
 func (d *EventDecoder) finish() {
 	d.closeOpenBlock()
+	for len(d.waiting) > 0 {
+		d.startWaiting()
+		d.closeOpenBlock()
+	}
 	d.pending = append(d.pending,
 		ir.Event{Type: ir.EventMessageDelta, StopReason: d.stopOrDefault(), Usage: d.usage},
 		ir.Event{Type: ir.EventMessageStop},
@@ -711,7 +738,7 @@ func (d *EventDecoder) consume(data []byte) error {
 			d.consumeToolDelta(tc)
 		}
 		if c.FinishReason != "" || c.NativeFinishReason != "" {
-			d.stop = stopReason(c.FinishReason, c.NativeFinishReason, len(d.toolIndex) > 0)
+			d.stop = stopReason(c.FinishReason, c.NativeFinishReason, len(d.calls) > 0)
 		}
 	}
 	return nil
@@ -736,25 +763,69 @@ func (d *EventDecoder) consumeToolDelta(tc wireToolCall) {
 	if tc.Index != nil {
 		upstream = *tc.Index
 	}
-	if d.toolIndex == nil {
-		d.toolIndex = make(map[int]int)
+	if d.calls == nil {
+		d.calls = make(map[int]*toolCall)
 	}
-	irIdx, seen := d.toolIndex[upstream]
+	c, seen := d.calls[upstream]
 	if !seen {
-		d.closeOpenBlock()
-		d.open = blockTool
-		d.openTool = upstream
-		irIdx = d.nextIndex
-		d.nextIndex++
-		d.openIndex = irIdx
-		d.toolIndex[upstream] = irIdx
-		d.pending = append(d.pending, ir.Event{Type: ir.EventBlockStart, Index: irIdx, Block: &ir.Block{
-			Type:    ir.BlockToolUse,
-			ToolUse: &ir.ToolUse{ID: tc.ID, Name: tc.Function.Name},
-		}})
+		c = &toolCall{id: tc.ID, name: tc.Function.Name, block: -1}
+		d.calls[upstream] = c
+		if len(d.waiting) > 0 || (d.open == blockTool && !d.openComplete()) {
+			d.waiting = append(d.waiting, upstream)
+		} else {
+			d.closeOpenBlock()
+			d.startTool(upstream, c)
+		}
 	}
-	if args := tc.Function.Arguments; args != "" {
-		d.pending = append(d.pending, ir.Event{Type: ir.EventArgsDelta, Index: irIdx, Delta: args})
+	args := tc.Function.Arguments
+	c.args.WriteString(args)
+	if c.block < 0 || args == "" {
+		return
+	}
+	d.pending = append(d.pending, ir.Event{Type: ir.EventArgsDelta, Index: c.block, Delta: args})
+	if upstream == d.openTool && len(d.waiting) > 0 && d.openComplete() {
+		d.closeOpenBlock()
+		d.startWaiting()
+	}
+}
+
+// openComplete reports whether the open tool call's arguments so far
+// are one JSON value, the point after which a call announced next
+// cannot be interleaved with it.
+func (d *EventDecoder) openComplete() bool {
+	c := d.calls[d.openTool]
+	return c != nil && json.Valid([]byte(c.args.String()))
+}
+
+// startTool opens the block of call c, upstream index upstream, with
+// the arguments it received while it waited.
+func (d *EventDecoder) startTool(upstream int, c *toolCall) {
+	d.open = blockTool
+	d.openTool = upstream
+	c.block = d.nextIndex
+	d.nextIndex++
+	d.openIndex = c.block
+	d.pending = append(d.pending, ir.Event{Type: ir.EventBlockStart, Index: c.block, Block: &ir.Block{
+		Type:    ir.BlockToolUse,
+		ToolUse: &ir.ToolUse{ID: c.id, Name: c.name},
+	}})
+	if c.args.Len() > 0 {
+		d.pending = append(d.pending, ir.Event{Type: ir.EventArgsDelta, Index: c.block, Delta: c.args.String()})
+	}
+}
+
+// startWaiting opens the blocks of the waiting calls in order: each
+// whose arguments are already complete is closed and the next opened,
+// and the first that is not stays open, the rest waiting behind it.
+func (d *EventDecoder) startWaiting() {
+	for len(d.waiting) > 0 {
+		upstream := d.waiting[0]
+		d.waiting = d.waiting[1:]
+		d.startTool(upstream, d.calls[upstream])
+		if len(d.waiting) == 0 || !d.openComplete() {
+			return
+		}
+		d.closeOpenBlock()
 	}
 }
 

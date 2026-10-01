@@ -805,3 +805,97 @@ func TestANativeOutputLimitIsMaxTokens(t *testing.T) {
 		}
 	}
 }
+
+// grammatical checks the IR stream grammar, one block open at a time and
+// every delta for the open block, and returns each tool block's
+// arguments by its IR index.
+func grammatical(t *testing.T, events []ir.Event) map[int]string {
+	t.Helper()
+	open := -1
+	args := map[int]string{}
+	for i, ev := range events {
+		switch ev.Type {
+		case ir.EventBlockStart:
+			if open >= 0 {
+				t.Fatalf("event %d: block %d starts while %d is open", i, ev.Index, open)
+			}
+			open = ev.Index
+			if ev.Block.Type == ir.BlockToolUse {
+				args[ev.Index] = ""
+			}
+		case ir.EventArgsDelta, ir.EventTextDelta, ir.EventThinkingDelta:
+			if ev.Index != open {
+				t.Fatalf("event %d: %s for block %d while %d is open", i, ev.Type, ev.Index, open)
+			}
+			if ev.Type == ir.EventArgsDelta {
+				args[ev.Index] += ev.Delta
+			}
+		case ir.EventBlockStop:
+			if ev.Index != open {
+				t.Fatalf("event %d: stop of block %d while %d is open", i, ev.Index, open)
+			}
+			open = -1
+		}
+	}
+	if open >= 0 {
+		t.Fatalf("block %d never stopped", open)
+	}
+	return args
+}
+
+// TestInterleavedToolCallsFollowTheGrammar: parallel calls whose
+// arguments interleave decode to one block per call, in the calls'
+// order, each with its whole arguments, and no delta for a block that
+// is not open.
+func TestInterleavedToolCallsFollowTheGrammar(t *testing.T) {
+	head := func(i int, id, name string) string {
+		return chunk(`{"id":"c1","choices":[{"index":0,"delta":{"tool_calls":[{"index":` + string(rune('0'+i)) + `,"id":"` + id + `","function":{"name":"` + name + `","arguments":""}}]}}]}`)
+	}
+	frag := func(i int, a string) string {
+		b, err := json.Marshal(a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return chunk(`{"id":"c1","choices":[{"index":0,"delta":{"tool_calls":[{"index":` + string(rune('0'+i)) + `,"function":{"arguments":` + string(b) + `}}]}}]}`)
+	}
+	end := chunk(`{"id":"c1","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`) + chunk(`[DONE]`)
+	for _, c := range []struct {
+		name   string
+		stream string
+		want   map[int]string
+		ids    []string
+	}{
+		{"one after another", head(0, "a", "f") + frag(0, `{"x":1}`) + head(1, "b", "g") + frag(1, `{"y":2}`) + end,
+			map[int]string{0: `{"x":1}`, 1: `{"y":2}`}, []string{"a", "b"}},
+		{"headers first", head(0, "a", "f") + head(1, "b", "g") + head(2, "c", "h") +
+			frag(0, `{"x":`) + frag(0, `1}`) + frag(1, `{"y":2}`) + frag(2, `{"z":3}`) + end,
+			map[int]string{0: `{"x":1}`, 1: `{"y":2}`, 2: `{"z":3}`}, []string{"a", "b", "c"}},
+		{"alternating fragments", head(0, "a", "f") + frag(0, `{"x":`) + head(1, "b", "g") + frag(1, `{"y":`) +
+			frag(0, `1}`) + frag(1, `2}`) + end,
+			map[int]string{0: `{"x":1}`, 1: `{"y":2}`}, []string{"a", "b"}},
+		{"later calls complete first", head(0, "a", "f") + frag(0, `{"x":`) + head(1, "b", "g") + frag(1, `{"y":2}`) +
+			head(2, "c", "h") + frag(2, `{"z":3}`) + frag(0, `1}`) + end,
+			map[int]string{0: `{"x":1}`, 1: `{"y":2}`, 2: `{"z":3}`}, []string{"a", "b", "c"}},
+		{"an open call that never completes", head(0, "a", "f") + frag(0, `{"x":"runaway`) + head(1, "b", "g") + frag(1, `{"y":2}`) + end,
+			map[int]string{0: `{"x":"runaway`, 1: `{"y":2}`}, []string{"a", "b"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			events := drain(t, c.stream)
+			if got := grammatical(t, events); !reflect.DeepEqual(got, c.want) {
+				t.Fatalf("arguments %v, want %v", got, c.want)
+			}
+			var ids []string
+			for _, ev := range events {
+				if ev.Type == ir.EventBlockStart {
+					ids = append(ids, ev.Block.ToolUse.ID)
+				}
+			}
+			if !slices.Equal(ids, c.ids) {
+				t.Fatalf("calls %v, want %v", ids, c.ids)
+			}
+			if md := events[len(events)-2]; md.StopReason != ir.StopToolUse {
+				t.Fatalf("stop %v", md.StopReason)
+			}
+		})
+	}
+}
