@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.90.2 - 2026-10-01
+
 - OpenTelemetry Go v1.46.0, with its log modules v0.22.0, the slog bridge v0.20.1 and otelhttp v0.71.0, past GO-2026-6615 and GO-2026-6505. `otel` names its resource with semantic conventions v1.43.0, the SDK's own schema since v1.46.0; with v1.41.0 the two schemas conflict and telemetry export is disabled at start.
 ## v0.90.1 - 2026-10-01
 
