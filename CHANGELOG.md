@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.90.1 - 2026-10-01
+
 ### Fixed
 
 - `llmdialect/openaichat` reads `native_finish_reason`, the provider's
