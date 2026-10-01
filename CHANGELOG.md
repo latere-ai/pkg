@@ -10,6 +10,24 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Fixed
+
+- `llmdialect/openaichat` reads `native_finish_reason`, the provider's
+  own finish reason an aggregator such as OpenRouter passes beside the
+  normalized one. A native reason naming the output limit (`length`,
+  `max_tokens`, `max_output_tokens`, `MAX_TOKENS`) is `max_tokens`
+  whatever `finish_reason` says. OpenRouter reports a response cut at the
+  limit inside a tool call's arguments as `tool_calls`, so the call
+  reached the caller as complete with arguments that are not JSON.
+- The `llmdialect/openaichat` stream decoder keeps the IR grammar for
+  parallel tool calls whose arguments interleave: a call announced while
+  the open call's arguments are not yet one JSON value waits, buffered,
+  until they are or the stream ends, and its block then starts with what
+  it received. It closed a call's block when the next call began, so
+  arguments that arrived after for the earlier call were args deltas for
+  a block already stopped, which a consumer that checks the grammar
+  refuses. Calls that arrive one after another stream as before.
+
 ## v0.90.0 - 2026-09-27
 
 ### Fixed
