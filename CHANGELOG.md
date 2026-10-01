@@ -10,6 +10,7 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+- OpenTelemetry Go v1.46.0, with its log modules v0.22.0, the slog bridge v0.20.1 and otelhttp v0.71.0, past GO-2026-6615 and GO-2026-6505.
 ## v0.90.1 - 2026-10-01
 
 ### Fixed
