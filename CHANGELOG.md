@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.91.0 - 2026-10-02
+
 ### Added
 
 - `verdict`: the vocabulary every decision point shares when it decides
