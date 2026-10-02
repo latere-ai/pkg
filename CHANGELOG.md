@@ -10,6 +10,20 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `verdict`: the vocabulary every decision point shares when it decides
+  whether an automated action runs. `Allow`, `Flag`, `Ask` and `Block`
+  in their order; `Least`, under which a verdict outside the four counts
+  as `Block`, so composition only narrows; `OnFailure`, which is never
+  more permissive than `Ask`; and `Decide`, which applies a ceiling and
+  random review sampling to a suggested verdict and returns the verdict
+  with the probability, fixed before the action runs, that a person sees
+  it. Recording that probability with each decision is what lets any
+  decision source's error rate be estimated without bias. A harness that
+  ranks verdicts itself should move to `Least`: ranking an unknown
+  verdict by its index in a list makes it the most permissive.
+
 ## v0.90.2 - 2026-10-01
 
 - OpenTelemetry Go v1.46.0, with its log modules v0.22.0, the slog bridge v0.20.1 and otelhttp v0.71.0, past GO-2026-6615 and GO-2026-6505. `otel` names its resource with semantic conventions v1.43.0, the SDK's own schema since v1.46.0; with v1.41.0 the two schemas conflict and telemetry export is disabled at start.

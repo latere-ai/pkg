@@ -1,0 +1,5 @@
+go test fuzz v1
+string("allow")
+string("allow")
+float64(33.05)
+float64(49.01)

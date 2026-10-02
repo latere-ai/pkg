@@ -42,6 +42,11 @@ depcheck:
     latere.ai/x/pkg/agentweb:
       decision: agentweb-stdlib-only
       allow: {}
+    # verdict is imported into every decision point's hot path, Limen's
+    # contract included, whose own promise is the standard library alone.
+    latere.ai/x/pkg/verdict:
+      decision: verdict-stdlib-only
+      allow: {}
 
 license:
   # The identifier every source file carries and the holder it names. There
