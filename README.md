@@ -107,6 +107,7 @@ unofficial and is not published by the vendor.
 
 | Package | What it gives you |
 |---|---|
+| [`vendors/linkup`](vendors/linkup/) | Client for Linkup's web search API: one search at a chosen depth answered as ranked results, a sourced answer, or structured output, with domain and date filters, and typed errors that tell a rate limit from exhausted credit |
 | [`vendors/typesafe`](vendors/typesafe/) | Client for the TypeSafe API: one state evaluated against typed questions (a yes/no probability, a choice from a set, or a score against a rubric) |
 
 ### Utilities

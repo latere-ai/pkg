@@ -10,6 +10,23 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `vendors/linkup`: a client for Linkup's web search API. `Search` sends
+  one `Request`, the query with one of four depths (`flash`, `fast`,
+  `standard`, `deep`) and an output type (ranked results, a sourced answer,
+  or an object that follows a JSON Schema), optionally narrowed to domains,
+  a date range and a result count, and returns a `Response` holding what
+  that output type answers. A status other than 200 is an `*Error` with the
+  status, Linkup's error code and message, the refused fields and the
+  `Retry-After` wait, and it matches exactly one of `ErrBadRequest`,
+  `ErrNoResult`, `ErrAuth`, `ErrInsufficientCredit`, `ErrRateLimited` and
+  `ErrUpstream`, so a rate limit that passes is told apart from exhausted
+  credit that does not. The API key never appears in an error, also where
+  Linkup's error body echoes it. Requests go through `otel.HTTPClient`
+  unless `WithHTTPClient` replaces it, and nothing is retried, since every
+  search is billed.
+
 ### Changed
 
 - `typesafeai` moves to `vendors/typesafe`, the directory that holds one
