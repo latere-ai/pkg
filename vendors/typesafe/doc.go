@@ -3,7 +3,7 @@
 
 // Package typesafe is a client for the TypeSafe API
 // (https://docs.typesafe.ai/api). It is unofficial and is not published by
-// TypeSafe AI.
+// TypeSafe AI. Import it as latere.ai/x/pkg/vendors/typesafe.
 //
 // One request evaluates one state against a map of typed questions and
 // returns one answer per question, under the ids the request used. Three

@@ -98,8 +98,16 @@ Each row links to the package directory. The full API, with examples, is on
 | [`pgxmigrate`](pgxmigrate/) | Applies embedded golang-migrate migrations and closes migrate's own connection pool afterward |
 | [`provenance`](provenance/) | Carries the person a call is for across service hops as W3C Baggage (`initiator.sub`, `initiator.iss`, `entry`) and puts it on spans, log lines, and audit records. Metadata only: it grants nothing |
 | [`s3`](s3/) | S3 REST client in the standard library: put, create-if-absent, conditional get, head, delete, prefixed listing, and presigned GET and PUT, signed with Signature Version 4 and retried under `retry`. `s3/s3test` is an in-process endpoint for tests that checks signatures and digests the way a provider does |
-| [`typesafeai`](typesafeai/) | Unofficial client for the TypeSafe API: one state evaluated against typed questions (a yes/no probability, a choice from a set, or a score against a rubric). The package name is `typesafe` |
 | [`verdict`](verdict/) | The decision vocabulary every decision point shares: allow, flag, ask and block in their order, composition that can only narrow (an unknown verdict counts as block), the never-more-than-ask rule on failure, and `Decide`, which applies a ceiling and random review sampling and returns the probability a person sees the action, so any decision source's error rate is estimable. Standard library only |
+
+### Vendor APIs
+
+Clients of third-party APIs, one package each under `vendors/`. Each is
+unofficial and is not published by the vendor.
+
+| Package | What it gives you |
+|---|---|
+| [`vendors/typesafe`](vendors/typesafe/) | Client for the TypeSafe API: one state evaluated against typed questions (a yes/no probability, a choice from a set, or a score against a rubric) |
 
 ### Utilities
 

@@ -10,6 +10,14 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Changed
+
+- `typesafeai` moves to `vendors/typesafe`, the directory that holds one
+  client per third-party API, with its API unchanged. Import
+  `latere.ai/x/pkg/vendors/typesafe`; the package name stays `typesafe`, so
+  only the import path changes. The old path is removed, with no forwarding
+  package.
+
 ## v0.91.0 - 2026-10-02
 
 ### Added

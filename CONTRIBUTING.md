@@ -65,7 +65,7 @@ Every package meets these on its own:
 A few tests skip by design: platform limits (Windows file modes and
 symlinks, running as root), the `hostsandbox` contract test where no `srt`
 is installed, three `gitutil` cases that skip when the local git does not
-reproduce the scenario they test, and the `typesafeai` test against the live API, which runs only when
+reproduce the scenario they test, and the `vendors/typesafe` test against the live API, which runs only when
 `TYPESAFE_API_KEY` is set because it spends a request.
 
 ## Running the checks

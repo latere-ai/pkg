@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	typesafe "latere.ai/x/pkg/typesafeai"
+	"latere.ai/x/pkg/vendors/typesafe"
 )
 
 // TestLiveEvaluate runs one request of each question type, and a model

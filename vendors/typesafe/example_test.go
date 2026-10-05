@@ -11,7 +11,7 @@ import (
 	"net/http/httptest"
 	"time"
 
-	typesafe "latere.ai/x/pkg/typesafeai"
+	"latere.ai/x/pkg/vendors/typesafe"
 )
 
 // serve starts a server that answers every request with one canned body, and
