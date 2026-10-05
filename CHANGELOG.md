@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.92.0 - 2026-10-05
+
 ### Added
 
 - `vendors/linkup`: a client for Linkup's web search API. `Search` sends
