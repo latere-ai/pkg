@@ -10,6 +10,23 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Changed
+
+- `authkit/oidc`: `HandleCallback` requires a verified ID token. A token
+  response without one now goes to `/?auth_error=invalid_id_token` and sets
+  no session; before, the session was built from the access token's claims
+  alone, which nothing verified. OpenID Connect requires an ID token on
+  every authorization-code exchange that asks for `openid`, so a relying
+  party signing in against Latere's auth service, or any conforming issuer,
+  sees no difference. One configured without `openid` in its scopes cannot
+  sign in until it adds it.
+- `authkit/oidc`: a session cookie over the 4096 bytes a browser stores for
+  one cookie is refused instead of written. A browser drops a longer cookie
+  without an error, which left the person signed out with nothing logged.
+  At sign-in, `HandleCallback` goes to `/?auth_error=session_too_large`;
+  `SetSession` returns an error, and a refresh that would outgrow the limit
+  keeps the cookie the browser already holds and logs why.
+
 ## v0.93.0 - 2026-10-06
 
 ### Added

@@ -6,7 +6,6 @@ package oidc
 import (
 	"encoding/base64"
 	"encoding/json"
-	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -150,20 +149,14 @@ func TestHandleCallbackPopulatesSupersetFields(t *testing.T) {
 		"sub": "user1", "email": "user@test.com", "azp": "cella-dashboard",
 		"scope": "openid cella:run", "roles": []string{"admin"}, "is_superadmin": true,
 	})
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]any{
-			"access_token": jwt, "token_type": "Bearer", "refresh_token": "rt-123", "expires_in": 3600,
-		}); err != nil {
-			t.Errorf("encode token response: %v", err)
-		}
-	}))
-	defer ts.Close()
+	ts := issuerWithIDToken(t, "cid", "n", map[string]any{
+		"access_token": jwt, "token_type": "Bearer", "refresh_token": "rt-123", "expires_in": 3600,
+	})
 
 	c := New(Config{AuthURL: ts.URL, ClientID: "cid", ClientSecret: "sec", RedirectURL: "https://app.example.com/callback"})
 
 	wSetup := httptest.NewRecorder()
-	if err := c.SetFlowState(wSetup, &FlowState{CodeVerifier: "v", State: "s", ReturnTo: "/dashboard"}); err != nil {
+	if err := c.SetFlowState(wSetup, &FlowState{Nonce: "n", CodeVerifier: "v", State: "s", ReturnTo: "/dashboard"}); err != nil {
 		t.Fatalf("SetFlowState: %v", err)
 	}
 	r := httptest.NewRequest("GET", "/callback?code=authcode&state=s", nil)

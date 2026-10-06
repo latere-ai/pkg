@@ -255,16 +255,15 @@ func (c *Client) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// An ID token, when the issuer returned one, must verify against the
-	// issuer's keys and carry this login's nonce. The auth service returns
-	// one on every authorization-code exchange; an issuer that omits it
-	// falls through to the access-token checks alone.
-	if idToken, _ := token.Extra("id_token").(string); idToken != "" {
-		if _, err := c.provider.VerifyIDToken(r.Context(), token, flow.Nonce); err != nil {
-			slog.WarnContext(r.Context(), "oidc: verify id_token", "error", err)
-			http.Redirect(w, r, "/?auth_error=invalid_id_token", http.StatusFound)
-			return
-		}
+	// The ID token must be present, verify against the issuer's keys and
+	// carry this login's nonce. OpenID Connect requires one in every
+	// authorization-code token response, and the access token is decoded
+	// below without a signature check, so a response without one would
+	// build a session on claims nothing verified.
+	if _, err := c.provider.VerifyIDToken(r.Context(), token, flow.Nonce); err != nil {
+		slog.WarnContext(r.Context(), "oidc: verify id_token", "error", err)
+		http.Redirect(w, r, "/?auth_error=invalid_id_token", http.StatusFound)
+		return
 	}
 
 	// Validate the access token is a well-formed JWT before building a
@@ -280,6 +279,10 @@ func (c *Client) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	sess := SessionFromToken(token, c.cfg.SessionTTL)
 	if err := c.SetSession(w, sess); err != nil {
 		slog.ErrorContext(r.Context(), "oidc: set session", "error", err)
+		if errors.Is(err, errCookieTooLarge) {
+			http.Redirect(w, r, "/?auth_error=session_too_large", http.StatusFound)
+			return
+		}
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}

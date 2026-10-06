@@ -266,18 +266,12 @@ func TestHandleCallback_StateMismatch(t *testing.T) {
 func TestHandleCallback_Success(t *testing.T) {
 	// Set up a token server.
 	jwt := makeJWT(map[string]string{"sub": "user1", "email": "user@test.com"})
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]any{
-			"access_token":  jwt,
-			"token_type":    "Bearer",
-			"refresh_token": "rt-123",
-			"expires_in":    3600,
-		}); err != nil {
-			t.Errorf("encode token response: %v", err)
-		}
-	}))
-	defer ts.Close()
+	ts := issuerWithIDToken(t, "cid", "n", map[string]any{
+		"access_token":  jwt,
+		"token_type":    "Bearer",
+		"refresh_token": "rt-123",
+		"expires_in":    3600,
+	})
 
 	cfg := Config{
 		AuthURL:      ts.URL,
@@ -290,6 +284,7 @@ func TestHandleCallback_Success(t *testing.T) {
 	// Set up flow state.
 	wSetup := httptest.NewRecorder()
 	if err := c.SetFlowState(wSetup, &FlowState{
+		Nonce:        "n",
 		CodeVerifier: "verifier",
 		State:        "test-state",
 		ReturnTo:     "/dashboard",
@@ -383,17 +378,11 @@ func TestHandleCallback_ExchangeError(t *testing.T) {
 
 func TestHandleCallback_BadJWT(t *testing.T) {
 	// Token server returns a non-JWT access token.
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]any{
-			"access_token": "not-a-jwt",
-			"token_type":   "Bearer",
-			"expires_in":   3600,
-		}); err != nil {
-			t.Errorf("encode token response: %v", err)
-		}
-	}))
-	defer ts.Close()
+	ts := issuerWithIDToken(t, "cid", "n", map[string]any{
+		"access_token": "not-a-jwt",
+		"token_type":   "Bearer",
+		"expires_in":   3600,
+	})
 
 	cfg := Config{
 		AuthURL:      ts.URL,
@@ -405,6 +394,7 @@ func TestHandleCallback_BadJWT(t *testing.T) {
 
 	wSetup := httptest.NewRecorder()
 	if err := c.SetFlowState(wSetup, &FlowState{
+		Nonce:        "n",
 		CodeVerifier: "v",
 		State:        "s",
 		ReturnTo:     "/",
@@ -756,18 +746,12 @@ func TestHandleLogin_FlowStateError(t *testing.T) {
 
 func TestHandleCallback_SetSessionError(t *testing.T) {
 	jwt := makeJWT(map[string]string{"sub": "u1", "email": "a@b.com"})
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]any{
-			"access_token":  jwt,
-			"token_type":    "Bearer",
-			"refresh_token": "rt",
-			"expires_in":    3600,
-		}); err != nil {
-			t.Errorf("encode token response: %v", err)
-		}
-	}))
-	defer ts.Close()
+	ts := issuerWithIDToken(t, "cid", "n", map[string]any{
+		"access_token":  jwt,
+		"token_type":    "Bearer",
+		"refresh_token": "rt",
+		"expires_in":    3600,
+	})
 
 	cfg := Config{
 		AuthURL:      ts.URL,
@@ -779,6 +763,7 @@ func TestHandleCallback_SetSessionError(t *testing.T) {
 
 	wSetup := httptest.NewRecorder()
 	if err := c.SetFlowState(wSetup, &FlowState{
+		Nonce:        "n",
 		CodeVerifier: "v",
 		State:        "s",
 		ReturnTo:     "/",
@@ -812,17 +797,11 @@ func TestHandleCallback_SetSessionError(t *testing.T) {
 
 func TestHandleCallback_UnsafeReturnTo(t *testing.T) {
 	jwt := makeJWT(map[string]string{"sub": "u1", "email": "a@b.com"})
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]any{
-			"access_token": jwt,
-			"token_type":   "Bearer",
-			"expires_in":   3600,
-		}); err != nil {
-			t.Errorf("encode token response: %v", err)
-		}
-	}))
-	defer ts.Close()
+	ts := issuerWithIDToken(t, "cid", "n", map[string]any{
+		"access_token": jwt,
+		"token_type":   "Bearer",
+		"expires_in":   3600,
+	})
 
 	cfg := Config{
 		AuthURL:      ts.URL,
@@ -834,6 +813,7 @@ func TestHandleCallback_UnsafeReturnTo(t *testing.T) {
 
 	wSetup := httptest.NewRecorder()
 	if err := c.SetFlowState(wSetup, &FlowState{
+		Nonce:        "n",
 		CodeVerifier: "v",
 		State:        "s",
 		ReturnTo:     "https://evil.com", // unsafe

@@ -560,6 +560,15 @@ func (c *Client) effectiveCookieName(name string) string {
 // fail closed rather than mint a forgeable cookie.
 var errNoCookieKey = errors.New("oidc: cookie helpers require a configured cookie key (client built without a RedirectURL)")
 
+// maxCookieBytes is the most a browser stores for one cookie's name and
+// value together. RFC 6265 asks for at least 4096, and Chrome and Firefox
+// both stop there: a longer Set-Cookie is dropped without an error, so a
+// session over it would leave the person signed out with nothing logged.
+const maxCookieBytes = 4096
+
+// errCookieTooLarge is setCookie's refusal of a cookie a browser would drop.
+var errCookieTooLarge = errors.New("oidc: cookie exceeds the browser limit")
+
 // cookieKeyConfigured reports whether a real cookie key was derived. A
 // sha256-derived key is never all-zero, so the zero array unambiguously means
 // "never configured".
@@ -582,9 +591,14 @@ func (c *Client) setCookie(w http.ResponseWriter, name string, v any, maxAge int
 		return fmt.Errorf("encrypt cookie %s: %w", name, err)
 	}
 
+	value := base64.RawURLEncoding.EncodeToString(ciphertext)
+	if size := len(name) + len(value); size > maxCookieBytes {
+		return fmt.Errorf("%w: %s is %d bytes, the limit is %d", errCookieTooLarge, name, size, maxCookieBytes)
+	}
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     name,
-		Value:    base64.RawURLEncoding.EncodeToString(ciphertext),
+		Value:    value,
 		Path:     "/",
 		MaxAge:   maxAge,
 		HttpOnly: true,

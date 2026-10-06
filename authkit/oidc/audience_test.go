@@ -255,16 +255,12 @@ func TestHandleCallback_StoresOrgIDFromJWT(t *testing.T) {
 		"email":  "a@b.com",
 		"org_id": "org-42",
 	})
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"access_token":  jwt,
-			"token_type":    "Bearer",
-			"refresh_token": "rt",
-			"expires_in":    3600,
-		})
-	}))
-	defer ts.Close()
+	ts := issuerWithIDToken(t, "cid", "n", map[string]any{
+		"access_token":  jwt,
+		"token_type":    "Bearer",
+		"refresh_token": "rt",
+		"expires_in":    3600,
+	})
 
 	c := New(Config{
 		AuthURL:      ts.URL,
@@ -274,6 +270,7 @@ func TestHandleCallback_StoresOrgIDFromJWT(t *testing.T) {
 	})
 	wSetup := httptest.NewRecorder()
 	if err := c.SetFlowState(wSetup, &FlowState{
+		Nonce:        "n",
 		CodeVerifier: "v",
 		State:        "s",
 		ReturnTo:     "/dashboard",
