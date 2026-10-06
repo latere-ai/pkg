@@ -19,6 +19,13 @@ under **Removed** or **Changed** with what to do about it.
   refresh. A relying party that serves one browser from several replicas
   reads its API routes with it and refreshes on one route the page calls
   one request at a time, so two requests never spend one refresh token.
+- `authkit/oidc`: silent sign-in. `/login?prompt=none` asks the issuer to
+  sign the person in without a page when they already hold a session
+  there. When the issuer answers `login_required` (or any other error) to
+  such a login, `HandleCallback` goes back to `return_to` with no
+  `auth_error`, as if nothing was tried. `HandleLogin` forwards `prompt`
+  only with a value OpenID Connect defines (`none`, `login`, `consent`,
+  `select_account`), and `FlowState.Silent` records a silent login.
 
 ### Fixed
 

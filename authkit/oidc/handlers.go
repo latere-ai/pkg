@@ -133,6 +133,11 @@ func isSafeRedirect(target string) bool {
 // flow cookie, and redirects the user to the auth service's authorize
 // endpoint. The optional "return_to" query parameter is preserved so
 // the callback can redirect the user back to their original page.
+//
+// "prompt=none" asks for a silent sign-in (OpenID Connect Core 3.1.2.1):
+// the issuer signs the person in without a page when they already hold a
+// session there, and otherwise answers login_required, which HandleCallback
+// turns into a quiet return to "return_to".
 func (c *Client) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	verifier := GenerateVerifier()
 	state := GenerateState()
@@ -143,25 +148,31 @@ func (c *Client) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		returnTo = "/"
 	}
 
+	// Forward selected query params to the authorize endpoint as
+	// extension parameters. Currently allowlisted: org_id, which the
+	// auth service uses to scope the resulting token, and prompt. New
+	// hints go through this same list so unknown query strings don't
+	// leak into the authorize URL accidentally.
+	extra := forwardedAuthorizeParams(r.URL.Query())
+
 	if err := c.SetFlowState(w, &FlowState{
 		CodeVerifier: verifier,
 		State:        state,
 		ReturnTo:     returnTo,
 		Nonce:        nonce,
+		Silent:       extra.Get("prompt") == "none",
 	}); err != nil {
 		slog.ErrorContext(r.Context(), "oidc: set flow state", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
-	// Forward selected query params to the authorize endpoint as
-	// extension parameters. Currently allowlisted: org_id, which the
-	// auth service uses to scope the resulting token. New hints go
-	// through this same list so unknown query strings don't leak into
-	// the authorize URL accidentally.
-	extra := forwardedAuthorizeParams(r.URL.Query())
 	http.Redirect(w, r, c.authCodeURL(state, nonce, verifier, extra), http.StatusFound)
 }
+
+// prompts are the values of the OpenID Connect prompt parameter /login
+// forwards; any other value is dropped.
+var prompts = map[string]bool{"none": true, "login": true, "consent": true, "select_account": true}
 
 // forwardedAuthorizeParams is the allowlist of query parameters on
 // /login that get forwarded to the authorize endpoint. Kept narrow
@@ -172,6 +183,8 @@ func (c *Client) HandleLogin(w http.ResponseWriter, r *http.Request) {
 // clear-to-personal signal. An absent org_id leaves the session's
 // active_org unchanged. Silently stripping the empty value is what
 // caused "switch to Personal" to be a no-op end-to-end.
+//
+// prompt is forwarded only with one of the values OpenID Connect defines.
 func forwardedAuthorizeParams(q url.Values) url.Values {
 	out := url.Values{}
 	for _, k := range []string{"org_id"} {
@@ -185,6 +198,9 @@ func forwardedAuthorizeParams(q url.Values) url.Values {
 			}
 		}
 	}
+	if p := q.Get("prompt"); prompts[p] {
+		out.Set("prompt", p)
+	}
 	return out
 }
 
@@ -196,6 +212,20 @@ func (c *Client) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// Check for error from auth service.
 	if errParam := r.URL.Query().Get("error"); errParam != "" {
 		desc := r.URL.Query().Get("error_description")
+		// A silent sign-in the issuer could not complete without the person
+		// is no failure: they were not signed in there, and go back where
+		// they were, signed out, as if nothing was tried. The flow is
+		// trusted only when its state matches the one the issuer returned.
+		if flow, err := c.GetFlowState(r); err == nil && flow.Silent && flow.State == r.URL.Query().Get("state") {
+			c.clearFlowState(w)
+			slog.InfoContext(r.Context(), "oidc: silent sign-in not completed", "error", errParam, "description", desc)
+			returnTo := flow.ReturnTo
+			if !isSafeRedirect(returnTo) {
+				returnTo = "/"
+			}
+			http.Redirect(w, r, returnTo, http.StatusFound)
+			return
+		}
 		slog.WarnContext(r.Context(), "oidc: callback error", "error", errParam, "description", desc)
 		http.Redirect(w, r, "/?auth_error="+url.QueryEscape(errParam), http.StatusFound)
 		return

@@ -101,6 +101,11 @@ type FlowState struct {
 	// Nonce binds the ID token returned by the exchange to this login;
 	// HandleCallback rejects an ID token that carries any other value.
 	Nonce string `json:"nc,omitempty"`
+	// Silent marks a login that asked the issuer for prompt=none: one the
+	// person did not start, which signs them in only when they are already
+	// signed in at the issuer. HandleCallback answers its refusal by going
+	// back to ReturnTo as if nothing was tried.
+	Silent bool `json:"sl,omitempty"`
 }
 
 // Config holds auth integration configuration.
