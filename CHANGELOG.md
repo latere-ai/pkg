@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.93.0 - 2026-10-06
+
 ### Added
 
 - `authkit/oidc`: `Client.ReadSession` reads the session cookie without
