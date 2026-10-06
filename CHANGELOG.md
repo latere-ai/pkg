@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.94.0 - 2026-10-06
+
 ### Changed
 
 - `authkit/oidc`: `HandleCallback` requires a verified ID token. A token
