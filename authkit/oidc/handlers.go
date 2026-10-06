@@ -395,10 +395,11 @@ func (c *Client) UserFromRequest(w http.ResponseWriter, r *http.Request) *User {
 
 // refreshExpiredSession refreshes sess's access token when it has expired,
 // mutating sess in place and persisting the new token to the cookie via w. It
-// reports whether the session is still usable: false (after clearing the
-// cookie) when the token is expired and cannot be refreshed — no refresh token,
-// or the refresh call failed — and true otherwise (including when the token was
-// not expired and so left untouched). Shared by UserFromRequest and BuildMe so
+// reports whether the session is still usable: false when the token is
+// expired and cannot be refreshed now, and true otherwise (including when the
+// token was not expired and so left untouched). The cookie is cleared when
+// there is no refresh token or the issuer refused the refresh, and kept when
+// the issuer could not be reached. Shared by UserFromRequest and BuildMe so
 // the two request-entry auth paths cannot drift on refresh/clear/persist.
 func (c *Client) refreshExpiredSession(w http.ResponseWriter, r *http.Request, sess *Session, now time.Time) bool {
 	if !accessTokenExpired(sess, now) {
@@ -408,10 +409,15 @@ func (c *Client) refreshExpiredSession(w http.ResponseWriter, r *http.Request, s
 		c.ClearSession(w)
 		return false
 	}
-	token, err := c.RefreshToken(r, sess.RefreshToken)
+	token, err := c.renew(r.Context(), sess.RefreshToken)
 	if err != nil {
 		slog.DebugContext(r.Context(), "oidc: token refresh failed", "error", err)
-		c.ClearSession(w)
+		// A session the issuer refused is over. One the issuer could not be
+		// asked about is kept, so the next request tries the refresh again
+		// instead of signing the person out over a failed connection.
+		if errors.Is(err, ErrSessionExpired) {
+			c.ClearSession(w)
+		}
 		return false
 	}
 	sess.AccessToken = token.AccessToken
@@ -436,7 +442,18 @@ func (c *Client) refreshExpiredSession(w http.ResponseWriter, r *http.Request, s
 // Error contract (the caller must clear the cookie + redirect to login on any
 // non-nil error, never surface a 500): a decrypt/parse failure returns the
 // GetSession error unchanged; an elapsed SessionExpiry returns ErrSessionExpired.
+// A refresh the issuer refused wraps ErrSessionExpired; one that failed
+// without a refusal wraps ErrIssuerUnavailable, and a caller may keep the
+// cookie and answer that the request can be tried again instead.
 // A successfully refreshed session is written back via w.
+//
+// The refresh spends a given refresh token at most once per process:
+// concurrent calls with one cookie share one refresh, and a call that still
+// carries the spent token shortly after is answered with its outcome. Requests
+// from one page that reach several processes can still each refresh; a
+// relying party that serves one browser from several replicas reads with
+// [Client.ReadSession] on its API routes and refreshes on one route the page
+// calls one request at a time.
 func (c *Client) SessionFromRequest(w http.ResponseWriter, r *http.Request) (*Session, error) {
 	sess, err := c.GetSession(r)
 	if err != nil {
@@ -455,11 +472,11 @@ func (c *Client) SessionFromRequest(w http.ResponseWriter, r *http.Request) (*Se
 	// Proactively refresh when the access token is within the leeway of expiry
 	// (covers an already-expired token too). No refresh token means the current
 	// access token is still usable until its expiry.
-	if sess.RefreshToken == "" || !sess.Expiry.Add(-refreshLeeway).Before(now) {
+	if sess.RefreshToken == "" || !needsRefresh(sess, now) {
 		return sess, nil
 	}
 
-	tok, err := c.RefreshTokenContext(r.Context(), sess.RefreshToken)
+	tok, err := c.renew(r.Context(), sess.RefreshToken)
 	if err != nil {
 		return nil, fmt.Errorf("refresh token: %w", err)
 	}

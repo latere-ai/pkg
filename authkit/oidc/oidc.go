@@ -150,6 +150,7 @@ type Client struct {
 	provider  *Provider
 	cookieKey [32]byte
 	actors    actorCache
+	refreshes refreshGroup
 }
 
 // LoadConfig reads auth configuration from environment variables.
@@ -420,7 +421,10 @@ func (c *Client) DeviceAccessToken(ctx context.Context, da *oauth2.DeviceAuthRes
 	return c.provider.DeviceAccessToken(ctx, da)
 }
 
-// RefreshToken uses a refresh token to obtain a new access token.
+// RefreshToken uses a refresh token to obtain a new access token. Each call
+// is one grant at the issuer; the session reads ([Client.SessionFromRequest],
+// [Client.BuildMe], [Client.UserFromRequest]) refresh through a path that
+// spends a given refresh token at most once per process instead.
 func (c *Client) RefreshToken(r *http.Request, refreshToken string) (*oauth2.Token, error) {
 	return c.RefreshTokenContext(r.Context(), refreshToken)
 }

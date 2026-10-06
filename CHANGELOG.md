@@ -10,6 +10,34 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `authkit/oidc`: `Client.ReadSession` reads the session cookie without
+  refreshing it and without writing. It answers `ErrRefreshRequired` when
+  the access token is within the refresh leeway of expiring and the session
+  holds a refresh token, the same moment `SessionFromRequest` would
+  refresh. A relying party that serves one browser from several replicas
+  reads its API routes with it and refreshes on one route the page calls
+  one request at a time, so two requests never spend one refresh token.
+
+### Fixed
+
+- `authkit/oidc`: a page that loads several routes at once no longer signs
+  the person out. Each request found the access token about to expire and
+  refreshed the same rotating refresh token; the issuer took the second
+  use for replay and revoked the session. `SessionFromRequest`, `BuildMe`
+  and `UserFromRequest` now spend a refresh token at most once per
+  process: concurrent requests share one refresh, and a request that still
+  carries the spent token within 30 seconds is answered with the refresh
+  already made. Requests that reach different replicas can still race;
+  see `ReadSession`.
+- `authkit/oidc`: a refresh that fails without the issuer refusing it (no
+  connection, a timeout, a 5xx) wraps the new `ErrIssuerUnavailable` and
+  no longer signs the person out: `BuildMe` and `UserFromRequest` keep the
+  cookie, so the next request tries again. A refresh the issuer refuses
+  wraps `ErrSessionExpired`, so `errors.Is` tells the two apart on the
+  error `SessionFromRequest` returns.
+
 ## v0.92.0 - 2026-10-05
 
 ### Added

@@ -56,6 +56,10 @@ var providerSurface = []string{
 //     SessionCookieName, SessionMaxAge, ClearSession, and
 //     ErrSwitchOrgRefused, the refusal of Client.SwitchOrg, which moves a
 //     session into another context;
+//   - the outcomes of reading and refreshing a session — ErrRefreshRequired,
+//     which Client.ReadSession answers for a session to refresh before use,
+//     and ErrIssuerUnavailable, a refresh that failed without the issuer
+//     refusing it;
 //   - the authorization-code flow's short-lived state — FlowState,
 //     FlowCookieName, FlowMaxAge, ClearFlowState, GenerateState,
 //     GenerateVerifier;
@@ -65,8 +69,8 @@ var providerSurface = []string{
 //     SwitchOrgRedirect.
 //
 // The handlers themselves are methods on Client (HandleLogin,
-// HandleCallback, HandleLogout, HandleLogoutNotify, SessionFromRequest,
-// UserFromRequest, BuildMe), so they are reached through the type and are
+// HandleCallback, HandleLogout, HandleLogoutNotify, ReadSession,
+// SessionFromRequest, UserFromRequest, BuildMe), so they are reached through the type and are
 // not package-level names.
 var sessionHandlers = []string{
 	"const FlowCookieName",
@@ -91,6 +95,8 @@ var sessionHandlers = []string{
 	"type OrgEntry",
 	"type Session",
 	"type SessionAuthenticator",
+	"var ErrIssuerUnavailable",
+	"var ErrRefreshRequired",
 	"var ErrSessionExpired",
 	"var ErrSwitchOrgRefused",
 }
