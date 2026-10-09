@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"latere.ai/x/pkg/llmdialect/internal/sse"
 	"latere.ai/x/pkg/llmdialect/ir"
@@ -133,16 +134,31 @@ func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 // StreamError is a mid-stream `event: error` frame from a lux
 // upstream, carried in the gateway's error envelope.
 type StreamError struct {
+	// Code is error.code, e.g. upstream_error.
 	Code    string
 	Message string
+	// Detail is error.details.detail, the developer's account of this
+	// one failure; empty when the gateway sent none.
+	Detail string
+	// RequestID is error.details.request_id.
+	RequestID string
 }
 
 // Error implements error.
 func (e *StreamError) Error() string {
-	if e.Code == "" {
-		return fmt.Sprintf("lux: stream error: %s", e.Message)
+	var b strings.Builder
+	b.WriteString("lux: stream error")
+	if e.Code != "" {
+		b.WriteString(" (" + e.Code + ")")
 	}
-	return fmt.Sprintf("lux: stream error (%s): %s", e.Code, e.Message)
+	b.WriteString(": " + e.Message)
+	if e.Detail != "" {
+		b.WriteString(" (" + e.Detail + ")")
+	}
+	if e.RequestID != "" {
+		b.WriteString(" [" + e.RequestID + "]")
+	}
+	return b.String()
 }
 
 // StreamReader yields wire-level lux Events from an SSE stream,
@@ -194,20 +210,32 @@ func (s *StreamReader) Next() (Event, error) {
 	}
 }
 
-// decodeStreamError parses the gateway's error envelope
-// ({"type":"error","error":{"type","message"}}); an unparseable body
-// degrades to the raw bytes as the message.
+// decodeStreamError parses the gateway's error envelope,
+// {"error":{"code","message","details":{"detail","request_id"}}}, the
+// frame bridge.ErrorFrame writes; this package cannot import bridge,
+// which imports it. An older upstream's error.type stands in for a
+// missing code. An unparseable body degrades to the raw bytes as the
+// message.
 func decodeStreamError(data []byte) error {
 	var wire struct {
 		Error struct {
+			Code    string `json:"code"`
 			Type    string `json:"type"`
 			Message string `json:"message"`
+			Details struct {
+				Detail    string `json:"detail"`
+				RequestID string `json:"request_id"`
+			} `json:"details"`
 		} `json:"error"`
 	}
-	if err := json.Unmarshal(data, &wire); err != nil || wire.Error.Message == "" && wire.Error.Type == "" {
+	if err := json.Unmarshal(data, &wire); err != nil || wire.Error.Message == "" && wire.Error.Code == "" && wire.Error.Type == "" {
 		return &StreamError{Message: string(data)}
 	}
-	return &StreamError{Code: wire.Error.Type, Message: wire.Error.Message}
+	code := wire.Error.Code
+	if code == "" {
+		code = wire.Error.Type
+	}
+	return &StreamError{Code: code, Message: wire.Error.Message, Detail: wire.Error.Details.Detail, RequestID: wire.Error.Details.RequestID}
 }
 
 // EventDecoder adapts StreamReader to the IR event stream.

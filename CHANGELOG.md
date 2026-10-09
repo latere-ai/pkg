@@ -32,6 +32,13 @@ under **Removed** or **Changed** with what to do about it.
   adds the detail and the request id. Code that matched the older codes,
   such as `rate_limit_error`, matches the gateway's instead. Direct mode
   still reads the provider's own error shape.
+- `llmdialect/lux`: an error that ends a stream fills `StreamError.Code`.
+  The reader took the code from `error.type`, but the gateway's frame
+  carries it in `error.code`, so a stream that failed midway reported no
+  code. It reads `error.code` now, keeps `error.type` for an older
+  upstream, and the new `Detail` and `RequestID` fields carry
+  `details.detail` and `details.request_id`. `luxsdk.StreamError` is the
+  same type.
 
 ### Security
 
