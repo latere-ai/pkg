@@ -63,11 +63,25 @@ c := luxsdk.New("https://api.latere.ai/v1/models", luxsdk.WithAPIKey(key),
     luxsdk.WithCostTags(map[string]string{"tenant": "acme", "project": "web"}))
 ```
 
-`WithCostTags` attributes every call's cost to named dimensions within
-the caller's own spend, sent as the `Lux-Cost-Tag` header (sorted
-`key=value` pairs, e.g. `project=web,tenant=acme`). It never changes
-who is billed or what the key can reach. Gateway `Client` only; a nil
-or empty map sends no header, and the gateway validates the value.
+`WithCostTags` labels every call, sent as the `Lux-Labels` header
+(sorted `key=value` pairs, e.g. `project=web,tenant=acme`) on
+`Generate`, `Stream`, and `CountTokens`. Gateway `Client` only; a nil
+or empty map sends no header.
+
+Lux records the pairs as the request's own labels, apart from the
+Key's labels, and shows them in its request history (`GET
+/v1/requests`). They are for reporting only: never an aggregate
+dimension of usage, never a split of a budget or a bill, and never a
+change to who is billed or what the key can reach. Lux never forwards
+the header to the provider.
+
+The gateway keeps at most 8 pairs, each key 1 to 64 characters of
+`[A-Za-z0-9._-]` and each value 1 to 128 characters of
+`[A-Za-z0-9._:/-]`. A pair that breaks the rule, and every valid pair
+past the eighth in sorted key order, is dropped and the request still
+runs: a bad label costs the label, never the call. A key or value
+holding `,` or `=` breaks the wire form: the gateway reads it as other
+pairs or drops it.
 
 ## Requests
 
@@ -137,9 +151,24 @@ tc, err := c.CountTokens(ctx, req) // POST /lux/v1/count_tokens; no spend gates
 
 ## Errors and loss
 
-Non-2xx responses decode into `*Error{Status, Code, Message,
-RequestID}` with the retryable type vocabulary (`rate_limit_error`,
-`overloaded_error`, ...). Fields the target dialect cannot represent
-are never silently dropped: they arrive as `Result.Loss` /
-`Stream.Loss()` (from the `X-Lux-Compat-Loss` header in gateway mode,
-computed locally in direct mode).
+A non-2xx gateway answer decodes into `*Error` from the lux error
+envelope:
+
+```json
+{"error":{"code":"model_not_found","message":"There is no model of that name.",
+  "details":{"detail":"no Model named \"x\"","request_id":"req_..."}}}
+```
+
+`Code` is `error.code` from the gateway's code table
+(`unauthenticated`, `model_not_found`, `rate_limited`,
+`spend_exceeded`, `upstream_timeout`, ...), the field to switch on.
+`Message` is the code's one fixed sentence for a person, `Detail` is
+the developer's account of this failure, and `RequestID` is the id to
+quote about it. A body that is not the envelope arrives whole as
+`Message` with an empty `Code`. In direct mode, `Code` and `Message`
+are the provider's own `error.type` and `error.message`.
+
+Fields the target dialect cannot represent are never silently dropped:
+they arrive as `Result.Loss` / `Stream.Loss()` (from the `Lux-Loss`
+header in gateway mode, computed locally in direct mode).
+`TokenCount.Estimated` comes from the `Lux-Estimated` header.

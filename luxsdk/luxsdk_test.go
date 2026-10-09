@@ -12,6 +12,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"latere.ai/x/pkg/llmdialect/bridge"
 )
 
 func testServer(t *testing.T, handler http.HandlerFunc) *httptest.Server {
@@ -29,7 +31,7 @@ func TestGenerate(t *testing.T) {
 		b, _ := io.ReadAll(r.Body)
 		gotBody = string(b)
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("X-Lux-Compat-Loss", "top_k,thinking")
+		w.Header().Set("Lux-Loss", "top_k,thinking")
 		_, _ = w.Write([]byte(`{
 			"id": "msg_1", "model": "claude-sonnet-5",
 			"blocks": [{"type": "text", "text": "hello"}],
@@ -64,12 +66,19 @@ func TestGenerate(t *testing.T) {
 	}
 }
 
+// TestCostTags pins that WithCostTags travels as Lux-Labels, the one
+// header the gateway reads request labels from.
 func TestCostTags(t *testing.T) {
 	var gotTag string
 	var tagSet bool
 	srv := testServer(t, func(w http.ResponseWriter, r *http.Request) {
-		gotTag = r.Header.Get("Lux-Cost-Tag")
-		_, tagSet = r.Header["Lux-Cost-Tag"]
+		gotTag = r.Header.Get("Lux-Labels")
+		_, tagSet = r.Header["Lux-Labels"]
+		if b, _ := io.ReadAll(r.Body); strings.Contains(string(b), `"stream":true`) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte(streamBody))
+			return
+		}
 		_, _ = w.Write([]byte(`{"id":"x","model":"m","blocks":[],"stop_reason":"end_turn","usage":{"input_tokens":0,"output_tokens":0}}`))
 	})
 
@@ -81,6 +90,17 @@ func TestCostTags(t *testing.T) {
 	}
 	if gotTag != "project=web,tenant=acme" {
 		t.Fatalf("bad cost tag on Generate: %q", gotTag)
+	}
+
+	// Stream carries the same header.
+	tagSet, gotTag = false, ""
+	st, err := c.Stream(context.Background(), &Request{Model: "m", Messages: []Message{UserText("x")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = st.Close()
+	if gotTag != "project=web,tenant=acme" {
+		t.Fatalf("bad cost tag on Stream: %q", gotTag)
 	}
 
 	// CountTokens carries the same header.
@@ -98,7 +118,7 @@ func TestCostTags(t *testing.T) {
 		t.Fatal(err)
 	}
 	if tagSet {
-		t.Fatalf("Lux-Cost-Tag must be absent when unset, got %q", gotTag)
+		t.Fatalf("Lux-Labels must be absent when unset, got %q", gotTag)
 	}
 }
 
@@ -106,18 +126,77 @@ func TestGenerateError(t *testing.T) {
 	srv := testServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusTooManyRequests)
-		_, _ = w.Write([]byte(`{"type":"error","error":{"type":"rate_limit_error","message":"slow down","request_id":"req_9"}}`))
+		_, _ = w.Write([]byte(`{"error":{"code":"rate_limited","message":"Too many requests; wait and retry.","details":{"request_id":"req_9"}}}`))
 	})
 	_, err := New(srv.URL).Generate(context.Background(), &Request{Model: "m", Messages: []Message{UserText("x")}})
 	var apiErr *Error
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("want *Error, got %v", err)
 	}
-	if apiErr.Status != 429 || apiErr.Code != "rate_limit_error" || apiErr.Message != "slow down" || apiErr.RequestID != "req_9" {
+	if apiErr.Status != 429 || apiErr.Code != "rate_limited" || apiErr.Message != "Too many requests; wait and retry." || apiErr.RequestID != "req_9" || apiErr.Detail != "" {
 		t.Fatalf("bad error: %#v", apiErr)
 	}
-	if !strings.Contains(apiErr.Error(), "rate_limit_error") {
-		t.Fatalf("bad error string: %s", apiErr.Error())
+	if got, want := apiErr.Error(), "lux: 429 rate_limited: Too many requests; wait and retry. [req_9]"; got != want {
+		t.Fatalf("bad error string:\ngot  %s\nwant %s", got, want)
+	}
+}
+
+// TestDecodeErrorEnvelope feeds decodeError the lux door's envelope as
+// production answers it today, and pins that the code, the user
+// sentence, the developer detail, and the request id all reach *Error.
+func TestDecodeErrorEnvelope(t *testing.T) {
+	for _, c := range []struct {
+		status                                int
+		body                                  string
+		code, message, detail, requestID, str string
+	}{
+		{
+			status:    http.StatusUnauthorized,
+			body:      `{"error":{"code":"unauthenticated","message":"This request needs a valid credential.","details":{"detail":"no credential: no Authorization header","request_id":"req_01AUTH"}}}`,
+			code:      "unauthenticated",
+			message:   "This request needs a valid credential.",
+			detail:    "no credential: no Authorization header",
+			requestID: "req_01AUTH",
+			str:       "lux: 401 unauthenticated: This request needs a valid credential. (no credential: no Authorization header) [req_01AUTH]",
+		},
+		{
+			status:    http.StatusNotFound,
+			body:      `{"error":{"code":"model_not_found","message":"There is no model of that name.","details":{"detail":"no Model named \"x\"","request_id":"req_01MODEL"}}}` + "\n",
+			code:      "model_not_found",
+			message:   "There is no model of that name.",
+			detail:    `no Model named "x"`,
+			requestID: "req_01MODEL",
+			str:       `lux: 404 model_not_found: There is no model of that name. (no Model named "x") [req_01MODEL]`,
+		},
+		{
+			// No details at all: the gateway omits the member when it
+			// has neither a detail nor a request id.
+			status:  http.StatusNotFound,
+			body:    `{"error":{"code":"not_found","message":"There is no such object."}}`,
+			code:    "not_found",
+			message: "There is no such object.",
+			str:     "lux: 404 not_found: There is no such object.",
+		},
+		{
+			// A body in another shape is not the lux envelope: it
+			// degrades to the raw bytes, with no code.
+			status:  http.StatusTooManyRequests,
+			body:    `{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}`,
+			message: `{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}`,
+			str:     `lux: 429: {"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}`,
+		},
+	} {
+		err := decodeError(&http.Response{StatusCode: c.status, Body: io.NopCloser(strings.NewReader(c.body))})
+		var apiErr *Error
+		if !errors.As(err, &apiErr) {
+			t.Fatalf("want *Error, got %T %v", err, err)
+		}
+		if apiErr.Status != c.status || apiErr.Code != c.code || apiErr.Message != c.message || apiErr.Detail != c.detail || apiErr.RequestID != c.requestID {
+			t.Errorf("decodeError(%s) = %#v", c.body, apiErr)
+		}
+		if got := apiErr.Error(); got != c.str {
+			t.Errorf("Error():\ngot  %s\nwant %s", got, c.str)
+		}
 	}
 }
 
@@ -198,7 +277,7 @@ func TestStream(t *testing.T) {
 		b, _ := io.ReadAll(r.Body)
 		gotBody = string(b)
 		w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
-		w.Header().Set("X-Lux-Compat-Loss", "top_k")
+		w.Header().Set("Lux-Loss", "top_k")
 		_, _ = w.Write([]byte(streamBody))
 	})
 	st, err := New(srv.URL, WithAPIKey("k")).Stream(context.Background(), &Request{Model: "m", Messages: []Message{UserText("x")}})
@@ -242,11 +321,11 @@ func TestStream(t *testing.T) {
 func TestStreamErrorStatus(t *testing.T) {
 	srv := testServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		_, _ = w.Write([]byte(`{"type":"error","error":{"type":"permission_error","message":"nope"}}`))
+		_, _ = w.Write([]byte(`{"error":{"code":"model_not_allowed","message":"This key may not use that model.","details":{"detail":"model m is outside the Key's fence","request_id":"req_3"}}}`))
 	})
 	_, err := New(srv.URL).Stream(context.Background(), &Request{Model: "m", Messages: []Message{UserText("x")}})
 	var apiErr *Error
-	if !errors.As(err, &apiErr) || apiErr.Status != 403 || apiErr.Code != "permission_error" {
+	if !errors.As(err, &apiErr) || apiErr.Status != 403 || apiErr.Code != "model_not_allowed" || apiErr.Detail != "model m is outside the Key's fence" || apiErr.RequestID != "req_3" {
 		t.Fatalf("bad error: %v", err)
 	}
 }
@@ -377,7 +456,7 @@ func TestCountTokens(t *testing.T) {
 
 func TestCountTokensEstimated(t *testing.T) {
 	srv := testServer(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Lux-Compat-Estimated", "true")
+		w.Header().Set("Lux-Estimated", "true")
 		_, _ = w.Write([]byte(`{"input_tokens": 7}`))
 	})
 	tc, err := New(srv.URL).CountTokens(context.Background(), &Request{Model: "m", Messages: []Message{UserText("x")}})
@@ -392,10 +471,10 @@ func TestCountTokensEstimated(t *testing.T) {
 func TestCountTokensErrors(t *testing.T) {
 	srv := testServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		_, _ = w.Write([]byte(`{"type":"error","error":{"type":"permission_error","message":"no"}}`))
+		_, _ = w.Write([]byte(`{"error":{"code":"key_disabled","message":"This key is disabled.","details":{"request_id":"req_4"}}}`))
 	})
 	var apiErr *Error
-	if _, err := New(srv.URL).CountTokens(context.Background(), &Request{Model: "m", Messages: []Message{UserText("x")}}); !errors.As(err, &apiErr) || apiErr.Status != 403 {
+	if _, err := New(srv.URL).CountTokens(context.Background(), &Request{Model: "m", Messages: []Message{UserText("x")}}); !errors.As(err, &apiErr) || apiErr.Status != 403 || apiErr.Code != "key_disabled" || apiErr.RequestID != "req_4" {
 		t.Fatalf("want *Error 403, got %v", err)
 	}
 	srvBad := testServer(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`{`)) })
@@ -495,4 +574,29 @@ func TestServerToolsReachTheGateway(t *testing.T) {
 	if search["context_size"] != "medium" {
 		t.Fatalf("web_search = %#v, want context_size medium", got["web_search"])
 	}
+}
+
+// FuzzDecodeError: any body yields an *Error that keeps the status; a
+// body the lux envelope codec accepts keeps its code, message, detail,
+// and request id, and any other body becomes the message whole.
+func FuzzDecodeError(f *testing.F) {
+	f.Add(`{"error":{"code":"model_not_found","message":"There is no model of that name.","details":{"detail":"no Model named \"x\"","request_id":"req_1"}}}`)
+	f.Add(`{"error":{"code":"c","message":"m","details":{"detail":7,"request_id":null}}}`)
+	f.Add(`{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}`)
+	f.Add("upstream fell over")
+	f.Fuzz(func(t *testing.T, body string) {
+		err := decodeError(&http.Response{StatusCode: 418, Body: io.NopCloser(strings.NewReader(body))})
+		var apiErr *Error
+		if !errors.As(err, &apiErr) || apiErr.Status != 418 {
+			t.Fatalf("decodeError(%q) = %v", body, err)
+		}
+		if f, ok := bridge.ParseEnvelope(bridge.WireLux, []byte(body)); ok {
+			if apiErr.Code != f.Code || apiErr.Message != f.Message || apiErr.Detail != f.Detail || apiErr.RequestID != f.RequestID {
+				t.Fatalf("decodeError(%q) = %#v, envelope %#v", body, apiErr, f)
+			}
+		} else if apiErr.Code != "" || apiErr.Message != strings.TrimSpace(body) {
+			t.Fatalf("decodeError(%q) = %#v, want the body as the message", body, apiErr)
+		}
+		_ = apiErr.Error()
+	})
 }

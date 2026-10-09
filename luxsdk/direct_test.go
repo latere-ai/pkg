@@ -445,3 +445,21 @@ func TestDirectNewProviderDefaultsAreComplete(t *testing.T) {
 		}
 	}
 }
+
+// TestDecodeProviderError pins Direct's reading of a provider's error
+// body, which is the provider's shape and never the lux envelope.
+func TestDecodeProviderError(t *testing.T) {
+	for _, c := range []struct {
+		body, code, message string
+	}{
+		{`{"type":"error","error":{"type":"authentication_error","message":"bad key"}}`, "authentication_error", "bad key"},
+		{`{"error":{"message":"Incorrect API key","type":"invalid_request_error","code":"invalid_api_key","param":null}}`, "invalid_request_error", "Incorrect API key"},
+		{"upstream fell over\n", "", "upstream fell over"},
+	} {
+		err := decodeProviderError(&http.Response{StatusCode: http.StatusUnauthorized, Body: io.NopCloser(strings.NewReader(c.body))})
+		var apiErr *Error
+		if !errors.As(err, &apiErr) || apiErr.Status != 401 || apiErr.Code != c.code || apiErr.Message != c.message {
+			t.Errorf("decodeProviderError(%s) = %v", c.body, err)
+		}
+	}
+}

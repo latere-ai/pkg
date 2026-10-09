@@ -37,7 +37,7 @@ func (*Frontend) Name() ir.Dialect { return DialectName }
 // requestKeys are the top-level lux request fields the decoder
 // understands. Anything else lands in the loss report, so every field
 // Request declares is named here: a decoded field reported as loss is a
-// spurious X-Lux-Compat-Loss on the caller's answer.
+// spurious Lux-Loss on the caller's answer.
 var requestKeys = map[string]bool{
 	"model": true, "system": true, "messages": true, "tools": true,
 	"server_tools": true, "web_search": true,

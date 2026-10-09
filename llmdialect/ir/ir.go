@@ -10,7 +10,7 @@
 //
 // Fields a target dialect cannot represent are recorded in the request
 // Loss report rather than silently dropped; consumers surface the
-// report (Lux emits it as an X-Lux-Compat-Loss header and OTEL
+// report (Lux emits it as a Lux-Loss header and OTEL
 // counters).
 package ir
 

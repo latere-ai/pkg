@@ -232,7 +232,7 @@ func (d *Direct) call(ctx context.Context, req *Request, stream bool) (*ir.Reque
 	}
 	if resp.StatusCode != http.StatusOK {
 		defer func() { _ = resp.Body.Close() }()
-		return nil, nil, nil, decodeError(resp)
+		return nil, nil, nil, decodeProviderError(resp)
 	}
 	return ireq, backend, resp, nil
 }

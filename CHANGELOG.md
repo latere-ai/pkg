@@ -10,6 +10,29 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Fixed
+
+- `luxsdk`: `Result.Loss`, `Stream.Loss()` and `TokenCount.Estimated` now
+  carry what the gateway reports. The client read `X-Lux-Compat-Loss` and
+  `X-Lux-Compat-Estimated`, which the gateway does not send, so the loss
+  report was always empty and every token count looked exact. It reads
+  `Lux-Loss` and `Lux-Estimated` now.
+- `luxsdk`: `WithCostTags` labels reach the gateway. They went out as
+  `Lux-Cost-Tag`, which the gateway ignores; they now go as `Lux-Labels`.
+  Lux records them as the request's own labels, shown in its request
+  history, for reporting only: they are not a usage dimension and do not
+  split a budget. The gateway keeps up to 8 valid pairs and drops the rest
+  without refusing the call; the option's documentation gives the rule.
+- `luxsdk`: a gateway error fills every field of `*Error`. The client read
+  an older body shape, so `Code` and `RequestID` were always empty. It now
+  reads the gateway's envelope: `Code` is `error.code` (`unauthenticated`,
+  `model_not_found`, `rate_limited`, ...), `Message` the code's sentence,
+  `RequestID` is `details.request_id`, and the new `Detail` field is
+  `details.detail`, the developer's account of the failure. `Error()`
+  adds the detail and the request id. Code that matched the older codes,
+  such as `rate_limit_error`, matches the gateway's instead. Direct mode
+  still reads the provider's own error shape.
+
 ### Security
 
 - Built with Go 1.27.2 and golang.org/x/net v0.60.0, which fix GO-2026-6611, GO-2026-6612, GO-2026-6613 and GO-2026-6617.

@@ -39,6 +39,7 @@ import (
 
 	"latere.ai/x/pkg/otel"
 
+	"latere.ai/x/pkg/llmdialect/bridge"
 	"latere.ai/x/pkg/llmdialect/ir"
 	"latere.ai/x/pkg/llmdialect/lux"
 )
@@ -123,17 +124,21 @@ const generatePath = "/lux/v1/generate"
 // countTokensPath is the gateway's native token-counting surface.
 const countTokensPath = "/lux/v1/count_tokens"
 
-// lossHeader carries the backend-leg translation loss report.
-const lossHeader = "X-Lux-Compat-Loss"
+// The gateway's header names, as lux/gateway/errors.go declares them.
+const (
+	// lossHeader carries the backend-leg translation loss report,
+	// comma separated.
+	lossHeader = "Lux-Loss"
 
-// estimatedHeader marks a count_tokens answer as a heuristic estimate
-// (the target has no native counting endpoint) rather than an exact
-// tokenizer count.
-const estimatedHeader = "X-Lux-Compat-Estimated"
+	// estimatedHeader is "true" on a count_tokens answer that is a
+	// heuristic estimate (the target has no native counting endpoint)
+	// rather than an exact tokenizer count.
+	estimatedHeader = "Lux-Estimated"
 
-// costTagHeader carries cost-attribution tags: a call's cost is split
-// across named dimensions within the caller's own spend.
-const costTagHeader = "Lux-Cost-Tag"
+	// labelsHeader carries the request's own labels, which the gateway
+	// records for reporting and nothing else.
+	labelsHeader = "Lux-Labels"
+)
 
 // TokenSource supplies a fresh bearer per call: a Key value on
 // [Client], whatever the endpoint takes on [Direct]. It is for a
@@ -179,11 +184,21 @@ func WithHTTPClient(hc *http.Client) Option {
 	return func(s *settings) { s.hc = hc }
 }
 
-// WithCostTags attributes every call's cost to named dimensions within
-// the caller's own spend (e.g. {"tenant": "acme", "project": "web"}),
-// sent as the Lux-Cost-Tag header. It never changes the billing owner
-// or what the key can reach. Gateway [Client] only; a nil or empty map
-// sends no header. The gateway validates the value.
+// WithCostTags labels every call (e.g. {"tenant": "acme", "project":
+// "web"}), sent as the Lux-Labels header on Generate, Stream, and
+// CountTokens. The gateway records the pairs as the request's own
+// labels, readable in its request history (GET /v1/requests) and for
+// reporting only: they are never an aggregate dimension of usage,
+// never split a budget or a bill, and never change what the Key can
+// reach. Gateway [Client] only; a nil or empty map sends no header.
+//
+// The gateway keeps a pair whose key is 1 to 64 characters of
+// [A-Za-z0-9._-] and whose value is 1 to 128 characters of
+// [A-Za-z0-9._:/-], up to 8 pairs: the first 8 such pairs in sorted key
+// order. It drops every other pair and still serves the request, so a
+// bad pair costs its label, never the call. A key or value holding ','
+// or '=' breaks the wire form: the gateway reads it as other pairs or
+// drops it.
 func WithCostTags(tags map[string]string) Option {
 	return func(s *settings) { s.costTags = tags }
 }
@@ -258,21 +273,41 @@ func New(baseURL string, opts ...Option) *Client {
 	}
 }
 
-// Error is a non-2xx gateway response, decoded from the error
-// envelope.
+// Error is a non-2xx answer. From [Client] it is decoded from the
+// gateway's error envelope
+// {"error":{"code","message","details":{"detail","request_id"}}}; from
+// [Direct], from the provider's error.type and error.message.
 type Error struct {
-	Status    int    // HTTP status
-	Code      string // envelope error type, e.g. rate_limit_error
-	Message   string
+	Status int    // HTTP status
+	Code   string // error.code, e.g. rate_limited or model_not_found
+	// Message is error.message, the code's one fixed user sentence; for
+	// a body that is not the envelope, the body itself.
+	Message string
+	// RequestID is error.details.request_id, the id to quote when
+	// asking about the request.
 	RequestID string
+	// Detail is error.details.detail, the developer's account of this
+	// one failure, e.g. `no Model named "x"`; empty when the gateway
+	// sent none.
+	Detail string
 }
 
-// Error implements error.
+// Error implements error. It is a developer line: the status, the
+// code, the message, and the detail and request id when present.
 func (e *Error) Error() string {
-	if e.Code == "" {
-		return fmt.Sprintf("lux: %d: %s", e.Status, e.Message)
+	var b strings.Builder
+	fmt.Fprintf(&b, "lux: %d", e.Status)
+	if e.Code != "" {
+		b.WriteString(" " + e.Code)
 	}
-	return fmt.Sprintf("lux: %d %s: %s", e.Status, e.Code, e.Message)
+	b.WriteString(": " + e.Message)
+	if e.Detail != "" {
+		b.WriteString(" (" + e.Detail + ")")
+	}
+	if e.RequestID != "" {
+		b.WriteString(" [" + e.RequestID + "]")
+	}
+	return b.String()
 }
 
 // Result is a completed non-streaming call.
@@ -337,7 +372,7 @@ func (c *Client) CountTokens(ctx context.Context, req *Request) (*TokenCount, er
 		httpReq.Header.Set("Authorization", "Bearer "+bearer)
 	}
 	if tags := formatCostTags(c.costTags); tags != "" {
-		httpReq.Header.Set(costTagHeader, tags)
+		httpReq.Header.Set(labelsHeader, tags)
 	}
 	resp, err := c.hc.Do(httpReq)
 	if err != nil {
@@ -400,7 +435,7 @@ func (c *Client) post(ctx context.Context, req *Request, stream bool) (*http.Res
 		httpReq.Header.Set("Authorization", "Bearer "+bearer)
 	}
 	if tags := formatCostTags(c.costTags); tags != "" {
-		httpReq.Header.Set(costTagHeader, tags)
+		httpReq.Header.Set(labelsHeader, tags)
 	}
 	resp, err := c.hc.Do(httpReq)
 	if err != nil {
@@ -409,7 +444,7 @@ func (c *Client) post(ctx context.Context, req *Request, stream bool) (*http.Res
 	return resp, nil
 }
 
-// formatCostTags serializes tags to the Lux-Cost-Tag wire form: sorted
+// formatCostTags serializes tags to the Lux-Labels wire form: sorted
 // key=value pairs joined by commas, no spaces. A nil or empty map
 // yields "".
 func formatCostTags(tags map[string]string) string {
@@ -428,26 +463,48 @@ func formatCostTags(tags map[string]string) string {
 	return b.String()
 }
 
-// decodeError parses the gateway error envelope
-// ({"type":"error","error":{"type","message","request_id"}}); an
-// unparseable body degrades to the raw bytes as the message.
+// decodeError reads a gateway answer that is not 2xx: the lux door's
+// envelope {"error":{"code","message","details":{"detail","request_id"}}},
+// parsed with the same bridge codec the gateway writes it with.
 func decodeError(resp *http.Response) error {
+	return readError(resp, func(body []byte) (bridge.Failure, bool) {
+		return bridge.ParseEnvelope(bridge.WireLux, body)
+	})
+}
+
+// decodeProviderError reads a provider's answer that is not 2xx, for
+// [Direct]: error.type and error.message, the members the Anthropic and
+// OpenAI shapes share.
+func decodeProviderError(resp *http.Response) error {
+	return readError(resp, func(body []byte) (bridge.Failure, bool) {
+		var wire struct {
+			Error struct {
+				Type      string `json:"type"`
+				Message   string `json:"message"`
+				RequestID string `json:"request_id"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(body, &wire) != nil || (wire.Error.Type == "" && wire.Error.Message == "") {
+			return bridge.Failure{}, false
+		}
+		return bridge.Failure{Code: wire.Error.Type, Message: wire.Error.Message, RequestID: wire.Error.RequestID}, true
+	})
+}
+
+// readError decodes the body of resp into *Error with parse; a body
+// parse does not recognize degrades to the raw bytes as the message.
+func readError(resp *http.Response, parse func([]byte) (bridge.Failure, bool)) error {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	out := &Error{Status: resp.StatusCode}
-	var wire struct {
-		Error struct {
-			Type      string `json:"type"`
-			Message   string `json:"message"`
-			RequestID string `json:"request_id"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal(body, &wire); err != nil || (wire.Error.Type == "" && wire.Error.Message == "") {
+	f, ok := parse(body)
+	if !ok {
 		out.Message = strings.TrimSpace(string(body))
 		return out
 	}
-	out.Code = wire.Error.Type
-	out.Message = wire.Error.Message
-	out.RequestID = wire.Error.RequestID
+	out.Code = f.Code
+	out.Message = f.Message
+	out.RequestID = f.RequestID
+	out.Detail = f.Detail
 	return out
 }
 
