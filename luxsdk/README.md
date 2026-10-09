@@ -50,7 +50,9 @@ identically.
 endpoint lives under `/api/paas/v4`, not `/v1`).
 
 Auth options: `WithAPIKey` (static bearer; provider key in direct
-mode), `WithTokenSource` (per-call token, e.g. a rotating JWT),
+mode), `WithTokenSource` (a per-call bearer for a credential that
+rotates; the gateway still takes only a Key value, never a Latere
+Auth token a platform did not register as one),
 `WithOAuthToken` (direct Anthropic only: bearer + OAuth beta header),
 `WithHTTPClient`.
 

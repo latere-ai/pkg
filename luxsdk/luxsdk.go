@@ -4,8 +4,10 @@
 // Package luxsdk is the first-party Go client for the Latere Lux
 // gateway's native dialect: one typed request /
 // response / streaming shape, POST /lux/v1/generate, any provider Lux
-// routes to. Authenticate with a Lux virtual key or a Latere Auth
-// bearer; both travel as Authorization: Bearer.
+// routes to. Authenticate with a Lux Key, which travels as
+// Authorization: Bearer. The gateway matches that value by its hash and
+// decodes nothing, so a Latere Auth identity or actor token is refused
+// unless a platform registered that exact token as a Key's value.
 //
 //	c := luxsdk.New("https://api.latere.ai/v1/models", luxsdk.WithAPIKey(key))
 //	res, err := c.Generate(ctx, &luxsdk.Request{
@@ -133,7 +135,10 @@ const estimatedHeader = "X-Lux-Compat-Estimated"
 // across named dimensions within the caller's own spend.
 const costTagHeader = "Lux-Cost-Tag"
 
-// TokenSource supplies a fresh bearer per call (Latere Auth JWTs).
+// TokenSource supplies a fresh bearer per call: a Key value on
+// [Client], whatever the endpoint takes on [Direct]. It is for a
+// credential that rotates; it does not make a Latere Auth token one the
+// gateway accepts.
 type TokenSource interface {
 	Token(ctx context.Context) (string, error)
 }
@@ -217,7 +222,7 @@ const (
 	// lux)"` silently retarget the CLI from a subshell.
 	EnvBaseURL = "LUX_BASE_URL"
 	// EnvAPIKey carries exactly what Authorization: Bearer carries: a
-	// lux_* virtual key, or a Latere Auth identity/actor token.
+	// Key value, a minted lux_* key or one a platform registered.
 	EnvAPIKey = "LUX_API_KEY"
 )
 
