@@ -10,6 +10,10 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Security
+
+- Built with Go 1.27.2 and golang.org/x/net v0.60.0, which fix GO-2026-6611, GO-2026-6612, GO-2026-6613 and GO-2026-6617.
+
 ## v0.94.0 - 2026-10-06
 
 ### Changed

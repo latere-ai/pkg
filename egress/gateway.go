@@ -297,7 +297,7 @@ func (g *Gateway) mitmH2(tlsClient *tls.Conn, host, hostport string, m *Map) {
 		defer func() { _ = resp.Body.Close() }()
 		copyUpstreamResponse(w, resp)
 	})
-	(&http2.Server{}).ServeConn(tlsClient, &http2.ServeConnOpts{Handler: h})
+	(&http2.Server{}).ServeConn(tlsClient, &http2.ServeConnOpts{Handler: h}) //nolint:staticcheck // the replacement, http.Server.Serve, takes a listener; this serves one connection whose TLS handshake is already done
 }
 
 // hopByHopHeaders are connection-scoped and must not be relayed from an upstream
