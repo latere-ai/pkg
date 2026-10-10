@@ -15,9 +15,7 @@ import "latere.ai/x/pkg/luxsdk"
 Both caller kinds expose the same `Caller` surface (`Generate` for one
 JSON response and `Stream` for SSE), so call sites are agnostic to how
 the model is reached. The gateway `Client` additionally offers
-`CountTokens`. TypeScript and Python clients with the same surface
-live in their own public repos: [lux-typescript-sdk](https://github.com/latere-ai/lux-typescript-sdk)
-and [lux-python-sdk](https://github.com/latere-ai/lux-python-sdk).
+`CountTokens`.
 
 ```go
 // Through a Lux deployment: key custody, gates, metering, routing.
@@ -38,9 +36,7 @@ c := luxsdk.New("")
 
 Explicit arguments always win: the environment only fills what the
 caller left unset, so exporting `LUX_BASE_URL` can never redirect a
-client that passed its own. The Go, TypeScript, and Python clients
-apply the same precedence, so one environment configures all three
-identically.
+client that passed its own.
 
 `Provider` is a closed enum: `ProviderAnthropic`, `ProviderOpenAI`
 (reasoning models are routed to `/v1/responses` automatically),
