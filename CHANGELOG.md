@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.95.0 - 2026-10-11
+
 ### Fixed
 
 - `luxsdk`: `Result.Loss`, `Stream.Loss()` and `TokenCount.Estimated` now
