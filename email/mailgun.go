@@ -45,8 +45,11 @@ func mailgunFrom(from, domain string) (string, string, error) {
 // it becomes a header, and a header that can be split is a header that can be
 // forged. The recipient and body do not need the check — the recipient is a
 // form field Mailgun parses itself, and the body is not a header.
-func (m *mailgunSender) Send(ctx context.Context, to, subject, htmlBody string) error {
-	if err := rejectCRLF("subject", subject); err != nil {
+func (m *mailgunSender) Send(ctx context.Context, msg Message) error {
+	if err := rejectCRLF("subject", msg.Subject); err != nil {
+		return err
+	}
+	if err := checkReplyTo(msg.ReplyTo); err != nil {
 		return err
 	}
 	apiURL := fmt.Sprintf("%s/v3/%s/messages", m.baseURL, m.domain)
@@ -57,9 +60,15 @@ func (m *mailgunSender) Send(ctx context.Context, to, subject, htmlBody string) 
 	// own Sender on the sending domain, and Outlook shows the message as sent
 	// on behalf of From. Naming the From address keeps one sender in view.
 	form.Set("h:Sender", m.sender)
-	form.Set("to", to)
-	form.Set("subject", subject)
-	form.Set("html", htmlBody)
+	form.Set("to", msg.To)
+	form.Set("subject", msg.Subject)
+	form.Set("html", msg.HTML)
+	if msg.Text != "" {
+		form.Set("text", msg.Text)
+	}
+	if msg.ReplyTo != "" {
+		form.Set("h:Reply-To", msg.ReplyTo)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, strings.NewReader(form.Encode()))
 	if err != nil {

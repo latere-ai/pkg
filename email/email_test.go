@@ -134,10 +134,10 @@ func TestMailgunClientUsesInstrumentedTransport(t *testing.T) {
 // and a message it cannot deliver must not become an error the caller handles.
 func TestLogSenderNeverFails(t *testing.T) {
 	var s Sender = &LogSender{}
-	if err := s.Send(context.Background(), "user@example.com", "Subject", "<p>body</p>"); err != nil {
+	if err := s.Send(context.Background(), Message{To: "user@example.com", Subject: "Subject", HTML: "<p>body</p>"}); err != nil {
 		t.Errorf("LogSender.Send = %v, want nil", err)
 	}
-	if err := s.Send(context.Background(), "", "", ""); err != nil {
+	if err := s.Send(context.Background(), Message{To: "", Subject: "", HTML: ""}); err != nil {
 		t.Errorf("LogSender.Send on empty input = %v, want nil", err)
 	}
 }

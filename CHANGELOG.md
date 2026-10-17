@@ -10,6 +10,28 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Changed
+
+- `email`: `Sender.Send` takes one `Message` instead of a recipient,
+  subject and HTML body. Replace `Send(ctx, to, subject, html)` with
+  `Send(ctx, email.Message{To: to, Subject: subject, HTML: html})`, and
+  give a test double the same signature.
+
+### Added
+
+- `email`: `Message.Text` sends a plain-text body beside the HTML, for
+  clients that do not show HTML. Over SMTP the body becomes
+  `multipart/alternative`, each part quoted-printable.
+- `email`: `Message.ReplyTo` sets where a reply goes, such as a monitored
+  mailbox behind a no-reply sender. A value that is not one address, or
+  that carries a line break, is refused before anything is sent.
+- `email`: `Layout` renders a message into one HTML frame that works
+  across mail clients: a logo, with a variant for dark mode, above the
+  message, and a reason line, copyright and links below it. A message is
+  a `Content` of typed blocks (`Paragraph`, `Note`, `Code`, `Button`,
+  `Facts`) built from `Text`, `Strong` and `Link`; `Render` escapes every
+  value and returns the HTML and the plain-text body together.
+
 ## v0.96.0 - 2026-10-17
 
 ### Added

@@ -8,9 +8,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"io"
+	"mime/multipart"
+	"mime/quotedprintable"
 	"net"
 	"net/mail"
 	"net/smtp"
+	"net/textproto"
 	"strings"
 )
 
@@ -60,37 +64,79 @@ func rejectCRLF(field, value string) error {
 // blocks the caller until the OS TCP timeout, with no way to abandon it.
 // net/smtp itself takes no context, so the greeting read and the envelope
 // exchange after the connection is up remain uncancellable.
-func (s *smtpSender) Send(ctx context.Context, to, subject, htmlBody string) error {
-	return s.send(ctx, to, subject, htmlBody)
-}
-
-func (s *smtpSender) send(ctx context.Context, to, subject, htmlBody string) error {
-	addr, err := mail.ParseAddress(to)
+func (s *smtpSender) Send(ctx context.Context, m Message) error {
+	addr, err := mail.ParseAddress(m.To)
 	if err != nil {
 		return fmt.Errorf("invalid recipient address: %w", err)
 	}
 	if err := rejectCRLF("from", s.from); err != nil {
 		return err
 	}
-	if err := rejectCRLF("subject", subject); err != nil {
+	if err := rejectCRLF("subject", m.Subject); err != nil {
+		return err
+	}
+	if err := checkReplyTo(m.ReplyTo); err != nil {
 		return err
 	}
 
 	// Header fields use the sanitized address and CRLF-checked values so no
 	// untrusted input can inject additional headers. addr.Address is the
 	// parsed mailbox with any line breaks already stripped by mail.ParseAddress.
-	msg := "MIME-Version: 1.0\r\n" +
-		"Content-Type: text/html; charset=\"UTF-8\"\r\n" +
+	head := "MIME-Version: 1.0\r\n" +
 		"From: " + s.from + "\r\n" +
-		"To: " + addr.Address + "\r\n" +
-		"Subject: " + subject + "\r\n" +
-		"\r\n" +
-		htmlBody
+		"To: " + addr.Address + "\r\n"
+	if m.ReplyTo != "" {
+		head += "Reply-To: " + m.ReplyTo + "\r\n"
+	}
+	head += "Subject: " + m.Subject + "\r\n"
+	body, err := mimeBody(m.HTML, m.Text)
+	if err != nil {
+		return err
+	}
+	msg := []byte(head + body)
 
 	if s.implicit {
-		return s.sendImplicitTLS(ctx, to, []byte(msg))
+		return s.sendImplicitTLS(ctx, m.To, msg)
 	}
-	return s.sendSTARTTLS(ctx, to, []byte(msg))
+	return s.sendSTARTTLS(ctx, m.To, msg)
+}
+
+// newBoundary is the multipart boundary; a test fixes it to compare output.
+var newBoundary = func() string { return multipart.NewWriter(io.Discard).Boundary() }
+
+// mimeBody is the Content-Type header and the body after it: the HTML alone,
+// or a multipart/alternative with the text first, since a client shows the
+// last part it can render. Both parts are quoted-printable, so a long line or
+// a non-ASCII character survives any relay.
+func mimeBody(html, text string) (string, error) {
+	if text == "" {
+		return "Content-Type: text/html; charset=\"UTF-8\"\r\n\r\n" + html, nil
+	}
+	var b strings.Builder
+	w := multipart.NewWriter(&b)
+	if err := w.SetBoundary(newBoundary()); err != nil {
+		return "", fmt.Errorf("smtp boundary: %w", err)
+	}
+	for _, part := range []struct{ kind, body string }{{"text/plain", text}, {"text/html", html}} {
+		h := textproto.MIMEHeader{}
+		h.Set("Content-Type", part.kind+"; charset=\"UTF-8\"")
+		h.Set("Content-Transfer-Encoding", "quoted-printable")
+		pw, err := w.CreatePart(h)
+		if err != nil {
+			return "", fmt.Errorf("smtp part: %w", err)
+		}
+		qw := quotedprintable.NewWriter(pw)
+		if _, err := qw.Write([]byte(part.body)); err != nil {
+			return "", fmt.Errorf("smtp part: %w", err)
+		}
+		if err := qw.Close(); err != nil {
+			return "", fmt.Errorf("smtp part: %w", err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		return "", fmt.Errorf("smtp parts: %w", err)
+	}
+	return "Content-Type: multipart/alternative; boundary=\"" + w.Boundary() + "\"\r\n\r\n" + b.String(), nil
 }
 
 // sendSTARTTLS connects on port 587 and upgrades to TLS via STARTTLS.

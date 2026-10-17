@@ -11,7 +11,10 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
+	"io"
 	"math/big"
+	"mime/multipart"
+	"mime/quotedprintable"
 	"net"
 	"strings"
 	"testing"
@@ -20,7 +23,7 @@ import (
 
 func TestSMTP_Send_BadRecipient(t *testing.T) {
 	s, _ := newSMTPSender(&SMTPConfig{Host: "smtp.example.com", Port: "587", From: "noreply@example.com"})
-	if err := s.Send(context.Background(), "not-an-email", "Your login code", "<p>123456</p>"); err == nil {
+	if err := s.Send(context.Background(), Message{To: "not-an-email", Subject: "Your login code", HTML: "<p>123456</p>"}); err == nil {
 		t.Fatal("expected error for invalid recipient")
 	}
 }
@@ -29,7 +32,7 @@ func TestSMTP_Send_BadRecipient(t *testing.T) {
 // dialed — whatever the calling service put in it.
 func TestSMTP_Send_RejectsCRLFInSubject(t *testing.T) {
 	s, _ := newSMTPSender(&SMTPConfig{Host: "smtp.example.com", Port: "587", From: "noreply@example.com"})
-	err := s.Send(context.Background(), "user@example.com", "Evil\r\nBcc: attacker@evil.com", "<p>b</p>")
+	err := s.Send(context.Background(), Message{To: "user@example.com", Subject: "Evil\r\nBcc: attacker@evil.com", HTML: "<p>b</p>"})
 	if err == nil || !strings.Contains(err.Error(), "line break") {
 		t.Errorf("expected CRLF rejection, got %v", err)
 	}
@@ -75,7 +78,7 @@ func TestSMTP_SendDialFailure(t *testing.T) {
 		Host: "127.0.0.1", Port: "1", // closed port
 		From: "noreply@example.com",
 	})
-	err := s.Send(context.Background(), "user@example.com", "Subject", "<p>b</p>")
+	err := s.Send(context.Background(), Message{To: "user@example.com", Subject: "Subject", HTML: "<p>b</p>"})
 	if err == nil {
 		t.Fatal("expected dial failure")
 	}
@@ -86,7 +89,7 @@ func TestSMTP_ImplicitDialFailure(t *testing.T) {
 		Host: "127.0.0.1", Port: "465",
 		From: "noreply@example.com",
 	})
-	err := s.Send(context.Background(), "user@example.com", "Subject", "<p>b</p>")
+	err := s.Send(context.Background(), Message{To: "user@example.com", Subject: "Subject", HTML: "<p>b</p>"})
 	if err == nil {
 		t.Fatal("expected dial failure")
 	}
@@ -348,7 +351,7 @@ func TestSMTP_STARTTLS_SendEndToEnd(t *testing.T) {
 	// service's subject and body arrive intact — the transport composes headers
 	// around them and must not touch either.
 	s, dataCh := newTestSTARTTLSSender(t, mockOpts{}, false)
-	if err := s.Send(context.Background(), "user@example.com", "Your login code", "<p>424242</p>"); err != nil {
+	if err := s.Send(context.Background(), Message{To: "user@example.com", Subject: "Your login code", HTML: "<p>424242</p>"}); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	select {
@@ -419,7 +422,7 @@ func TestSMTP_ImplicitTLS_WithAuth(t *testing.T) {
 
 func TestSMTP_ImplicitTLS_SendEndToEnd(t *testing.T) {
 	s, dataCh := newTestImplicitTLSSender(t, mockOpts{}, false)
-	if err := s.Send(context.Background(), "user@example.com", "You've been invited to Acme", "<a href=\"https://example.com/accept\">Accept</a>"); err != nil {
+	if err := s.Send(context.Background(), Message{To: "user@example.com", Subject: "You've been invited to Acme", HTML: "<a href=\"https://example.com/accept\">Accept</a>"}); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	select {
@@ -510,7 +513,7 @@ func TestSMTP_Send_CancelledContextAbortsDial(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			cancel()
-			err := tt.sender.Send(ctx, "user@example.com", "Subject", "<p>b</p>")
+			err := tt.sender.Send(ctx, Message{To: "user@example.com", Subject: "Subject", HTML: "<p>b</p>"})
 			if err == nil {
 				t.Fatal("send with a cancelled context must fail")
 			}
@@ -518,5 +521,78 @@ func TestSMTP_Send_CancelledContextAbortsDial(t *testing.T) {
 				t.Fatalf("err = %v, want it to wrap context.Canceled", err)
 			}
 		})
+	}
+}
+
+// With a text part the body is multipart/alternative, text first and HTML
+// last, each quoted-printable so long lines and non-ASCII survive.
+func TestMimeBodyAlternative(t *testing.T) {
+	old := newBoundary
+	newBoundary = func() string { return "BOUNDARY" }
+	t.Cleanup(func() { newBoundary = old })
+
+	long := strings.Repeat("x", 100)
+	body, err := mimeBody("<p>Grüße "+long+"</p>", "Grüße "+long)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, rest, _ := strings.Cut(body, "\r\n\r\n")
+	if head != `Content-Type: multipart/alternative; boundary="BOUNDARY"` {
+		t.Fatalf("header = %q", head)
+	}
+	r := multipart.NewReader(strings.NewReader(rest), "BOUNDARY")
+	for _, want := range []struct{ kind, body string }{
+		{`text/plain; charset="UTF-8"`, "Grüße " + long},
+		{`text/html; charset="UTF-8"`, "<p>Grüße " + long + "</p>"},
+	} {
+		p, err := r.NextRawPart()
+		if err != nil {
+			t.Fatalf("part %s: %v", want.kind, err)
+		}
+		if p.Header.Get("Content-Type") != want.kind || p.Header.Get("Content-Transfer-Encoding") != "quoted-printable" {
+			t.Errorf("part header = %v", p.Header)
+		}
+		got, err := io.ReadAll(quotedprintable.NewReader(p))
+		if err != nil || string(got) != want.body {
+			t.Errorf("part %s = %q, %v", want.kind, got, err)
+		}
+	}
+	if _, err := r.NextPart(); err != io.EOF {
+		t.Errorf("a third part, or no end: %v", err)
+	}
+}
+
+func TestMimeBodyHTMLAlone(t *testing.T) {
+	body, err := mimeBody("<p>b</p>", "")
+	if err != nil || body != "Content-Type: text/html; charset=\"UTF-8\"\r\n\r\n<p>b</p>" {
+		t.Errorf("body = %q, %v", body, err)
+	}
+}
+
+func TestMimeBodyRefusesABadBoundary(t *testing.T) {
+	old := newBoundary
+	newBoundary = func() string { return "" }
+	t.Cleanup(func() { newBoundary = old })
+	if _, err := mimeBody("<p>b</p>", "b"); err == nil {
+		t.Error("an empty boundary was taken")
+	}
+}
+
+func TestSMTP_ReplyToAndText(t *testing.T) {
+	s, dataCh := newTestSTARTTLSSender(t, mockOpts{}, false)
+	msg := Message{To: "user@example.com", Subject: "Hello", HTML: "<p>b</p>", Text: "b", ReplyTo: "billing@example.com"}
+	if err := s.Send(context.Background(), msg); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	select {
+	case d := <-dataCh:
+		if !strings.Contains(d, "Reply-To: billing@example.com") || !strings.Contains(d, "multipart/alternative") {
+			t.Errorf("DATA lacks Reply-To or the alternative parts: %q", d)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for DATA")
+	}
+	if err := s.Send(context.Background(), Message{To: "user@example.com", Subject: "s", HTML: "b", ReplyTo: "x\r\nBcc: y@z"}); err == nil {
+		t.Error("a forged Reply-To was taken")
 	}
 }

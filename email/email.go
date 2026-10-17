@@ -1,15 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: Apache-2.0
 
-// Package email sends transactional mail. It owns the transport and nothing
-// else: a service composes its own subjects and bodies and hands them here.
+// Package email sends transactional mail. It owns the transport and the HTML
+// frame a message sits in; a service composes what each message says and
+// hands it here.
 //
 // The split is deliberate. Delivery is a platform concern with one correct
 // answer (pick a working transport, refuse header injection, instrument the
-// outbound call), while a message is a product decision that belongs to the
-// service making it. Sharing the transport keeps the careful part in one
-// place; keeping the templates out means adding a new kind of mail is a change
-// in one service rather than a release of this module.
+// outbound call), and so is HTML that renders across mail clients. What a
+// message says is a product decision that belongs to the service making it.
+// Sharing the transport and the Layout keeps the careful parts in one place;
+// keeping the words out means adding a new kind of mail is a change in one
+// service rather than a release of this module.
 package email
 
 import (
@@ -17,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/mail"
 	"time"
 
 	"latere.ai/x/pkg/otel"
@@ -26,10 +29,42 @@ import (
 // outbound delivery and its logs stay correlated with the request that caused
 // them.
 //
-// The body is HTML. A transport that cannot express that is not implemented
-// here rather than silently degrading.
+// The body is HTML, with an optional plain-text alternative. A transport that
+// cannot express that is not implemented here rather than silently degrading.
 type Sender interface {
-	Send(ctx context.Context, to, subject, htmlBody string) error
+	Send(ctx context.Context, m Message) error
+}
+
+// Message is one mail to one recipient. Layout.Render fills HTML and Text
+// from a message's Content.
+type Message struct {
+	// To is the recipient's address.
+	To string
+	// Subject is one line; a line break is refused.
+	Subject string
+	// HTML is the body.
+	HTML string
+	// Text is the plain-text body, sent beside HTML as its alternative for
+	// clients that do not show HTML. Empty sends HTML alone.
+	Text string
+	// ReplyTo is where a reply goes instead of the From address, such as a
+	// monitored mailbox behind a no-reply sender. Empty sets none.
+	ReplyTo string
+}
+
+// checkReplyTo refuses a Reply-To that would forge a header or is not one
+// address. An empty one is no Reply-To.
+func checkReplyTo(replyTo string) error {
+	if replyTo == "" {
+		return nil
+	}
+	if err := rejectCRLF("reply-to", replyTo); err != nil {
+		return err
+	}
+	if _, err := mail.ParseAddress(replyTo); err != nil {
+		return fmt.Errorf("invalid reply-to address: %w", err)
+	}
+	return nil
 }
 
 // SMTPConfig configures the SMTP transport. Port defaults to 587 (STARTTLS);
@@ -111,7 +146,7 @@ type LogSender struct{}
 
 // Send logs the recipient and subject. The body is not logged: it is the part
 // most likely to carry something that should not sit in a log aggregator.
-func (*LogSender) Send(ctx context.Context, to, subject, _ string) error {
-	slog.InfoContext(ctx, "email.sent", "to", to, "subject", subject)
+func (*LogSender) Send(ctx context.Context, m Message) error {
+	slog.InfoContext(ctx, "email.sent", "to", m.To, "subject", m.Subject)
 	return nil
 }
