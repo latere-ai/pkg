@@ -351,14 +351,17 @@ func imageURL(img *ir.Image) string {
 }
 
 // wireUsage is the Chat Completions usage object. prompt_tokens_details
-// and its cached_tokens are pointers because their absence is a datum:
-// an openai-compatible server without per-request cache accounting
-// writes neither, and that is not a cache that served nothing.
+// and its counts are pointers because their absence is a datum: an
+// openai-compatible server without per-request cache accounting writes
+// none, and that is not a cache that served nothing. cache_write_tokens
+// is OpenRouter's extension, the tokens a request wrote to a provider's
+// prompt cache, which prompt_tokens includes.
 type wireUsage struct {
 	PromptTokens        int64 `json:"prompt_tokens"`
 	CompletionTokens    int64 `json:"completion_tokens"`
 	PromptTokensDetails *struct {
-		CachedTokens *int64 `json:"cached_tokens"`
+		CachedTokens     *int64 `json:"cached_tokens"`
+		CacheWriteTokens *int64 `json:"cache_write_tokens"`
 	} `json:"prompt_tokens_details"`
 	CompletionTokensDetails struct {
 		ReasoningTokens int64 `json:"reasoning_tokens"`
@@ -366,19 +369,20 @@ type wireUsage struct {
 }
 
 // toUsage converts wire usage to IR semantics: IR input tokens exclude
-// cache reads (Anthropic convention), while prompt_tokens includes
-// them. The cache read count is set only when the wire carried one;
-// this dialect has no cache write count.
+// cache reads and cache writes (Anthropic convention), while
+// prompt_tokens includes them. Each cache count is set only when the
+// wire carried it.
 func (u *wireUsage) toUsage() *ir.Usage {
-	var cached *int64
-	if u.PromptTokensDetails != nil {
-		cached = u.PromptTokensDetails.CachedTokens
+	var cached, written *int64
+	if d := u.PromptTokensDetails; d != nil {
+		cached, written = d.CachedTokens, d.CacheWriteTokens
 	}
 	return &ir.Usage{
-		InputTokens:          max(u.PromptTokens-deref(cached), 0),
-		OutputTokens:         u.CompletionTokens,
-		CacheReadInputTokens: cached,
-		ReasoningTokens:      u.CompletionTokensDetails.ReasoningTokens,
+		InputTokens:           max(u.PromptTokens-deref(cached)-deref(written), 0),
+		OutputTokens:          u.CompletionTokens,
+		CacheReadInputTokens:  cached,
+		CacheWriteInputTokens: written,
+		ReasoningTokens:       u.CompletionTokensDetails.ReasoningTokens,
 	}
 }
 

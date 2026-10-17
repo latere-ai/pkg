@@ -12,6 +12,11 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Fixed
 
+- `llmdialect/openaichat`, `llmdialect/bridge`: OpenRouter's
+  `prompt_tokens_details.cache_write_tokens` is read as cache writes and
+  no longer counted as fresh input. A translated answer on Chat
+  Completions counts cache writes in `prompt_tokens` and reports them as
+  `cache_write_tokens`.
 - `llmdialect/anthropic`: a cache hint on a tool result is written as its
   `cache_control`; it was dropped, which lost the breakpoint an agent loop
   places after its latest tool result.

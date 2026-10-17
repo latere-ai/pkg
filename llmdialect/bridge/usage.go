@@ -11,9 +11,10 @@ import (
 )
 
 // Usage is one dialect's usage members, normalized: Input never counts
-// cache reads, which OpenAI and Google fold into their prompt total and
-// Anthropic reports beside it, so the five numbers add up the same way
-// whatever answered. Every member is floored at zero.
+// cache reads or cache writes, which OpenAI, OpenRouter and Google fold
+// into their prompt total and Anthropic reports beside it, so the five
+// numbers add up the same way whatever answered. Every member is
+// floored at zero.
 type Usage struct {
 	Input, Output, CachedInput, CacheWrite, Reasoning int64
 }
@@ -24,7 +25,7 @@ type Usage struct {
 // member that appeared can be a last value.
 type parts struct {
 	prompt, completion, cached, cacheWrite, reasoning *int64
-	subtractCached                                    bool // openai and google report a prompt total that includes cache reads
+	subtractCached                                    bool // openai and google report a prompt total that includes cache reads and writes
 }
 
 // wireUsage is every dialect's usage object in one struct, so one decode
@@ -33,7 +34,8 @@ type wireUsage struct {
 	PromptTokens        *int64 `json:"prompt_tokens"`
 	CompletionTokens    *int64 `json:"completion_tokens"`
 	PromptTokensDetails *struct {
-		CachedTokens *int64 `json:"cached_tokens"`
+		CachedTokens     *int64 `json:"cached_tokens"`
+		CacheWriteTokens *int64 `json:"cache_write_tokens"` // OpenRouter's extension
 	} `json:"prompt_tokens_details"`
 	CompletionTokensDetails *struct {
 		ReasoningTokens *int64 `json:"reasoning_tokens"`
@@ -94,6 +96,7 @@ func (p *parts) mergeUsage(w Wire, u *wireUsage) {
 		set(&p.completion, u.CompletionTokens)
 		if u.PromptTokensDetails != nil {
 			set(&p.cached, u.PromptTokensDetails.CachedTokens)
+			set(&p.cacheWrite, u.PromptTokensDetails.CacheWriteTokens)
 		}
 		if u.CompletionTokensDetails != nil {
 			set(&p.reasoning, u.CompletionTokensDetails.ReasoningTokens)
@@ -127,9 +130,9 @@ func deref(p *int64) int64 {
 	return *p
 }
 
-// usage folds the parts into a Usage: input excludes cached input on the
-// wires that fold it in, floored at zero. ok is false when no usage
-// member appeared at all.
+// usage folds the parts into a Usage: input excludes cache reads and
+// cache writes on the wires that fold them in, floored at zero. ok is
+// false when no usage member appeared at all.
 func (p parts) usage() (Usage, bool) {
 	if p.prompt == nil && p.completion == nil && p.cached == nil && p.cacheWrite == nil && p.reasoning == nil {
 		return Usage{}, false
@@ -142,7 +145,7 @@ func (p parts) usage() (Usage, bool) {
 		Reasoning:   deref(p.reasoning),
 	}
 	if p.subtractCached {
-		u.Input = max(u.Input-u.CachedInput, 0)
+		u.Input = max(u.Input-u.CachedInput-u.CacheWrite, 0)
 	}
 	return u, true
 }

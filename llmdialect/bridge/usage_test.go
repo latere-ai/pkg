@@ -181,3 +181,22 @@ func FuzzUsageScanner(f *testing.F) {
 		}
 	})
 }
+
+// TestUsageCountsOpenRouterCacheWrites: OpenRouter counts the tokens a
+// request wrote to the provider's cache in prompt_tokens and names them
+// in cache_write_tokens; they are metered as cache writes, not as fresh
+// input, on a buffered body and on a stream alike.
+func TestUsageCountsOpenRouterCacheWrites(t *testing.T) {
+	body := `{"usage":{"prompt_tokens":26799,"completion_tokens":8,"prompt_tokens_details":{"cached_tokens":0,"cache_write_tokens":26797}}}`
+	want := Usage{Input: 2, Output: 8, CacheWrite: 26797}
+	if got, ok := UsageOf(WireOpenAI, []byte(body)); !ok || got != want {
+		t.Fatalf("UsageOf = %+v %v, want %+v", got, ok, want)
+	}
+	s := NewUsageScanner(WireOpenAI, FramingSSE)
+	if _, err := s.Write([]byte("data: " + body + "\n\ndata: [DONE]\n\n")); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := s.Usage(); !ok || got != want {
+		t.Fatalf("scanner = %+v %v, want %+v", got, ok, want)
+	}
+}

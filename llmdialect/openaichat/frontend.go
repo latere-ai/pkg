@@ -512,19 +512,24 @@ func finishReason(stop ir.StopReason) string {
 }
 
 // encodeFrontUsage converts IR usage back to the Chat Completions
-// shape: prompt_tokens includes cache reads, with the cached share in
-// prompt_tokens_details. An unreported cache read count is written as
-// 0: this wire always carries the member, and its readers take 0 as
-// the value for a call that read no cache.
+// shape: prompt_tokens includes cache reads and cache writes, with the
+// cached share in prompt_tokens_details. An unreported cache read count
+// is written as 0: this wire always carries the member, and its readers
+// take 0 as the value for a call that read no cache. A cache write
+// count is written as OpenRouter's cache_write_tokens when the upstream
+// reported one.
 func encodeFrontUsage(u ir.Usage) map[string]any {
-	cached := deref(u.CacheReadInputTokens)
+	cached, written := deref(u.CacheReadInputTokens), deref(u.CacheWriteInputTokens)
+	prompt := u.InputTokens + cached + written
+	details := map[string]any{"cached_tokens": cached}
+	if u.CacheWriteInputTokens != nil {
+		details["cache_write_tokens"] = written
+	}
 	return map[string]any{
-		"prompt_tokens":     u.InputTokens + cached,
-		"completion_tokens": u.OutputTokens,
-		"total_tokens":      u.InputTokens + cached + u.OutputTokens,
-		"prompt_tokens_details": map[string]any{
-			"cached_tokens": cached,
-		},
+		"prompt_tokens":         prompt,
+		"completion_tokens":     u.OutputTokens,
+		"total_tokens":          prompt + u.OutputTokens,
+		"prompt_tokens_details": details,
 		"completion_tokens_details": map[string]any{
 			"reasoning_tokens": u.ReasoningTokens,
 		},
