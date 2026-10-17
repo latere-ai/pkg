@@ -42,6 +42,26 @@ type SMTPConfig struct {
 	From     string
 }
 
+// Option adjusts the transport New returns.
+type Option func(*options)
+
+type options struct {
+	from string
+}
+
+// WithFrom sets the From header of every message the Mailgun transport sends:
+// a bare address, or one with a display name ("Example <noreply@example.com>").
+// Unset or empty, it is noreply@ the sending domain. The address may sit on a
+// parent of the sending domain: under DMARC's relaxed alignment, a message
+// Mailgun signs for mg.example.com passes for example.com. The SMTP transport
+// takes its From from SMTPConfig instead.
+//
+// It is a deployment setting, not a per-message one: a service composes what
+// it says, and the operator decides who it says it from.
+func WithFrom(from string) Option {
+	return func(o *options) { o.from = from }
+}
+
 // New returns the first transport the configuration supports:
 //
 //  1. Mailgun, when apiKey is set and is not "test".
@@ -52,10 +72,18 @@ type SMTPConfig struct {
 // credentials and no network: mail is written to the log, and nothing fails.
 // "test" is spelled out as a non-key so a test environment can set the
 // variable without reaching a real provider.
-func New(apiKey, domain, region string, smtp *SMTPConfig) (Sender, error) {
+func New(apiKey, domain, region string, smtp *SMTPConfig, opts ...Option) (Sender, error) {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
 	if apiKey != "" && apiKey != "test" {
 		if domain == "" {
 			return nil, fmt.Errorf("email: a domain is required when an API key is set")
+		}
+		from, sender, err := mailgunFrom(o.from, domain)
+		if err != nil {
+			return nil, err
 		}
 		baseURL := "https://api.mailgun.net"
 		if region == "eu" {
@@ -64,6 +92,8 @@ func New(apiKey, domain, region string, smtp *SMTPConfig) (Sender, error) {
 		return &mailgunSender{
 			apiKey:  apiKey,
 			domain:  domain,
+			from:    from,
+			sender:  sender,
 			baseURL: baseURL,
 			client:  &http.Client{Timeout: 10 * time.Second, Transport: otel.Transport(nil)},
 		}, nil

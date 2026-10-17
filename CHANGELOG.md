@@ -10,6 +10,17 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `email`: `WithFrom` sets the From header the Mailgun transport sends,
+  a bare address or one with a display name. Without it the transport
+  still sends from `noreply@` its sending domain. The address may sit on a
+  parent of the sending domain (`noreply@example.com` through
+  `mg.example.com`), which passes DMARC under relaxed alignment. `New`
+  refuses an address that does not parse. The transport also sets the
+  Sender header to the From address, so Outlook does not show the message
+  as sent on behalf of an address on the sending domain.
+
 ## v0.95.0 - 2026-10-11
 
 ### Fixed

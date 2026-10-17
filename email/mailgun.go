@@ -7,16 +7,38 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/mail"
 	"net/url"
 	"strings"
 )
 
 // mailgunSender delivers through the Mailgun HTTP API.
 type mailgunSender struct {
-	apiKey  string
-	domain  string
+	apiKey string
+	domain string
+	// from is the From header as configured; sender is its bare address,
+	// which also goes in the Sender header.
+	from    string
+	sender  string
 	baseURL string
 	client  *http.Client
+}
+
+// mailgunFrom resolves the From header and its bare address, refusing one
+// that does not parse or carries a line break, so a bad setting stops the
+// start rather than the first message.
+func mailgunFrom(from, domain string) (string, string, error) {
+	if from == "" {
+		from = "noreply@" + domain
+	}
+	if err := rejectCRLF("from", from); err != nil {
+		return "", "", fmt.Errorf("email: %w", err)
+	}
+	addr, err := mail.ParseAddress(from)
+	if err != nil {
+		return "", "", fmt.Errorf("email: invalid from address %q: %w", from, err)
+	}
+	return from, addr.Address, nil
 }
 
 // Send posts one message. The subject is refused if it carries a line break:
@@ -30,7 +52,11 @@ func (m *mailgunSender) Send(ctx context.Context, to, subject, htmlBody string) 
 	apiURL := fmt.Sprintf("%s/v3/%s/messages", m.baseURL, m.domain)
 
 	form := url.Values{}
-	form.Set("from", fmt.Sprintf("noreply@%s", m.domain))
+	form.Set("from", m.from)
+	// When From is on another domain than the sending one, Mailgun writes its
+	// own Sender on the sending domain, and Outlook shows the message as sent
+	// on behalf of From. Naming the From address keeps one sender in view.
+	form.Set("h:Sender", m.sender)
 	form.Set("to", to)
 	form.Set("subject", subject)
 	form.Set("html", htmlBody)

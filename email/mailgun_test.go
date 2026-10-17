@@ -12,7 +12,7 @@ import (
 )
 
 func TestMailgunSend_Success(t *testing.T) {
-	var capturedSubject, capturedTo, capturedHTML, capturedFrom, capturedAuth string
+	var capturedSubject, capturedTo, capturedHTML, capturedFrom, capturedSender, capturedAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			t.Errorf("parse: %v", err)
@@ -22,12 +22,13 @@ func TestMailgunSend_Success(t *testing.T) {
 		capturedTo = r.FormValue("to")
 		capturedHTML = r.FormValue("html")
 		capturedFrom = r.FormValue("from")
+		capturedSender = r.FormValue("h:Sender")
 		capturedAuth = r.Header.Get("Authorization")
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 
-	m := &mailgunSender{apiKey: "k", domain: "mg.example.com", baseURL: srv.URL, client: srv.Client()}
+	m := &mailgunSender{apiKey: "k", domain: "mg.example.com", from: "Example <noreply@example.com>", sender: "noreply@example.com", baseURL: srv.URL, client: srv.Client()}
 	if err := m.Send(context.Background(), "user@example.com", "Your login code", "<p>654321</p>"); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -40,10 +41,13 @@ func TestMailgunSend_Success(t *testing.T) {
 	if capturedHTML != "<p>654321</p>" {
 		t.Errorf("html = %q; the transport must not alter the body", capturedHTML)
 	}
-	// The from address is derived from the sending domain, never taken from the
-	// caller: a service composes what it says, not who it says it from.
-	if capturedFrom != "noreply@mg.example.com" {
+	// The from address is the transport's, never taken from the caller: a
+	// service composes what it says, not who it says it from.
+	if capturedFrom != "Example <noreply@example.com>" {
 		t.Errorf("from = %q", capturedFrom)
+	}
+	if capturedSender != "noreply@example.com" {
+		t.Errorf("h:Sender = %q, want the bare from address", capturedSender)
 	}
 	if capturedAuth == "" || !strings.HasPrefix(capturedAuth, "Basic ") {
 		t.Errorf("authorization = %q, want basic auth", capturedAuth)

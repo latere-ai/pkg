@@ -59,6 +59,42 @@ func TestNewRefusesAKeyWithNoDomain(t *testing.T) {
 	}
 }
 
+func TestNewResolvesTheMailgunFrom(t *testing.T) {
+	tests := []struct {
+		name       string
+		opts       []Option
+		wantFrom   string
+		wantSender string
+	}{
+		{"no option sends from the sending domain", nil, "noreply@mg.example.com", "noreply@mg.example.com"},
+		{"an empty option is no option", []Option{WithFrom("")}, "noreply@mg.example.com", "noreply@mg.example.com"},
+		{"a bare address on the parent domain", []Option{WithFrom("noreply@example.com")}, "noreply@example.com", "noreply@example.com"},
+		{"a display name keeps the header as given", []Option{WithFrom("Example <noreply@example.com>")}, "Example <noreply@example.com>", "noreply@example.com"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, err := New("real-key", "mg.example.com", "eu", nil, tt.opts...)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			m := s.(*mailgunSender)
+			if m.from != tt.wantFrom || m.sender != tt.wantSender {
+				t.Errorf("from, sender = %q, %q; want %q, %q", m.from, m.sender, tt.wantFrom, tt.wantSender)
+			}
+		})
+	}
+}
+
+// A from address that cannot be sent is a misconfiguration that must fail at
+// startup, and a line break in it is a header injection.
+func TestNewRefusesABadFrom(t *testing.T) {
+	for _, from := range []string{"not an address", "Example <noreply@example.com", "noreply@example.com\r\nBcc: attacker@evil.com"} {
+		if _, err := New("real-key", "mg.example.com", "eu", nil, WithFrom(from)); err == nil {
+			t.Errorf("New with from %q: expected an error", from)
+		}
+	}
+}
+
 func TestNewRegionPicksTheBaseURL(t *testing.T) {
 	for region, want := range map[string]string{
 		"":   "https://api.mailgun.net",
