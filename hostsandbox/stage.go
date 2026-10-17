@@ -102,8 +102,13 @@ type StageSpec struct {
 	Network Network
 	// LogPath is the host file the driver writes the stage's combined
 	// output to. The driver keeps the settings file and the exit status
-	// beside it, named after it with another extension. It is never granted
-	// to the stage, so the stage cannot rewrite its own transcript.
+	// beside it, named after it with another extension. The driver denies
+	// writes to the directory that holds it, so a writable path granted
+	// around it does not let the stage rewrite or remove its own
+	// transcript. Reading it is the consumer's to grant: a ReadOnly entry
+	// for LogPath in Paths lets a command stat and read its own output,
+	// which macOS's seatbelt checks against the file's path even on an
+	// open descriptor, and grants nothing beside it.
 	LogPath string
 }
 

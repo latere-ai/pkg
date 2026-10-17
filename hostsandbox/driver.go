@@ -153,9 +153,9 @@ func (d *Driver) Profile(spec StageSpec) Profile {
 	profile.Denies = append(profile.Denies, spec.Denied...)
 	profile.DenyWrites = append(profile.DenyWrites, spec.DeniedWrites...)
 	// The log directory holds the log, the settings file and the status
-	// file. It is never in Paths, so it is already outside every allowWrite
-	// entry; it is denied explicitly so that a writable parent granted later
-	// cannot include it.
+	// file. A consumer may grant the log ReadOnly, which adds no allowWrite
+	// entry; the directory is denied explicitly so that a writable parent
+	// granted around it does not make any of the three writable.
 	if spec.LogPath != "" {
 		profile.DenyWrites = append(profile.DenyWrites, filepath.Dir(spec.LogPath))
 	}
