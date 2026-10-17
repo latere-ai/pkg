@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.96.0 - 2026-10-17
+
 ### Added
 
 - `email`: `WithFrom` sets the From header the Mailgun transport sends,
