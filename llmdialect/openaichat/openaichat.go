@@ -11,12 +11,12 @@
 // reasoning_content extension and its reasoning spelling.
 //
 // A gateway that serves several vendors' models on this dialect, such
-// as OpenRouter, takes Anthropic's cache_control on a content part for
-// every model and carries it to the providers that cache what it marks.
-// For a model named under a vendor the backend writes each cache hint
-// that way, so the provider's prompt cache is used, Google's models
-// excepted; for those, and for a model named with no vendor, a hint is
-// recorded as lost.
+// as OpenRouter, takes Anthropic's cache_control on a content part and
+// carries it to the model's provider. For a model of a vendor whose
+// providers cache only what is marked, Anthropic or Alibaba's Qwen, the
+// backend writes each cache hint that way, so the provider's prompt
+// cache is used; for any other model a hint is recorded as lost, since
+// its providers cache a repeated prefix on their own.
 //
 // The frontend codec (caller side) ships separately.
 package openaichat
@@ -221,40 +221,35 @@ func reasoningEffort(req *ir.Request) string {
 
 // takesCacheControl reports whether the cache hints of a request for a
 // model named model are written as Anthropic's cache_control on a
-// content part: for a model named under a vendor, as a gateway that
-// serves several vendors' models names it, such as qwen/qwen3.6-plus or
-// openrouter/anthropic/claude-opus-4, and not under google.
+// content part: for a model named under the anthropic or the qwen
+// vendor, as a gateway names it, such as anthropic/claude-sonnet-4.5,
+// openrouter/anthropic/claude-opus-4 or qwen/qwen3.6-plus.
 //
-// OpenRouter, the gateway that names models so, takes cache_control on
-// a content part for every model. A provider that caches only what is
-// marked, Anthropic or Alibaba, caches the prefix up to each mark;
-// OpenAI's newer models take it as their own breakpoint; a provider that
-// caches a repeated prefix on its own, OpenAI, DeepSeek or an
-// open-weights host, drops it. Google's Gemini caches a repeated prefix
-// on its own too, but a mark makes the gateway write a cache, at more
-// than the input price, of the prompt up to the last mark, and an agent
-// loop's last mark moves every turn: each turn would write a cache and
-// read none, where the implicit cache reads the repeated prefix for a
-// quarter of the price. OpenAI's own endpoint, which refuses an unknown
-// member, names its models with no vendor.
+// These are the vendors whose providers cache only what is marked,
+// Anthropic and Alibaba, as OpenRouter documents, and whose own
+// endpoints take the member: Anthropic's through a translation to the
+// Messages API, Alibaba's on this dialect. Every other provider caches a
+// repeated prefix on its own, OpenAI, Google, DeepSeek, Moonshot, xAI,
+// and the open-weights hosts, so a mark gains nothing, and a model named
+// under such a vendor may be served by that vendor's own endpoint,
+// which, as OpenAI's and Mistral's do, refuses an unknown member. For
+// Google's Gemini a mark costs: the gateway writes a cache, at more than
+// the input price, of the prompt up to the last mark, which in an agent
+// loop moves every turn, so each turn would write one and read none.
 func takesCacheControl(model string) bool {
 	segments := strings.Split(strings.ToLower(strings.TrimSpace(model)), "/")
 	if segments[len(segments)-1] == "" {
 		return false
 	}
-	vendor := false
 	for _, segment := range segments[:len(segments)-1] {
 		// OpenRouter's ~ prefix names a model alias, such as
 		// ~anthropic/claude-sonnet-latest.
 		switch strings.TrimPrefix(segment, "~") {
-		case "google":
-			return false
-		case "":
-		default:
-			vendor = true
+		case "anthropic", "qwen":
+			return true
 		}
 	}
-	return vendor
+	return false
 }
 
 // cachePart marks a content part as a cache breakpoint when hint is set
