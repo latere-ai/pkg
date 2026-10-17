@@ -16,7 +16,10 @@
 //	})
 //
 // Both arguments fall back to the environment when omitted, so a
-// script configured by `eval "$(latere lux env lux)"` needs neither:
+// script that exports them needs neither:
+//
+//	export LUX_BASE_URL=https://api.latere.ai/v1/models
+//	export LUX_API_KEY="$(latere models env --raw)"
 //
 //	c := luxsdk.New("") // LUX_BASE_URL + LUX_API_KEY
 //
@@ -233,8 +236,8 @@ type Client struct {
 const (
 	// EnvBaseURL names the gateway, e.g. https://api.latere.ai/v1/models. It is
 	// deliberately not LUX_API_URL: that is the latere CLI's own target,
-	// and one variable steering both would let `eval "$(latere lux env
-	// lux)"` silently retarget the CLI from a subshell.
+	// and one variable steering both would let a script that exports the
+	// SDK's address silently retarget the CLI from a subshell.
 	EnvBaseURL = "LUX_BASE_URL"
 	// EnvAPIKey carries exactly what Authorization: Bearer carries: a
 	// Key value, a minted lux_* key or one a platform registered.

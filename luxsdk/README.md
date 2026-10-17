@@ -27,8 +27,13 @@ d, err := luxsdk.NewDirect(luxsdk.ProviderAnthropic, key, "")
 ```
 
 Both connection values fall back to `LUX_BASE_URL` and `LUX_API_KEY`
-when omitted, so a process configured by `eval "$(latere lux env
---compat lux)"` can construct with neither:
+when omitted, so a process that exports them can construct with neither:
+
+```sh
+export LUX_BASE_URL=https://api.latere.ai/v1/models
+export LUX_API_KEY="$(latere models env --raw)"
+```
+
 
 ```go
 c := luxsdk.New("")
