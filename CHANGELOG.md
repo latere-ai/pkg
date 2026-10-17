@@ -10,6 +10,24 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `pricelist`: reads a model list in OpenRouter's format, such as
+  OpenRouter's public one at `pricelist.DefaultURL`, into typed models.
+  Each price is read exactly, as micro-USD per million tokens rounded
+  half-even (`Price.PerMillion`), and three answers stay apart that a
+  plain number would merge: a price written as exactly zero
+  (`Price.Zero`), a price that is no fixed one, such as OpenRouter's `-1`
+  or a malformed or sub-micro-unit value, and a price the row does not
+  state (`Price.Stated`). A model carries its prompt, completion,
+  cache-read and both cache-write prices, the long-context tiers that
+  replace them from a prompt length on, and its name, listing time,
+  context window, output limit, input and output modalities and supported
+  parameters. `Fetch` reads the list over HTTP, with `WithUserAgent` to
+  name the reader; `Decode` reads one from any reader. A list with no
+  model is an error, so an outage that answers an empty list is never
+  read as a list with no prices.
+
 ## v0.99.0 - 2026-10-17
 
 ### Fixed
