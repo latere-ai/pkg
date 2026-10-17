@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.100.0 - 2026-10-18
+
 ### Added
 
 - `pricelist`: reads a model list in OpenRouter's format, such as
