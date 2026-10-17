@@ -10,6 +10,20 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Fixed
+
+- `llmdialect/openaichat`: a request for any model named under a vendor,
+  such as `qwen/qwen3.6-plus` or `deepseek/deepseek-v4-flash` on
+  OpenRouter, carries its cache breakpoints as `cache_control`, not only
+  an Anthropic model. A Qwen model served by Alibaba caches only what is
+  marked, so an agent loop on one paid full input price every turn; a
+  provider that caches a repeated prefix on its own drops the mark.
+  Google's models are the exception and get no marks: Gemini reads its
+  implicit cache for a quarter of the input price, while a mark makes
+  OpenRouter write a new cache on every turn of an agent loop. A model
+  named with no vendor, as OpenAI's own endpoint names them, is encoded
+  as before.
+
 ## v0.98.0 - 2026-10-17
 
 ### Fixed

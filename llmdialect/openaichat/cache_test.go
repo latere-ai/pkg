@@ -39,13 +39,17 @@ func agentTurn(model string) *ir.Request {
 
 var ephemeral = map[string]any{"type": "ephemeral"}
 
-// TestEncodeRequestCacheControlForAnthropicModels: a gateway serving
-// Anthropic models on this dialect caches only what cache_control
-// marks, so each breakpoint must reach the wire on the part it was
-// placed after: the stable system block, the user text, and the tool
-// message.
-func TestEncodeRequestCacheControlForAnthropicModels(t *testing.T) {
-	for _, model := range []string{"anthropic/claude-sonnet-5.5", "openrouter/anthropic/claude-opus-5", "sponsored/anthropic/claude-haiku-5.5", "~anthropic/claude-sonnet-latest"} {
+// TestEncodeRequestCacheControlForVendorModels: a gateway that names
+// models under their vendor takes cache_control for every model, and
+// its Anthropic and Alibaba providers cache only what it marks, so each
+// breakpoint must reach the wire on the part it was placed after: the
+// stable system block, the user text, and the tool message. A provider
+// that caches a repeated prefix on its own drops the mark.
+func TestEncodeRequestCacheControlForVendorModels(t *testing.T) {
+	for _, model := range []string{
+		"anthropic/claude-sonnet-5.5", "openrouter/anthropic/claude-opus-5", "sponsored/anthropic/claude-haiku-5.5", "~anthropic/claude-sonnet-latest",
+		"qwen/qwen3.6-plus", "free/qwen/qwen3.8-27b", "deepseek/deepseek-v4-flash", "openai/gpt-6.1-sol", "meta-llama/llama-3.3-70b-instruct", "moonshotai/kimi-k3",
+	} {
 		t.Run(model, func(t *testing.T) {
 			req := agentTurn(model)
 			got := encode(t, req, BackendOptions{})
@@ -73,11 +77,16 @@ func TestEncodeRequestCacheControlForAnthropicModels(t *testing.T) {
 	}
 }
 
-// TestEncodeRequestCacheControlOtherModels: OpenAI and the open-weights
-// runtimes refuse an unknown member, so any other model gets the plain
-// shapes and the breakpoints are reported as lost.
+// TestEncodeRequestCacheControlOtherModels: OpenAI's own endpoint and
+// a runtime serving its models by bare name refuse an unknown member,
+// and a mark on a Google model makes the gateway write a paid cache
+// every turn instead of reading its implicit one, so these models get
+// the plain shapes and the breakpoints are reported as lost.
 func TestEncodeRequestCacheControlOtherModels(t *testing.T) {
-	for _, model := range []string{"gpt-4.1", "openai/gpt-5", "qwen3-32b", "anthropic", "claude-sonnet-4-5", ""} {
+	for _, model := range []string{
+		"gpt-4.1", "qwen3-32b", "anthropic", "claude-sonnet-4-5", "", "anthropic/",
+		"google/gemini-3.6-flash", "free/google/gemma-4-31b-it", "openrouter/google/gemini-2.5-pro", "~google/gemini-flash-latest",
+	} {
 		t.Run(model, func(t *testing.T) {
 			req := agentTurn(model)
 			raw, err := NewBackend(BackendOptions{}).EncodeRequest(req)
@@ -149,10 +158,20 @@ func TestTakesCacheControl(t *testing.T) {
 		" anthropic/claude-haiku-4.5 ":       true,
 		"openrouter/anthropic/claude-opus-5": true,
 		"~anthropic/claude-sonnet-latest":    true,
+		"qwen/qwen3.6-plus":                  true,
+		"sponsored/qwen/qwen3.8-27b":         true,
+		"openai/gpt-5":                       true,
+		"deepseek/deepseek-v4-flash":         true,
+		"vendor/anthropic-like":              true,
+		"google/gemini-3.6-flash":            false,
+		"Google/Gemini-3.1-Flash-Lite":       false,
+		"free/google/gemma-4-31b-it":         false,
+		"~google/gemini-flash-latest":        false,
 		"anthropic":                          false,
+		"anthropic/":                         false,
+		"/claude":                            false,
 		"claude-sonnet-4-5":                  false,
-		"openai/gpt-5":                       false,
-		"vendor/anthropic-like":              false,
+		"gpt-4.1":                            false,
 		"":                                   false,
 	}
 	for model, want := range cases {
@@ -163,12 +182,21 @@ func TestTakesCacheControl(t *testing.T) {
 }
 
 func FuzzTakesCacheControl(f *testing.F) {
-	for _, s := range []string{"anthropic/claude", "/", "", "a/b/c", "~anthropic/"} {
+	for _, s := range []string{"anthropic/claude", "/", "", "a/b/c", "~anthropic/", "google/gemini", "x/~google/y"} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, model string) {
-		if takesCacheControl(model) && !strings.Contains(strings.ToLower(model), "anthropic/") {
-			t.Fatalf("%q has no anthropic vendor segment", model)
+		if !takesCacheControl(model) {
+			return
+		}
+		segments := strings.Split(strings.ToLower(strings.TrimSpace(model)), "/")
+		if len(segments) < 2 || segments[len(segments)-1] == "" {
+			t.Fatalf("%q names no model under a vendor", model)
+		}
+		for _, s := range segments[:len(segments)-1] {
+			if strings.TrimPrefix(s, "~") == "google" {
+				t.Fatalf("%q is a Google model", model)
+			}
 		}
 	})
 }
