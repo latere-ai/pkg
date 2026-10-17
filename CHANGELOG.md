@@ -10,6 +10,12 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Fixed
+
+- `llmdialect/anthropic`: a cache hint on a tool result is written as its
+  `cache_control`; it was dropped, which lost the breakpoint an agent loop
+  places after its latest tool result.
+
 ## v0.97.0 - 2026-10-17
 
 ### Changed

@@ -538,3 +538,36 @@ func TestDecodeResponseCarriesThinkingTokensAsReasoning(t *testing.T) {
 		t.Fatalf("ReasoningTokens = %d, want 0 without details", resp.Usage.ReasoningTokens)
 	}
 }
+
+// TestBackendEncodeToolResultBreakpoint: an agent loop's latest
+// breakpoint sits after a tool result; without it on the wire the next
+// request cannot read the conversation from the cache.
+func TestBackendEncodeToolResultBreakpoint(t *testing.T) {
+	req := &ir.Request{Model: "claude-sonnet-5", Messages: []ir.Message{
+		userMsg("read a.txt"),
+		{Role: ir.RoleAssistant, Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "t1", Name: "read", Args: json.RawMessage(`{}`)}}}},
+		{Role: ir.RoleUser, Blocks: []ir.Block{
+			{Type: ir.BlockToolResult, ToolResult: &ir.ToolResult{ToolUseID: "t0", Blocks: []ir.Block{{Type: ir.BlockText, Text: "old"}}}},
+			{Type: ir.BlockToolResult, CacheHint: true, ToolResult: &ir.ToolResult{ToolUseID: "t1", Blocks: []ir.Block{{Type: ir.BlockText, Text: "contents"}}}},
+		}},
+	}}
+	raw, err := NewBackend(BackendOptions{}).EncodeRequest(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Messages []struct {
+			Content []map[string]any `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	results := got.Messages[2].Content
+	if _, ok := results[0]["cache_control"]; ok {
+		t.Fatalf("unhinted tool result marked: %v", results[0])
+	}
+	if !reflect.DeepEqual(results[1]["cache_control"], map[string]any{"type": "ephemeral"}) {
+		t.Fatalf("hinted tool result = %v", results[1])
+	}
+}

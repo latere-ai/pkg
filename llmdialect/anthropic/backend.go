@@ -305,7 +305,10 @@ func encodeBackendBlock(blk ir.Block, role ir.Role, req *ir.Request) (map[string
 		if blk.ToolResult.IsError {
 			out["is_error"] = true
 		}
-		return out, true, nil
+		// The breakpoint an agent loop places after its latest tool
+		// result is what lets the next request read the conversation
+		// from the cache.
+		return withCache(out), true, nil
 	case ir.BlockThinking:
 		// Only provider-signed thinking survives a replay; synthesized
 		// blocks (no signature) cannot be sent to the Messages API.
