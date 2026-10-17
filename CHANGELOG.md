@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.97.0 - 2026-10-17
+
 ### Changed
 
 - `email`: `Sender.Send` takes one `Message` instead of a recipient,
