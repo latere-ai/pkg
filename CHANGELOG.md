@@ -12,11 +12,21 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Fixed
 
+- `llmdialect/openaichat`: a request for a model named under the
+  `anthropic` vendor, such as `anthropic/claude-sonnet-4.5` on OpenRouter,
+  carries its cache breakpoints as `cache_control` on the system part, the
+  user part, or the tool message they follow, so the provider's prompt
+  cache serves the repeated prefix of an agent loop. Before, every
+  breakpoint was dropped and each turn paid full input price. Other
+  models are encoded as before.
 - `llmdialect/openaichat`, `llmdialect/bridge`: OpenRouter's
   `prompt_tokens_details.cache_write_tokens` is read as cache writes and
   no longer counted as fresh input. A translated answer on Chat
   Completions counts cache writes in `prompt_tokens` and reports them as
   `cache_write_tokens`.
+- `llmdialect/openaichat`: a `cache_control` on a content part of a Chat
+  Completions request is kept as a cache hint, so a translation to the
+  Messages API keeps the breakpoint.
 - `llmdialect/anthropic`: a cache hint on a tool result is written as its
   `cache_control`; it was dropped, which lost the breakpoint an agent loop
   places after its latest tool result.

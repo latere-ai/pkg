@@ -246,11 +246,11 @@ func decodeFrontMessages(req *ir.Request, msgs []frontMessage) error {
 		m := msgs[i]
 		switch m.Role {
 		case "system", "developer":
-			text, err := decodeFrontText(m.Content)
+			text, hint, err := decodeFrontText(m.Content)
 			if err != nil {
 				return fmt.Errorf("openaichat: messages[%d]: %w", i, err)
 			}
-			req.System = append(req.System, ir.Block{Type: ir.BlockText, Text: text})
+			req.System = append(req.System, ir.Block{Type: ir.BlockText, Text: text, CacheHint: hint})
 		case "user":
 			blocks, err := decodeFrontUserContent(m.Content, &req.Loss)
 			if err != nil {
@@ -263,12 +263,12 @@ func decodeFrontMessages(req *ir.Request, msgs []frontMessage) error {
 				blocks = append(blocks, ir.Block{Type: ir.BlockThinking, Text: m.ReasoningContent})
 			}
 			if len(m.Content) > 0 && string(m.Content) != "null" {
-				text, err := decodeFrontText(m.Content)
+				text, hint, err := decodeFrontText(m.Content)
 				if err != nil {
 					return fmt.Errorf("openaichat: messages[%d]: %w", i, err)
 				}
 				if text != "" {
-					blocks = append(blocks, ir.Block{Type: ir.BlockText, Text: text})
+					blocks = append(blocks, ir.Block{Type: ir.BlockText, Text: text, CacheHint: hint})
 				}
 			}
 			for _, tc := range m.ToolCalls {
@@ -280,14 +280,14 @@ func decodeFrontMessages(req *ir.Request, msgs []frontMessage) error {
 		case "tool":
 			var blocks []ir.Block
 			for ; i < len(msgs) && msgs[i].Role == "tool"; i++ {
-				text, err := decodeFrontText(msgs[i].Content)
+				text, hint, err := decodeFrontText(msgs[i].Content)
 				if err != nil {
 					return fmt.Errorf("openaichat: messages[%d]: %w", i, err)
 				}
 				blocks = append(blocks, ir.Block{Type: ir.BlockToolResult, ToolResult: &ir.ToolResult{
 					ToolUseID: msgs[i].ToolCallID,
 					Blocks:    []ir.Block{{Type: ir.BlockText, Text: text}},
-				}})
+				}, CacheHint: hint})
 			}
 			i--
 			req.Messages = append(req.Messages, ir.Message{Role: ir.RoleUser, Blocks: blocks})
@@ -298,29 +298,41 @@ func decodeFrontMessages(req *ir.Request, msgs []frontMessage) error {
 	return nil
 }
 
+// marked reports whether a content part's cache_control member, the
+// Anthropic breakpoint that gateways serving Anthropic models take on
+// this dialect, is present.
+func marked(cacheControl json.RawMessage) bool {
+	return len(cacheControl) > 0 && string(cacheControl) != "null"
+}
+
 // decodeFrontText accepts the string and text-parts forms of content.
-func decodeFrontText(raw json.RawMessage) (string, error) {
+// The parts are joined into one text, so a cache breakpoint on any of
+// them is reported as one after the whole text.
+func decodeFrontText(raw json.RawMessage) (string, bool, error) {
 	if len(raw) == 0 {
-		return "", nil
+		return "", false, nil
 	}
 	var s string
 	if err := json.Unmarshal(raw, &s); err == nil {
-		return s, nil
+		return s, false, nil
 	}
 	var parts []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
+		Type         string          `json:"type"`
+		Text         string          `json:"text"`
+		CacheControl json.RawMessage `json:"cache_control"`
 	}
 	if err := json.Unmarshal(raw, &parts); err != nil {
-		return "", fmt.Errorf("content must be a string or content parts")
+		return "", false, fmt.Errorf("content must be a string or content parts")
 	}
 	var texts []string
+	hint := false
 	for _, p := range parts {
 		if p.Type == "text" {
 			texts = append(texts, p.Text)
+			hint = hint || marked(p.CacheControl)
 		}
 	}
-	return strings.Join(texts, "\n\n"), nil
+	return strings.Join(texts, "\n\n"), hint, nil
 }
 
 func decodeFrontUserContent(raw json.RawMessage, loss *ir.Loss) ([]ir.Block, error) {
@@ -334,6 +346,7 @@ func decodeFrontUserContent(raw json.RawMessage, loss *ir.Loss) ([]ir.Block, err
 		ImageURL *struct {
 			URL string `json:"url"`
 		} `json:"image_url"`
+		CacheControl json.RawMessage `json:"cache_control"`
 	}
 	if err := json.Unmarshal(raw, &parts); err != nil {
 		return nil, fmt.Errorf("content must be a string or content parts")
@@ -342,7 +355,7 @@ func decodeFrontUserContent(raw json.RawMessage, loss *ir.Loss) ([]ir.Block, err
 	for _, p := range parts {
 		switch p.Type {
 		case "text":
-			out = append(out, ir.Block{Type: ir.BlockText, Text: p.Text})
+			out = append(out, ir.Block{Type: ir.BlockText, Text: p.Text, CacheHint: marked(p.CacheControl)})
 		case "image_url":
 			if p.ImageURL == nil {
 				return nil, fmt.Errorf("image_url part missing url")
@@ -351,7 +364,7 @@ func decodeFrontUserContent(raw json.RawMessage, loss *ir.Loss) ([]ir.Block, err
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, ir.Block{Type: ir.BlockImage, Image: img})
+			out = append(out, ir.Block{Type: ir.BlockImage, Image: img, CacheHint: marked(p.CacheControl)})
 		default:
 			loss.Add(ir.LossContentTypeOf(p.Type))
 		}

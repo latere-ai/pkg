@@ -10,6 +10,13 @@
 // OpenRouter, Gemini's compat endpoint), including the widespread
 // reasoning_content extension and its reasoning spelling.
 //
+// A gateway that serves Anthropic models on this dialect, such as
+// OpenRouter, takes Anthropic's cache_control on a content part and
+// carries it to the model's provider. For a model named under the
+// anthropic vendor the backend writes each cache hint that way, so the
+// provider's prompt cache is used; for any other model a hint is
+// recorded as lost.
+//
 // The frontend codec (caller side) ships separately.
 package openaichat
 
@@ -56,12 +63,13 @@ func (*Backend) Name() ir.Dialect { return DialectName }
 func (b *Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 	body := map[string]any{"model": req.Model}
 
+	cache := takesCacheControl(req.Model)
 	var messages []map[string]any
-	if sys := encodeSystem(req); sys != nil {
+	if sys := encodeSystem(req, cache); sys != nil {
 		messages = append(messages, sys)
 	}
 	for i, m := range req.Messages {
-		enc, err := encodeMessage(m, req)
+		enc, err := encodeMessage(m, req, cache)
 		if err != nil {
 			return nil, fmt.Errorf("openaichat: messages[%d]: %w", i, err)
 		}
@@ -210,32 +218,86 @@ func reasoningEffort(req *ir.Request) string {
 	}
 }
 
-// encodeSystem folds the IR system blocks into one system message.
-func encodeSystem(req *ir.Request) map[string]any {
-	var parts []string
+// takesCacheControl reports whether a model named model takes
+// Anthropic's cache_control on a content part of this dialect: a model
+// named under the anthropic vendor, as a gateway serving Anthropic
+// models names it, such as anthropic/claude-sonnet-4.5 or
+// openrouter/anthropic/claude-opus-4. OpenRouter carries the member to
+// whichever provider serves the model. OpenAI and the open-weights
+// runtimes refuse or ignore it, so it is written for these models alone.
+func takesCacheControl(model string) bool {
+	segments := strings.Split(strings.ToLower(strings.TrimSpace(model)), "/")
+	for _, segment := range segments[:len(segments)-1] {
+		// OpenRouter's ~ prefix names a model alias, such as
+		// ~anthropic/claude-sonnet-latest.
+		if strings.TrimPrefix(segment, "~") == "anthropic" {
+			return true
+		}
+	}
+	return false
+}
+
+// cachePart marks a content part as a cache breakpoint when hint is set
+// and the part has text to cache: the Messages API refuses
+// cache_control on an empty text block, so a hint on one is recorded as
+// lost. The return value reports whether the part carries the mark.
+func cachePart(part map[string]any, hint bool, text string, req *ir.Request) bool {
+	if !hint {
+		return false
+	}
+	if text == "" {
+		req.Loss.Add(ir.LossCacheControl)
+		return false
+	}
+	part["cache_control"] = map[string]any{"type": "ephemeral"}
+	return true
+}
+
+// encodeSystem folds the IR system blocks into one system message: one
+// string, or, when cache is set and a block carries a cache hint, one
+// text part per block with the hinted ones marked, so the breakpoint
+// stays between the blocks it was placed between.
+func encodeSystem(req *ir.Request, cache bool) map[string]any {
+	var texts []string
+	var parts []map[string]any
+	marked := false
 	for _, blk := range req.System {
-		if blk.CacheHint {
+		if blk.Type != ir.BlockText {
+			if blk.CacheHint {
+				req.Loss.Add(ir.LossCacheControl)
+			}
+			continue
+		}
+		if blk.CacheHint && !cache {
 			req.Loss.Add(ir.LossCacheControl)
 		}
-		if blk.Type == ir.BlockText {
-			parts = append(parts, blk.Text)
+		part := map[string]any{"type": "text", "text": blk.Text}
+		if cachePart(part, cache && blk.CacheHint, blk.Text, req) {
+			marked = true
 		}
+		texts = append(texts, blk.Text)
+		parts = append(parts, part)
 	}
-	if len(parts) == 0 {
+	if len(texts) == 0 {
 		return nil
 	}
-	return map[string]any{"role": "system", "content": strings.Join(parts, "\n\n")}
+	if marked {
+		return map[string]any{"role": "system", "content": parts}
+	}
+	return map[string]any{"role": "system", "content": strings.Join(texts, "\n\n")}
 }
 
 // encodeMessage converts one IR message into one or more Chat
 // Completions messages: tool results become role-"tool" messages, the
 // remainder of a user turn becomes a user message, an assistant turn
 // becomes an assistant message with tool_calls.
-func encodeMessage(m ir.Message, req *ir.Request) ([]map[string]any, error) {
+func encodeMessage(m ir.Message, req *ir.Request, cache bool) ([]map[string]any, error) {
 	var out []map[string]any
 	switch m.Role {
 	case ir.RoleUser:
 		var content []map[string]any
+		// textOnly is whether the content can be written as a string: a
+		// single text part with no cache mark.
 		textOnly := true
 		flushContent := func() {
 			if len(content) == 0 {
@@ -252,22 +314,33 @@ func encodeMessage(m ir.Message, req *ir.Request) ([]map[string]any, error) {
 			textOnly = true
 		}
 		for _, blk := range m.Blocks {
-			if blk.CacheHint {
+			hint := blk.CacheHint && cache
+			if blk.CacheHint && !cache {
 				req.Loss.Add(ir.LossCacheControl)
 			}
 			switch blk.Type {
 			case ir.BlockToolResult:
 				flushContent()
-				out = append(out, encodeToolResult(blk, req))
+				out = append(out, encodeToolResult(blk, req, hint))
 			case ir.BlockText:
-				content = append(content, map[string]any{"type": "text", "text": blk.Text})
+				part := map[string]any{"type": "text", "text": blk.Text}
+				if cachePart(part, hint, blk.Text, req) {
+					textOnly = false
+				}
+				content = append(content, part)
 			case ir.BlockImage:
 				textOnly = false
-				content = append(content, map[string]any{"type": "image_url", "image_url": map[string]any{"url": imageURL(blk.Image)}})
+				url := imageURL(blk.Image)
+				part := map[string]any{"type": "image_url", "image_url": map[string]any{"url": url}}
+				cachePart(part, hint, url, req)
+				content = append(content, part)
 			case ir.BlockOpaque:
 				// Another dialect's item; this dialect defines none of
 				// its own.
 				req.Loss.Add(ir.LossOpaque)
+				if hint {
+					req.Loss.Add(ir.LossCacheControl)
+				}
 			default:
 				return nil, fmt.Errorf("block type %q not allowed in a user message", blk.Type)
 			}
@@ -319,7 +392,7 @@ func encodeMessage(m ir.Message, req *ir.Request) ([]map[string]any, error) {
 	return out, nil
 }
 
-func encodeToolResult(blk ir.Block, req *ir.Request) map[string]any {
+func encodeToolResult(blk ir.Block, req *ir.Request, hint bool) map[string]any {
 	tr := blk.ToolResult
 	var texts []string
 	for _, inner := range tr.Blocks {
@@ -336,11 +409,15 @@ func encodeToolResult(blk ir.Block, req *ir.Request) map[string]any {
 		// convey the failure (harnesses already phrase it that way).
 		req.Loss.Add(ir.LossToolResultIsError)
 	}
-	return map[string]any{
-		"role":         "tool",
-		"tool_call_id": tr.ToolUseID,
-		"content":      strings.Join(texts, "\n\n"),
+	text := strings.Join(texts, "\n\n")
+	msg := map[string]any{"role": "tool", "tool_call_id": tr.ToolUseID, "content": text}
+	// A breakpoint after a tool result rides on its content written as
+	// one text part, which is how a tool message carries cache_control.
+	part := map[string]any{"type": "text", "text": text}
+	if cachePart(part, hint, text, req) {
+		msg["content"] = []map[string]any{part}
 	}
+	return msg
 }
 
 func imageURL(img *ir.Image) string {
