@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.98.0 - 2026-10-17
+
 ### Fixed
 
 - `llmdialect/openaichat`: a request for a model named under the
