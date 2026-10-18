@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.101.0 - 2026-10-18
+
 ### Fixed
 
 - `llmdialect/openaichat`, `llmdialect/openairesp`: an image a tool
