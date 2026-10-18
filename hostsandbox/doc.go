@@ -42,6 +42,12 @@
 // left the group itself, by starting its own session, is not reached. Discard
 // is Stop: the driver creates nothing else.
 //
+// Command is the attached form: the same rendering as Launch, returned as an
+// exec.Cmd whose pipes the caller sets, with a cleanup for its settings file.
+// It is for a stage that reads stdin from its caller, and it ends with the
+// caller: its pipes close when the calling process exits, and its context
+// ending kills its whole process group. It records no status and no handle.
+//
 // # The path policy
 //
 // srt allows reads everywhere by default and treats allowRead as an exception

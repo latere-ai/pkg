@@ -10,6 +10,23 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- `hostsandbox.Driver.Command` runs a stage attached: the srt command for a
+  `StageSpec`, rendered with the same profile, deny table and network as
+  `Launch`, returned as an `*exec.Cmd` whose stdin, stdout and stderr the
+  caller sets, with a cleanup that removes its settings file. Use it for a
+  stage that reads input from its caller. The stage is not detached: its
+  pipes close when the calling process exits, and its context ending kills
+  its whole process group. It records no status and returns no handle; the
+  exit code is the command's.
+- `hostsandboxtest.Attacher` names a driver with that attached form, and
+  `hostsandboxtest.Run` holds one to it: stdin reaches the stage, the exit
+  code returns, and the context ending ends it. A `Subject` whose driver is
+  an `Attacher` sets the new `Copy` field, an argv that copies stdin to
+  stdout. Drivers that are not attachers skip those cases and need no
+  change.
+
 ## v0.101.0 - 2026-10-18
 
 ### Fixed

@@ -7,7 +7,8 @@
 // is gone, its output is readable from an offset out of a location the stage
 // cannot write, nothing it started is left running once Stop or Discard
 // returns, even after its main process has exited, and its handle is refused
-// by any other driver. Run drives one driver through all five.
+// by any other driver. Run drives one driver through all five, and a driver
+// that also runs a stage attached (Attacher) through that form's contract.
 package hostsandboxtest
 
 import (
@@ -16,6 +17,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -42,9 +44,19 @@ type Subject struct {
 	// ends there; under one where it outlives the main process, Stop and
 	// Discard must end it.
 	Orphan func(d time.Duration) []string
+	// Copy builds an argv that copies its stdin to stdout and exits zero. It
+	// is needed only when Driver is an Attacher.
+	Copy func() []string
 	// Dir is a writable directory the stage may use. The suite puts the
 	// workspace and the log directory under it.
 	Dir string
+}
+
+// Attacher is a driver that also runs a stage attached: the rendered command
+// with its pipes left to the caller, and a cleanup for what the driver wrote
+// to run it. The srt driver's Command is one.
+type Attacher interface {
+	Command(context.Context, hostsandbox.StageSpec) (*exec.Cmd, func(), error)
 }
 
 // Timeout bounds how long the suite waits for a stage to finish.
@@ -149,6 +161,39 @@ func Run(t *testing.T, newSubject func(t *testing.T) *Subject) {
 		expect(t, errors.Is(err, hostsandbox.ErrMismatch), "Discard = %v, want ErrMismatch", err)
 	})
 
+	t.Run("an attached stage reads its caller's stdin and returns its exit code", func(t *testing.T) {
+		subject := newSubject(t)
+		attacher := subject.attacher(t)
+		expect(t, subject.Copy != nil, "Subject.Copy is nil; an Attacher is held to what it does with stdin")
+		command, cleanup := subject.command(t, attacher, subject.Copy())
+		command.Stdin = strings.NewReader("from the caller")
+		output, err := command.Output()
+		must(t, err, "run the attached stage")
+		expect(t, bytes.Contains(output, []byte("from the caller")), "output = %q, want the caller's stdin", output)
+		// The cleanup runs after the stage, and again without harm.
+		cleanup()
+		cleanup()
+
+		failing, _ := subject.command(t, attacher, subject.Print("failing", 3))
+		err = failing.Run()
+		var exit *exec.ExitError
+		expect(t, errors.As(err, &exit) && exit.ExitCode() == 3, "Run = %v, want exit 3", err)
+	})
+
+	t.Run("an attached stage ends when its context does", func(t *testing.T) {
+		subject := newSubject(t)
+		attacher := subject.attacher(t)
+		ctx, cancel := context.WithTimeout(context.Background(), Settle)
+		defer cancel()
+		command, cleanup, err := attacher.Command(ctx, subject.spec(t, subject.Wait(Timeout)))
+		must(t, err, "Command")
+		defer cleanup()
+		started := time.Now()
+		err = command.Run()
+		expect(t, err != nil, "a stage whose context ended reported success")
+		expect(t, time.Since(started) < Timeout/2, "the stage ran %v after its context ended", time.Since(started))
+	})
+
 	t.Run("the declaration names what it enforces", func(t *testing.T) {
 		subject := newSubject(t)
 		capabilities := subject.Driver.Capabilities()
@@ -197,6 +242,26 @@ func stageName(t *testing.T) string {
 		}
 	}, t.Name())
 	return "stage-" + strings.Trim(safe, "-")
+}
+
+// attacher returns the driver as an Attacher, and skips the case when it is
+// not one: the attached form is optional.
+func (s *Subject) attacher(t *testing.T) Attacher {
+	t.Helper()
+	attacher, ok := s.Driver.(Attacher)
+	if !ok {
+		t.Skipf("%s runs no stage attached", s.Driver.Name())
+	}
+	return attacher
+}
+
+// command renders an attached stage for argv and registers its cleanup.
+func (s *Subject) command(t *testing.T, attacher Attacher, argv []string) (*exec.Cmd, func()) {
+	t.Helper()
+	command, cleanup, err := attacher.Command(context.Background(), s.spec(t, argv))
+	must(t, err, "Command")
+	t.Cleanup(cleanup)
+	return command, cleanup
 }
 
 func (s *Subject) launch(t *testing.T, argv []string) hostsandbox.StageHandle {

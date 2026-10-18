@@ -242,6 +242,76 @@ func (d *Driver) Launch(ctx context.Context, spec StageSpec) (StageHandle, error
 	return StageHandle{Driver: Host, ID: formatHandle(pid, start, spec.LogPath)}, nil
 }
 
+// Command renders one stage as an attached command: srt with the settings
+// Profile renders, then the argv, in the stage's workdir and environment, the
+// same rendering, deny rules and network Launch uses. The caller sets its
+// stdin, stdout and stderr, starts it and waits for it; the stage's exit code
+// is the command's. Unlike a launched stage it is not detached and records no
+// status: its pipes close when the calling process exits. It runs in a
+// session and process group of its own, and ctx ending kills that whole
+// group, because srt starts helper processes and a stage can leave a
+// background process behind, and killing srt's pid alone would leave both
+// running. LogPath is not written; when it is set, its directory is still
+// denied writing as in Launch.
+//
+// The settings file is written into a directory of its own under the system
+// temporary directory, which the stage is denied writing. The returned
+// cleanup removes that directory; call it after the command has been waited
+// for, or when it is never started. It is idempotent, and nil when err is not.
+func (d *Driver) Command(ctx context.Context, spec StageSpec) (*exec.Cmd, func(), error) {
+	if err := d.Preflight(ctx); err != nil {
+		return nil, nil, err
+	}
+	if len(spec.Argv) == 0 {
+		return nil, nil, errors.New("command stage: argv is empty")
+	}
+	base := Environment(d.config.Lookup)
+	if !hasPath(base) {
+		return nil, nil, fmt.Errorf("%w: the driver was composed with no PATH, so a stage could run nothing", ErrNotReady)
+	}
+	srt, err := d.config.Look("srt")
+	if err != nil {
+		return nil, nil, d.notReady(ConditionMissing, "srt")
+	}
+	dir, err := os.MkdirTemp("", "hostsandbox-")
+	if err != nil {
+		return nil, nil, fmt.Errorf("command stage %s: %w", spec.Name, err)
+	}
+	// Removing the directory is best effort: the cleanup has no error to
+	// return, and a leftover settings file holds the policy and no secret.
+	cleanup := func() { _ = os.RemoveAll(dir) }
+	profile := d.Profile(spec)
+	profile.DenyWrites = append(profile.DenyWrites, dir)
+	body, err := Render(profile).Encode()
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	settingsPath := filepath.Join(dir, "srt.json")
+	if err := os.WriteFile(settingsPath, body, 0o600); err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("command stage %s: %w", spec.Name, err)
+	}
+	// The "--" separates the argv from srt's own options, as in Launch.
+	command := exec.CommandContext(ctx, srt, append([]string{"--settings", settingsPath, "--"}, spec.Argv...)...) //nolint:gosec // the consumer's argv, never a shell fragment
+	command.Dir = spec.Workdir
+	command.Env = d.environment(base, spec)
+	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	command.Cancel = func() error { return killGroup(command.Process.Pid) }
+	return command, cleanup, nil
+}
+
+// killGroup sends SIGKILL to the process group pid leads. A group that has
+// already emptied reports os.ErrProcessDone, which exec.Cmd takes as a
+// command that finished on its own rather than one Cancel failed to end.
+func killGroup(pid int) error {
+	err := syscall.Kill(-pid, syscall.SIGKILL)
+	if errors.Is(err, syscall.ESRCH) {
+		return os.ErrProcessDone
+	}
+	return err
+}
+
 // wrapperScript returns the shell script the driver runs: the stage's command
 // followed by a record of its exit status. The status is written to a
 // temporary file and renamed, so it appears whole or not at all. Written in
