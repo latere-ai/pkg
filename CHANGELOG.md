@@ -10,6 +10,26 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Fixed
+
+- `llmdialect/openaichat`, `llmdialect/openairesp`: an image a tool
+  returns, such as a PNG a read tool opens, reaches the model. Both
+  encoders dropped it and reported `tool_result.image` lost, so a model
+  on either dialect never saw a picture it opened with a tool. On Chat
+  Completions, whose tool messages carry text only, the tool message
+  keeps the result's text and the user message after the turn's tool
+  messages opens with the images, each result's under a text part naming
+  its tool call; a result with no text gets a one-line pointer to them.
+  On Responses the `function_call_output` carries them itself, as the
+  list form of `output` with `input_text` and `input_image` parts; a
+  text-only result keeps the string form. `tool_result.image` is no
+  longer reported by any codec.
+- `llmdialect/openairesp`: the frontend reads a `function_call_output`
+  whose `output` is a part list, the form a caller uses for a tool that
+  returns an image. Such a request was refused as malformed; its text and
+  image parts now become the tool result's blocks, and a file part is
+  reported lost as `content.input_file`.
+
 ## v0.100.0 - 2026-10-18
 
 ### Added

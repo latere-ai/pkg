@@ -240,7 +240,9 @@ type respItem struct {
 	CallID    string `json:"call_id"`
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`
-	Output    string `json:"output"`
+	// Output is a string or a list of input_text, input_image and
+	// input_file parts.
+	Output json.RawMessage `json:"output"`
 	// reasoning field.
 	EncryptedContent string `json:"encrypted_content"`
 }
@@ -309,9 +311,19 @@ func decodeInput(req *ir.Request, raw json.RawMessage) error {
 				ID: item.CallID, Name: item.Name, Args: json.RawMessage(item.Arguments),
 			}})
 		case "function_call_output":
+			blocks, err := decodeItemContent(item.Output, req)
+			if err != nil {
+				return fmt.Errorf("openairesp: input[%d]: output: %w", i, err)
+			}
+			if blocks == nil {
+				// An absent output, or one with no part this layer
+				// carries, is an empty answer: still the result the
+				// call needs.
+				blocks = []ir.Block{{Type: ir.BlockText}}
+			}
 			appendBlock(ir.RoleUser, ir.Block{Type: ir.BlockToolResult, ToolResult: &ir.ToolResult{
 				ToolUseID: item.CallID,
-				Blocks:    []ir.Block{{Type: ir.BlockText, Text: item.Output}},
+				Blocks:    blocks,
 			}})
 		case "reasoning":
 			if item.EncryptedContent == "" {

@@ -144,10 +144,13 @@ func TestBackendEncodeImagesAndLoss(t *testing.T) {
 		t.Errorf("image data uri = %v", content[1])
 	}
 	ls := req.Loss.Strings()
-	for _, want := range []string{"cache_control", "thinking", "tool_result.image", "tool_result.is_error"} {
+	for _, want := range []string{"cache_control", "thinking", "tool_result.is_error"} {
 		if !slices.Contains(ls, want) {
 			t.Errorf("missing loss %q in %v", want, ls)
 		}
+	}
+	if slices.Contains(ls, "tool_result.image") {
+		t.Errorf("tool result image recorded lost: %v", ls)
 	}
 }
 

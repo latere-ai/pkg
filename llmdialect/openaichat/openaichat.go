@@ -306,6 +306,12 @@ func encodeSystem(req *ir.Request, cache bool) map[string]any {
 // Completions messages: tool results become role-"tool" messages, the
 // remainder of a user turn becomes a user message, an assistant turn
 // becomes an assistant message with tool_calls.
+//
+// A tool message carries text only, so the images of a run of tool
+// results open the user message that follows the run, each result's
+// under a text part naming its tool call. Holding them until the run
+// ends keeps the tool messages that answer one assistant turn
+// contiguous, which the API requires.
 func encodeMessage(m ir.Message, req *ir.Request, cache bool) ([]map[string]any, error) {
 	var out []map[string]any
 	switch m.Role {
@@ -314,6 +320,17 @@ func encodeMessage(m ir.Message, req *ir.Request, cache bool) ([]map[string]any,
 		// textOnly is whether the content can be written as a string: a
 		// single text part with no cache mark.
 		textOnly := true
+		// toolImages holds the image parts of the tool results since
+		// the last user content.
+		var toolImages []map[string]any
+		takeToolImages := func() {
+			if len(toolImages) == 0 {
+				return
+			}
+			content = append(content, toolImages...)
+			toolImages = nil
+			textOnly = false
+		}
 		flushContent := func() {
 			if len(content) == 0 {
 				return
@@ -336,14 +353,18 @@ func encodeMessage(m ir.Message, req *ir.Request, cache bool) ([]map[string]any,
 			switch blk.Type {
 			case ir.BlockToolResult:
 				flushContent()
-				out = append(out, encodeToolResult(blk, req, hint))
+				msg, images := encodeToolResult(blk, req, hint)
+				out = append(out, msg)
+				toolImages = append(toolImages, images...)
 			case ir.BlockText:
+				takeToolImages()
 				part := map[string]any{"type": "text", "text": blk.Text}
 				if cachePart(part, hint, blk.Text, req) {
 					textOnly = false
 				}
 				content = append(content, part)
 			case ir.BlockImage:
+				takeToolImages()
 				textOnly = false
 				url := imageURL(blk.Image)
 				part := map[string]any{"type": "image_url", "image_url": map[string]any{"url": url}}
@@ -360,6 +381,7 @@ func encodeMessage(m ir.Message, req *ir.Request, cache bool) ([]map[string]any,
 				return nil, fmt.Errorf("block type %q not allowed in a user message", blk.Type)
 			}
 		}
+		takeToolImages()
 		flushContent()
 	case ir.RoleAssistant:
 		var texts []string
@@ -407,16 +429,30 @@ func encodeMessage(m ir.Message, req *ir.Request, cache bool) ([]map[string]any,
 	return out, nil
 }
 
-func encodeToolResult(blk ir.Block, req *ir.Request, hint bool) map[string]any {
+// toolImageLabel opens the image parts of one tool result in the user
+// message that carries them, so the model can tell which call they
+// answer. It takes the tool call id.
+const toolImageLabel = "Image output of tool call %s:"
+
+// toolImageOnly is the tool message content of a result that holds
+// images and no text: an empty answer would read as a tool that
+// returned nothing.
+const toolImageOnly = "The output is attached as images in the next user message."
+
+// encodeToolResult returns the role-"tool" message of a tool result and
+// the parts that carry its images, which the tool role cannot: the
+// label naming the call, then one image_url part per image, nil when
+// the result holds none.
+func encodeToolResult(blk ir.Block, req *ir.Request, hint bool) (map[string]any, []map[string]any) {
 	tr := blk.ToolResult
 	var texts []string
+	var images []map[string]any
 	for _, inner := range tr.Blocks {
 		switch inner.Type {
 		case ir.BlockText:
 			texts = append(texts, inner.Text)
 		case ir.BlockImage:
-			// The tool role only carries text in this dialect.
-			req.Loss.Add(ir.LossToolResultImage)
+			images = append(images, map[string]any{"type": "image_url", "image_url": map[string]any{"url": imageURL(inner.Image)}})
 		}
 	}
 	if tr.IsError {
@@ -425,6 +461,13 @@ func encodeToolResult(blk ir.Block, req *ir.Request, hint bool) map[string]any {
 		req.Loss.Add(ir.LossToolResultIsError)
 	}
 	text := strings.Join(texts, "\n\n")
+	if len(images) > 0 {
+		if text == "" {
+			text = toolImageOnly
+		}
+		label := map[string]any{"type": "text", "text": fmt.Sprintf(toolImageLabel, tr.ToolUseID)}
+		images = append([]map[string]any{label}, images...)
+	}
 	msg := map[string]any{"role": "tool", "tool_call_id": tr.ToolUseID, "content": text}
 	// A breakpoint after a tool result rides on its content written as
 	// one text part, which is how a tool message carries cache_control.
@@ -432,7 +475,7 @@ func encodeToolResult(blk ir.Block, req *ir.Request, hint bool) map[string]any {
 	if cachePart(part, hint, text, req) {
 		msg["content"] = []map[string]any{part}
 	}
-	return msg
+	return msg, images
 }
 
 func imageURL(img *ir.Image) string {

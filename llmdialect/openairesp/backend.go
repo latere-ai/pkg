@@ -203,9 +203,9 @@ func encodeInstructions(req *ir.Request) string {
 
 // encodeMessage converts one IR message into Responses input items,
 // preserving block order: text/image coalesce into a message item;
-// tool uses become function_call items; tool results become
-// function_call_output items; an opaque block of this dialect is its
-// item, re-emitted as it came.
+// tool uses become function_call items; tool results, images included,
+// become function_call_output items; an opaque block of this dialect is
+// its item, re-emitted as it came.
 func encodeMessage(m ir.Message, req *ir.Request) ([]any, error) {
 	var out []any
 	var content []map[string]any
@@ -293,24 +293,34 @@ func reasoningItem(blk ir.Block) bool {
 		blk.Opaque.Dialect == DialectName && blk.Opaque.Kind == kindReasoning
 }
 
+// encodeToolResult renders a tool result as a function_call_output
+// item. Its output is a string when the result is text only, and
+// otherwise the list of input_text and input_image parts the dialect
+// takes there, in block order, so the images stay with the call they
+// answer.
 func encodeToolResult(blk ir.Block, req *ir.Request) map[string]any {
 	tr := blk.ToolResult
 	var texts []string
+	var parts []map[string]any
+	hasImage := false
 	for _, inner := range tr.Blocks {
 		switch inner.Type {
 		case ir.BlockText:
 			texts = append(texts, inner.Text)
+			parts = append(parts, map[string]any{"type": "input_text", "text": inner.Text})
 		case ir.BlockImage:
-			req.Loss.Add(ir.LossToolResultImage)
+			hasImage = true
+			parts = append(parts, map[string]any{"type": "input_image", "image_url": imageURL(inner.Image)})
 		}
 	}
 	if tr.IsError {
 		req.Loss.Add(ir.LossToolResultIsError)
 	}
-	return map[string]any{
-		"type": "function_call_output", "call_id": tr.ToolUseID,
-		"output": strings.Join(texts, "\n\n"),
+	var output any = strings.Join(texts, "\n\n")
+	if hasImage {
+		output = parts
 	}
+	return map[string]any{"type": "function_call_output", "call_id": tr.ToolUseID, "output": output}
 }
 
 func imageURL(img *ir.Image) string {

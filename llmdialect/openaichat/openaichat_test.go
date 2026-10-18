@@ -291,10 +291,8 @@ func TestEncodeRequestToolResultLosses(t *testing.T) {
 	if tool["content"] != "boom" {
 		t.Fatalf("tool content wrong: %v", tool)
 	}
-	for _, want := range []ir.LossField{"tool_result.image", "tool_result.is_error"} {
-		if !slices.Contains(req.Loss.Fields(), want) {
-			t.Fatalf("loss %v missing %q", req.Loss.Fields(), want)
-		}
+	if want := []ir.LossField{"tool_result.is_error"}; !reflect.DeepEqual(req.Loss.Fields(), want) {
+		t.Fatalf("loss = %v, want %v", req.Loss.Fields(), want)
 	}
 }
 
