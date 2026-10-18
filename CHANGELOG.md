@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.102.0 - 2026-10-18
+
 ### Added
 
 - `hostsandbox.Driver.Command` runs a stage attached: the srt command for a
