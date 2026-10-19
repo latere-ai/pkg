@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.103.0 - 2026-10-19
+
 ### Added
 
 - **`hostsandbox` runs stages under macOS's own Seatbelt,** with nothing
