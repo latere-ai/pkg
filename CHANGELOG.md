@@ -28,15 +28,20 @@ under **Removed** or **Changed** with what to do about it.
   `.envrc`, `.gitconfig`, `.gitmodules`, `.mcp.json`, `.ripgreprc`, any
   `*.code-workspace`, the whole of `.vscode`, `.idea`, `.claude` and
   `.cursor`, and every `.git` in git's layout. A gitdir allows back only what
-  everyday git writes (objects, refs, logs, the index, the merge and rebase
-  state, and the like), so a control file the allowance does not name
-  (config, hooks, commondir, gitdir, info, an objects alternates file, or a
-  name git adds later) stays denied by default: a stage cannot point git at a
-  hook, object store or common directory of its own. A bare repository, a
-  directory whose name ends in `.git`, is protected the same way: its config
-  and hooks are denied and a push into it still works. Everyday git works
-  (add, commit, branch, checkout, merge, rebase, cherry-pick, stash, tag,
-  bisect, gc and fetch); `git init`, `git clone`, `git config`, `git remote`,
+  everyday git writes (objects, refs, logs, the index and its split-index
+  companion, the merge and rebase state, and the like), so a control file the
+  allowance does not name (config, hooks, commondir, gitdir, info, an objects
+  alternates file, or a name git adds later) stays denied by default, and a
+  protected name nested below a writable subdir (a `.git` or an agent's or
+  editor's settings hidden in `refs`, `logs` or `objects`) is denied too: a
+  stage cannot point git at a hook, object store or common directory of its
+  own. A submodule's gitdir at any depth under `.git/modules` (git stores a
+  submodule `a/b` at `.git/modules/a/b`) is covered the same way. A bare
+  repository, a directory whose name ends in `.git`, is protected the same
+  way: its config and hooks are denied and a push into it still works.
+  Everyday git works (add, commit, branch, checkout, merge, rebase,
+  cherry-pick, stash, tag, bisect, gc, fetch and work in a submodule); `git
+  init`, `git clone`, `git config`, `git remote`,
   `git submodule` and `git worktree add` inside a grant fail, as under srt's
   default. A stage reaches no preferences service; it reads preferences only
   from files it is granted.
