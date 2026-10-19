@@ -16,21 +16,29 @@ import (
 // sandbox at all. A test points it at a stand-in.
 var sandboxExec = "/usr/bin/sandbox-exec"
 
-// seatbeltServices are the Mach services a stage may look up. A program on
-// macOS reaches the user and group database, the system log, preferences,
-// its temporary directory and TLS certificate checks through these, and runs
-// without the rest. Everything else a Mach lookup could reach (the
-// pasteboard, the keychain's user interface, file system events naming
-// paths outside the grants, other applications) stays denied.
+// seatbeltServices are the Mach services a stage may look up, each for one
+// thing a program needs in order to run. Everything else a Mach lookup could
+// reach stays denied: preferences (cfprefsd answers for every domain of the
+// user, whatever the file policy says, so a stage reads preferences only from
+// files it is granted), the pasteboard, the keychain's user interface, file
+// system events naming paths outside the grants, and other applications.
 var seatbeltServices = []string{
+	// confstr's per-user temporary and cache directories, which Apple's
+	// developer tools ask for before they run (git, python3 and clang are
+	// xcrun shims that fail without it).
 	"com.apple.bsd.dirhelper",
-	"com.apple.cfprefsd.agent",
-	"com.apple.cfprefsd.daemon",
+	// os_log, which a system framework writes to; without it the framework
+	// blocks or aborts.
 	"com.apple.logd",
-	"com.apple.SecurityServer",
 	"com.apple.system.logger",
+	// The notification center libSystem consults for time zone and
+	// network configuration changes.
 	"com.apple.system.notification_center",
+	// The user and group database: id, whoami, ls -l and getpwuid.
 	"com.apple.system.opendirectoryd.libinfo",
+	// Certificate trust evaluation, through which a TLS client on macOS's
+	// own verifier checks a server; Go's crypto/x509 fails without it.
+	// Apple's curl and git read their own certificate file and need none.
 	"com.apple.trustd.agent",
 }
 
@@ -90,7 +98,7 @@ func RenderSeatbelt(profile Profile, proxyPort int) (string, error) {
 	b.WriteString("(allow process-exec)\n(allow process-fork)\n")
 	b.WriteString("(allow signal (target same-sandbox))\n(allow process-info* (target same-sandbox))\n")
 	b.WriteString("(allow sysctl-read)\n(allow file-map-executable)\n")
-	b.WriteString("(allow ipc-posix-sem)\n(allow ipc-posix-shm)\n(allow user-preference-read)\n")
+	b.WriteString("(allow ipc-posix-sem)\n(allow ipc-posix-shm)\n")
 	rule(&b, "allow", "mach-lookup", "global-name", seatbeltServices)
 
 	b.WriteString(";; Reads: everywhere but the home directory, then the grants, then the denials.\n")
