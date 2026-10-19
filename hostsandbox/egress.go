@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -31,7 +32,11 @@ var errLocalDestination = errors.New("the destination is this machine or its lin
 // egress is the proxy a stage with a network allowlist reaches the network
 // through under Seatbelt. The stage's profile lets it connect to this
 // proxy's loopback port and nowhere else, and the proxy admits a request by
-// the host it names: a CONNECT's target, or a plain request's absolute URL.
+// the host and port it names: a CONNECT's target, or a plain request's
+// absolute URL. A host the allowlist names alone is admitted for a CONNECT
+// to port 443 and a plain request to port 80; one it names as host:port is
+// admitted on that port alone. Any other port is refused, so an allowed host
+// is not a tunnel to its SSH or database port.
 // It never terminates TLS and holds no certificate authority: a tunnel
 // carries the client's own TLS end to end, so the proxy learns the host it
 // is asked for and nothing of what passes through.
@@ -41,7 +46,10 @@ var errLocalDestination = errors.New("the destination is this machine or its lin
 // to, so a name an attacker points at 127.0.0.1 does not reach a service
 // the host runs.
 type egress struct {
-	allowed hostmatch.Matcher
+	// standard admits the hosts named without a port, on the standard
+	// ports; byPort admits the hosts named with a port, on that port.
+	standard hostmatch.Matcher
+	byPort   map[string]hostmatch.Matcher
 	// dial reaches a destination; forward carries a plain request.
 	dial    func(ctx context.Context, network, address string) (net.Conn, error)
 	forward http.RoundTripper
@@ -58,7 +66,11 @@ func newEgress(domains []string, notice io.Writer, localOK bool) *egress {
 	if !localOK {
 		dialer.Control = refuseLocal
 	}
-	e := &egress{allowed: hostmatch.New(domains, normalizeHost), dial: dialer.DialContext, notice: notice}
+	plain, byPort := splitAllowlist(domains)
+	e := &egress{standard: hostmatch.New(plain, normalizeHost), byPort: map[string]hostmatch.Matcher{}, dial: dialer.DialContext, notice: notice}
+	for port, hosts := range byPort {
+		e.byPort[port] = hostmatch.New(hosts, normalizeHost)
+	}
 	// The transport carries plain http only, and adds nothing to what the
 	// stage sends: no trace header, no compression it did not ask for.
 	e.forward = &http.Transport{
@@ -94,15 +106,72 @@ func normalizeHost(host string) string {
 	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
 }
 
-func (e *egress) admits(host string) bool { return e.allowed.Matches(normalizeHost(host)) }
+// The standard ports: a CONNECT carries TLS to 443, a plain request goes to
+// 80.
+const (
+	tunnelPort = "443"
+	plainPort  = "80"
+)
 
-// refuse answers a request for a host the allowlist does not name, and says
-// so in the stage's log.
-func (e *egress) refuse(w http.ResponseWriter, host string) {
-	if e.notice != nil {
-		_, _ = fmt.Fprintf(e.notice, "hostsandbox: refused a connection to %s, which is not on this stage's network allowlist\n", host)
+// splitAllowlist sorts allowlist entries into hosts named alone and hosts
+// named with a port, by port. An entry whose port is not a number from 1 to
+// 65535 admits nothing.
+func splitAllowlist(domains []string) ([]string, map[string][]string) {
+	var plain []string
+	byPort := map[string][]string{}
+	for _, entry := range domains {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		host, port, err := net.SplitHostPort(entry)
+		if err != nil {
+			// No port: a host alone, an IPv6 address among them.
+			plain = append(plain, entry)
+			continue
+		}
+		if canonical, ok := portNumber(port); ok {
+			byPort[canonical] = append(byPort[canonical], host)
+		}
 	}
-	http.Error(w, "hostsandbox: "+host+" is not on this stage's network allowlist", http.StatusForbidden)
+	return plain, byPort
+}
+
+// portNumber is a port in its canonical decimal form, if it is one.
+func portNumber(port string) (string, bool) {
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
+		return "", false
+	}
+	return strconv.Itoa(n), true
+}
+
+// admits reports whether the allowlist admits host on port, for a CONNECT
+// when tunnel is true and a plain request otherwise.
+func (e *egress) admits(host, port string, tunnel bool) bool {
+	host = normalizeHost(host)
+	port, ok := portNumber(port)
+	if !ok {
+		return false
+	}
+	if matcher, ok := e.byPort[port]; ok && matcher.Matches(host) {
+		return true
+	}
+	standard := plainPort
+	if tunnel {
+		standard = tunnelPort
+	}
+	return port == standard && e.standard.Matches(host)
+}
+
+// refuse answers a request for a host and port the allowlist does not
+// admit, and says so in the stage's log.
+func (e *egress) refuse(w http.ResponseWriter, host, port string) {
+	target := net.JoinHostPort(host, port)
+	if e.notice != nil {
+		_, _ = fmt.Fprintf(e.notice, "hostsandbox: refused a connection to %s, which is not on this stage's network allowlist\n", target)
+	}
+	http.Error(w, "hostsandbox: "+target+" is not on this stage's network allowlist", http.StatusForbidden)
 }
 
 func (e *egress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -114,9 +183,12 @@ func (e *egress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "hostsandbox: this proxy carries a CONNECT or a request for an absolute http URL", http.StatusBadRequest)
 		return
 	}
-	host := r.URL.Hostname()
-	if !e.admits(host) {
-		e.refuse(w, host)
+	host, port := r.URL.Hostname(), r.URL.Port()
+	if port == "" {
+		port = plainPort
+	}
+	if !e.admits(host, port, false) {
+		e.refuse(w, host, port)
 		return
 	}
 	out := r.Clone(r.Context())
@@ -147,8 +219,8 @@ func (e *egress) tunnel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "hostsandbox: a CONNECT names a host and a port", http.StatusBadRequest)
 		return
 	}
-	if !e.admits(host) {
-		e.refuse(w, host)
+	if !e.admits(host, port, true) {
+		e.refuse(w, host, port)
 		return
 	}
 	upstream, err := e.dial(r.Context(), "tcp", net.JoinHostPort(host, port))

@@ -237,7 +237,7 @@ func TestEgressRefusesThisMachine(t *testing.T) {
 	}
 	upstream := echoServer(t)
 	_, port, _ := net.SplitHostPort(upstream)
-	e := newEgress([]string{"localhost", "127.0.0.1"}, io.Discard, false)
+	e := newEgress([]string{"localhost:" + port, "127.0.0.1:" + port}, io.Discard, false)
 	server := httptest.NewServer(e)
 	t.Cleanup(server.Close)
 	for _, host := range []string{"localhost", "127.0.0.1"} {

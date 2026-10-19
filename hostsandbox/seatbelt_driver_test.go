@@ -58,7 +58,7 @@ func TestIsolationFollowsThePlatform(t *testing.T) {
 		platform  Platform
 		want      Isolation
 	}{
-		{IsolationAuto, Darwin, IsolationSeatbelt},
+		{IsolationAuto, Darwin, IsolationSeatbelt}, // this test binary called Main
 		{IsolationAuto, Linux, IsolationSRT},
 		{IsolationAuto, Windows, IsolationSRT},
 		{IsolationSRT, Darwin, IsolationSRT},
@@ -381,7 +381,7 @@ func TestSeatbeltAllowlistGoesOnlyThroughTheProxy(t *testing.T) {
 		return StageSpec{
 			Name: "egress", Argv: argv, Workdir: home,
 			Paths:   []Path{{Host: home, Access: ReadWrite}},
-			Network: Network{Mode: NetworkAllowlist, Domains: []string{"localhost"}},
+			Network: Network{Mode: NetworkAllowlist, Domains: []string{"localhost:" + address.Port()}},
 			Env:     coverage(t),
 		}
 	}
@@ -415,7 +415,7 @@ func TestSeatbeltDetachedStageKeepsItsNetwork(t *testing.T) {
 	spec := stage(t, dir, "/bin/sh", "-c", "sleep 2; /usr/bin/curl -q -sS --max-time 10 http://localhost:"+address.Port()+"/")
 	spec.Paths = []Path{{Host: home, Access: ReadWrite}}
 	spec.Workdir = home
-	spec.Network = Network{Mode: NetworkAllowlist, Domains: []string{"localhost"}}
+	spec.Network = Network{Mode: NetworkAllowlist, Domains: []string{"localhost:" + address.Port()}}
 	spec.Env = coverage(t)
 	request := launchRequest{Home: home, Spec: spec, Local: true, Handle: filepath.Join(dir, "handle.json")}
 	body, err := json.Marshal(request)
