@@ -34,7 +34,7 @@ func settingsOf(t *testing.T, command *exec.Cmd) string {
 // directory denied writing, and the cleanup removes them.
 func TestCommandRunsAStageAttached(t *testing.T) {
 	home := t.TempDir()
-	driver := New(Config{Home: home, Look: shim(t), Lookup: os.LookupEnv})
+	driver := New(Config{Isolation: IsolationSRT, Home: home, Look: shim(t), Lookup: os.LookupEnv})
 	dir := t.TempDir()
 	spec := stage(t, dir, "/bin/sh", "-c", `cat; exit 4`)
 	spec.Paths = []Path{{Host: dir, Access: ReadWrite}}
@@ -89,7 +89,7 @@ func TestCommandRunsAStageAttached(t *testing.T) {
 func TestCommandSeparatesTheArgvAndPassesOnlyTheAllowlist(t *testing.T) {
 	t.Setenv("HOSTSANDBOX_TEST_CANARY", "leaked-into-the-sandbox")
 	home := t.TempDir()
-	driver := New(Config{Home: home, Look: shim(t), Lookup: os.LookupEnv})
+	driver := New(Config{Isolation: IsolationSRT, Home: home, Look: shim(t), Lookup: os.LookupEnv})
 	dir := t.TempDir()
 	argv := []string{"/bin/sh", "-c", `/usr/bin/env`, "-d", "-s"}
 	spec := stage(t, dir, argv...)
@@ -122,7 +122,7 @@ func TestCommandSeparatesTheArgvAndPassesOnlyTheAllowlist(t *testing.T) {
 // the stage and a process it started, not only srt's pid: the leftover
 // appends to a marker, and the marker stops growing.
 func TestCommandEndsItsGroupWithItsContext(t *testing.T) {
-	driver := New(Config{Home: t.TempDir(), Look: shim(t), Lookup: os.LookupEnv})
+	driver := New(Config{Isolation: IsolationSRT, Home: t.TempDir(), Look: shim(t), Lookup: os.LookupEnv})
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "ticks")
 	spec := stage(t, dir, "/bin/sh", "-c", `( while :; do echo tick >> "$MARK"; sleep 0.05; done ) & sleep 30`)
@@ -162,21 +162,21 @@ func TestCommandEndsItsGroupWithItsContext(t *testing.T) {
 func TestCommandRefusesWhatItCannotRun(t *testing.T) {
 	dir := t.TempDir()
 	ready := found("srt", "rg", "bwrap", "socat")
-	missing := New(Config{Platform: Darwin, Home: t.TempDir(), Look: found(), Lookup: os.LookupEnv})
+	missing := New(Config{Isolation: IsolationSRT, Platform: Darwin, Home: t.TempDir(), Look: found(), Lookup: os.LookupEnv})
 	if _, _, err := missing.Command(context.Background(), stage(t, dir, "/bin/sh")); !errors.Is(err, ErrNotReady) {
 		t.Fatalf("Command on an unready machine = %v", err)
 	}
-	driver := New(Config{Home: t.TempDir(), Look: ready, Lookup: os.LookupEnv})
+	driver := New(Config{Isolation: IsolationSRT, Home: t.TempDir(), Look: ready, Lookup: os.LookupEnv})
 	if _, _, err := driver.Command(context.Background(), stage(t, dir)); err == nil || !strings.Contains(err.Error(), "argv") {
 		t.Fatalf("a stage with no command was built: %v", err)
 	}
-	noPath := New(Config{Home: t.TempDir(), Look: ready, Lookup: func(name string) (string, bool) { return "/x", name == "HOME" }})
+	noPath := New(Config{Isolation: IsolationSRT, Home: t.TempDir(), Look: ready, Lookup: func(name string) (string, bool) { return "/x", name == "HOME" }})
 	if _, _, err := noPath.Command(context.Background(), stage(t, dir, "/bin/sh")); !errors.Is(err, ErrNotReady) || !strings.Contains(err.Error(), "PATH") {
 		t.Fatalf("Command with no PATH = %v", err)
 	}
 	// srt resolves for the preflight and is gone when the command is built.
 	looks := 0
-	vanishing := New(Config{Home: t.TempDir(), Lookup: os.LookupEnv, Look: func(name string) (string, error) {
+	vanishing := New(Config{Isolation: IsolationSRT, Home: t.TempDir(), Lookup: os.LookupEnv, Look: func(name string) (string, error) {
 		if name == "srt" {
 			looks++
 			if looks > 1 {

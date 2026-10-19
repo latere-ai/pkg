@@ -97,7 +97,7 @@ func TestPreflightRefusalsAreActionable(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			driver := New(Config{
+			driver := New(Config{Isolation: IsolationSRT,
 				Platform: c.platform, Look: c.look, Home: "/home/x",
 				Requires:    []string{"claude"},
 				Remedies:    Remedies{"claude": {Install: map[Platform][]string{Darwin: {"npm install -g @anthropic-ai/claude-code"}}, Verify: "claude --version"}},
@@ -114,11 +114,11 @@ func TestPreflightRefusalsAreActionable(t *testing.T) {
 			}
 		})
 	}
-	ready := New(Config{Platform: Darwin, Look: found("srt", "rg", "claude"), Requires: []string{" claude "}, Home: "/home/x"})
+	ready := New(Config{Isolation: IsolationSRT, Platform: Darwin, Look: found("srt", "rg", "claude"), Requires: []string{" claude "}, Home: "/home/x"})
 	if err := ready.Preflight(context.Background()); err != nil {
 		t.Fatalf("a ready machine was refused: %v", err)
 	}
-	linux := New(Config{Platform: Linux, Look: found("srt", "bwrap", "socat", "rg"), Home: "/home/x"})
+	linux := New(Config{Isolation: IsolationSRT, Platform: Linux, Look: found("srt", "bwrap", "socat", "rg"), Home: "/home/x"})
 	if err := linux.Preflight(context.Background()); err != nil {
 		t.Fatalf("a Linux machine with bwrap installed was refused: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestPreflightRefusalsAreActionable(t *testing.T) {
 		t.Errorf("declaration = %s %+v", ready.Name(), ready.Capabilities())
 	}
 	// Windows is refused regardless of what is installed.
-	windows := New(Config{Platform: Windows, Look: found("srt", "rg"), Alternative: "elsewhere"})
+	windows := New(Config{Isolation: IsolationSRT, Platform: Windows, Look: found("srt", "rg"), Alternative: "elsewhere"})
 	err := windows.Preflight(context.Background())
 	if !errors.Is(err, ErrNotReady) || !strings.Contains(err.Error(), "WSL2") || !strings.Contains(err.Error(), "elsewhere") {
 		t.Fatalf("windows = %v", err)
@@ -158,7 +158,7 @@ func TestTheProfileIsBuiltFromTheStagePaths(t *testing.T) {
 		}
 		return "", exec.ErrNotFound
 	}
-	driver := New(Config{Platform: Darwin, Home: "/Users/x", Look: look, Requires: []string{"claude", "absent"}})
+	driver := New(Config{Isolation: IsolationSRT, Platform: Darwin, Home: "/Users/x", Look: look, Requires: []string{"claude", "absent"}})
 	settings := Render(driver.Profile(StageSpec{
 		Name: "judge-1",
 		Paths: []Path{
@@ -208,7 +208,7 @@ func TestTheProfileIsBuiltFromTheStagePaths(t *testing.T) {
 // environment, which the process table does not show, and never through the
 // argv.
 func TestCredentialsTravelInTheEnvironmentNotTheCommandLine(t *testing.T) {
-	driver := New(Config{Platform: Darwin, Home: t.TempDir(), Look: found("srt", "rg")})
+	driver := New(Config{Isolation: IsolationSRT, Platform: Darwin, Home: t.TempDir(), Look: found("srt", "rg")})
 	spec := StageSpec{
 		Name:    "worker-0",
 		Argv:    []string{"claude", "--print", "--", "reproduce it"},
@@ -254,7 +254,7 @@ func TestTheCommandIsSeparatedFromTheSandboxsOwnFlags(t *testing.T) {
 // that never existed is reported gone, and a live process that is not the
 // stage is not mistaken for it.
 func TestAStageOutlivesItsLauncherAndItsStatusIsRecoverable(t *testing.T) {
-	driver := New(Config{Home: t.TempDir(), Look: shim(t), Lookup: os.LookupEnv})
+	driver := New(Config{Isolation: IsolationSRT, Home: t.TempDir(), Look: shim(t), Lookup: os.LookupEnv})
 	dir := t.TempDir()
 	spec := stage(t, dir, "/bin/sh", "-c", "printf %s hello; exit 3")
 	handle, err := driver.Launch(context.Background(), spec)
@@ -277,7 +277,7 @@ func TestAStageOutlivesItsLauncherAndItsStatusIsRecoverable(t *testing.T) {
 		t.Fatalf("no settings file: %v", err)
 	}
 	// A driver that never saw the launch reads the same status.
-	fresh := New(Config{Home: t.TempDir(), Look: found()})
+	fresh := New(Config{Isolation: IsolationSRT, Home: t.TempDir(), Look: found()})
 	if again, err := fresh.Observe(context.Background(), handle); err != nil || again.Running || again.ExitCode != 3 {
 		t.Fatalf("a fresh driver lost the exit status: %+v, %v", again, err)
 	}
@@ -318,7 +318,7 @@ func TestAStageOutlivesItsLauncherAndItsStatusIsRecoverable(t *testing.T) {
 // death is observed directly rather than inferred from the leader.
 func TestStopKillsAStageThatIgnoresSIGTERM(t *testing.T) {
 	grace := 400 * time.Millisecond
-	driver := New(Config{Home: t.TempDir(), Look: shim(t), Lookup: os.LookupEnv, StopGrace: grace})
+	driver := New(Config{Isolation: IsolationSRT, Home: t.TempDir(), Look: shim(t), Lookup: os.LookupEnv, StopGrace: grace})
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "ticks")
 	spec := stage(t, dir, "/bin/sh", "-c", `trap "" TERM; while :; do echo tick >> "$MARK"; sleep 0.05; done`)
@@ -354,7 +354,7 @@ func TestStopKillsAStageThatIgnoresSIGTERM(t *testing.T) {
 // signaled before its trap is set dies of SIGTERM, and Stop rightly returns
 // as soon as it has.
 func TestStopHonorsACancelledContext(t *testing.T) {
-	driver := New(Config{Home: t.TempDir(), Look: shim(t), Lookup: os.LookupEnv, StopGrace: 10 * time.Second})
+	driver := New(Config{Isolation: IsolationSRT, Home: t.TempDir(), Look: shim(t), Lookup: os.LookupEnv, StopGrace: 10 * time.Second})
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "trapped")
 	spec := stage(t, dir, "/bin/sh", "-c", `trap "" TERM; touch "$MARK"; sleep 30`)
@@ -390,7 +390,7 @@ func TestStopEndsWhatAnExitedStageLeftRunning(t *testing.T) {
 		{"it ignores SIGTERM", `trap "" TERM; `, 400 * time.Millisecond},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			driver := New(Config{Home: t.TempDir(), Look: shim(t), Lookup: os.LookupEnv, StopGrace: c.grace})
+			driver := New(Config{Isolation: IsolationSRT, Home: t.TempDir(), Look: shim(t), Lookup: os.LookupEnv, StopGrace: c.grace})
 			dir := t.TempDir()
 			marker := filepath.Join(dir, "ticks")
 			spec := stage(t, dir, "/bin/sh", "-c", `( `+c.trap+`while :; do echo tick >> "$MARK"; sleep 0.05; done ) & exit 0`)
@@ -437,7 +437,7 @@ func TestStopEndsWhatAnExitedStageLeftRunning(t *testing.T) {
 // leader has exited and been reaped, so the pid is free while the group
 // still has a member, which is the state a stage's leftovers are in.
 func TestStopSignalsOnlyAGroupItCanProveIsTheStages(t *testing.T) {
-	driver := New(Config{Home: t.TempDir(), Lookup: os.LookupEnv, Look: found(), StopGrace: 5 * time.Second})
+	driver := New(Config{Isolation: IsolationSRT, Home: t.TempDir(), Lookup: os.LookupEnv, Look: found(), StopGrace: 5 * time.Second})
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "worker-0.log")
 	statusPath := sidecar(logPath, ".status")
@@ -511,7 +511,7 @@ func TestStopSignalsOnlyAGroupItCanProveIsTheStages(t *testing.T) {
 // stage's pid with another start time is never signaled, together with its
 // group, even when the stage recorded its exit a moment ago.
 func TestStopLeavesAReusedPidAlone(t *testing.T) {
-	driver := New(Config{Home: t.TempDir(), Lookup: os.LookupEnv, Look: found(), StopGrace: time.Second})
+	driver := New(Config{Isolation: IsolationSRT, Home: t.TempDir(), Lookup: os.LookupEnv, Look: found(), StopGrace: time.Second})
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "worker-0.log")
 	if err := os.WriteFile(sidecar(logPath, ".status"), []byte("0"), 0o600); err != nil {
@@ -620,7 +620,7 @@ func fileSize(t *testing.T, path string) int64 {
 // succeed, and that a foreign or malformed handle is refused rather than
 // acted on.
 func TestStopAndDiscardTolerateAGoneStage(t *testing.T) {
-	driver := New(Config{Home: t.TempDir(), Lookup: os.LookupEnv, Look: found()})
+	driver := New(Config{Isolation: IsolationSRT, Home: t.TempDir(), Lookup: os.LookupEnv, Look: found()})
 	dir := t.TempDir()
 	handle := StageHandle{Driver: Host, ID: formatHandle(999999, 1, filepath.Join(dir, "worker-9.log"))}
 	for range 2 {
@@ -682,7 +682,7 @@ func FuzzParseHandle(f *testing.F) {
 // readable from an offset and that a stage which has written nothing yet
 // reads empty rather than failing, because the caller polls.
 func TestOutputReadsTheStageLogFromAnOffset(t *testing.T) {
-	driver := New(Config{Home: t.TempDir(), Lookup: os.LookupEnv, Look: found()})
+	driver := New(Config{Isolation: IsolationSRT, Home: t.TempDir(), Lookup: os.LookupEnv, Look: found()})
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "worker-0.log")
 	if err := os.WriteFile(logPath, []byte("hello sandbox"), 0o600); err != nil {
@@ -730,7 +730,7 @@ func TestLaunchRefusesWhatItCannotRun(t *testing.T) {
 	// readiness, and Launch runs Preflight first. A driver that named only
 	// the macOS dependencies would be refused on Linux for a missing bwrap
 	// before it read the stage at all.
-	driver := New(Config{Home: t.TempDir(), Look: found("srt", "rg", "bwrap", "socat"), Lookup: os.LookupEnv})
+	driver := New(Config{Isolation: IsolationSRT, Home: t.TempDir(), Look: found("srt", "rg", "bwrap", "socat"), Lookup: os.LookupEnv})
 	spec := stage(t, dir)
 	if _, err := driver.Launch(context.Background(), spec); err == nil || !strings.Contains(err.Error(), "argv") {
 		t.Fatalf("a stage with no command was launched: %v", err)
@@ -740,14 +740,14 @@ func TestLaunchRefusesWhatItCannotRun(t *testing.T) {
 	if _, err := driver.Launch(context.Background(), spec); err == nil || !strings.Contains(err.Error(), "log path") {
 		t.Fatalf("a stage with no log was launched: %v", err)
 	}
-	missing := New(Config{Platform: Darwin, Home: t.TempDir(), Look: found(), Lookup: os.LookupEnv})
+	missing := New(Config{Isolation: IsolationSRT, Platform: Darwin, Home: t.TempDir(), Look: found(), Lookup: os.LookupEnv})
 	if _, err := missing.Launch(context.Background(), stage(t, dir, "/bin/sh")); !errors.Is(err, ErrNotReady) {
 		t.Fatalf("Launch on an unready machine = %v", err)
 	}
 	// A stage with no PATH resolves nothing, not even srt, whose shebang
 	// needs node. It used to fail with exit code 127 and an empty log.
 	for _, lookup := range []func(string) (string, bool){nil, func(name string) (string, bool) { return "/x", name == "HOME" }} {
-		noPath := New(Config{Home: t.TempDir(), Look: found("srt", "rg", "bwrap", "socat"), Lookup: lookup})
+		noPath := New(Config{Isolation: IsolationSRT, Home: t.TempDir(), Look: found("srt", "rg", "bwrap", "socat"), Lookup: lookup})
 		_, err := noPath.Launch(context.Background(), stage(t, dir, "/bin/sh"))
 		if !errors.Is(err, ErrNotReady) || !strings.Contains(err.Error(), "PATH") {
 			t.Fatalf("Launch with no PATH = %v", err)
@@ -777,7 +777,7 @@ func TestLaunchRefusesWhatItCannotRun(t *testing.T) {
 	}
 	_ = os.Chmod(filepath.Dir(blocked.LogPath), 0o700)
 
-	broken := New(Config{Home: t.TempDir(), Look: shim(t), Lookup: os.LookupEnv})
+	broken := New(Config{Isolation: IsolationSRT, Home: t.TempDir(), Look: shim(t), Lookup: os.LookupEnv})
 	previous := startTime
 	startTime = func(pid int) (int64, error) { return 0, fmt.Errorf("ps refused pid %d", pid) }
 	t.Cleanup(func() { startTime = previous })
@@ -838,7 +838,7 @@ func TestAStageReadsTheNullDeviceAndInheritsOnlyTheAllowlist(t *testing.T) {
 	t.Setenv("HOSTSANDBOX_TEST_CANARY", "leaked-into-the-sandbox")
 	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-leaked")
 	home := t.TempDir()
-	driver := New(Config{Home: home, Lookup: os.LookupEnv, Look: shim(t)})
+	driver := New(Config{Isolation: IsolationSRT, Home: home, Lookup: os.LookupEnv, Look: shim(t)})
 	dir := t.TempDir()
 	spec := stage(t, dir, "/bin/sh", "-c", `printf 'stdin:[%s]\n' "$(cat)"; /usr/bin/env`)
 	spec.Env = map[string]string{"STAGE_WS": dir}

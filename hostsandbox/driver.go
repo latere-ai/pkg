@@ -5,6 +5,7 @@ package hostsandbox
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -50,14 +51,18 @@ type Config struct {
 	// root passes os.LookupEnv. A stage inherits only what Environment
 	// admits through it. There is no way to pass the whole environment.
 	Lookup func(string) (string, bool)
+	// Isolation is the mechanism a stage is confined with. IsolationAuto,
+	// the zero value, picks Seatbelt on macOS and srt elsewhere.
+	Isolation Isolation
 }
 
 // DefaultStopGrace is how long Stop waits after SIGTERM before it sends
 // SIGKILL to a stage that has not exited.
 const DefaultStopGrace = 10 * time.Second
 
-// Driver is the srt sandbox. It holds no state between calls: everything a
-// call needs is in the handle or in the files beside the stage log.
+// Driver is the host sandbox, under Seatbelt or srt as Config.Isolation
+// picks. It holds no state between calls: everything a call needs is in the
+// handle or in the files beside the stage log.
 type Driver struct{ config Config }
 
 // New composes the driver.
@@ -74,8 +79,12 @@ func New(config Config) *Driver {
 	return &Driver{config: config}
 }
 
-// Name is the driver's canonical name.
+// Name is the driver's canonical name. It is the same under either
+// isolation, because a handle means the same under both.
 func (d *Driver) Name() DriverName { return Host }
+
+// Isolation is the mechanism this driver confines a stage with.
+func (d *Driver) Isolation() Isolation { return d.config.Isolation.resolve(d.config.Platform) }
 
 // dependencies returns the executables srt itself needs on a platform, by the
 // name each is looked up under. macOS uses Seatbelt, which is part of the
@@ -97,35 +106,62 @@ func (d *Driver) notReady(condition Condition, components ...string) *NotReadyEr
 }
 
 // Preflight reports whether this machine can run the driver, and names what to
-// install when it cannot. Windows is refused because srt marks its Windows
-// support as alpha, which is not an isolation boundary.
+// install when it cannot. Under Seatbelt it needs sandbox-exec, which is part
+// of macOS, and Seatbelt on any other platform is refused. Under srt,
+// Windows is refused because srt marks its Windows support as alpha, which
+// is not an isolation boundary.
 func (d *Driver) Preflight(context.Context) error {
+	if d.Isolation() == IsolationSeatbelt {
+		if d.config.Platform != Darwin {
+			err := d.notReady(ConditionUnsupported, "sandbox-exec")
+			err.Remediation = fmt.Sprintf("Seatbelt is part of macOS and does not run on %s. Compose the driver with Isolation: IsolationSRT.", d.config.Platform)
+			return err
+		}
+		if _, err := os.Stat(sandboxExec); err != nil {
+			return d.notReady(ConditionMissing, "sandbox-exec")
+		}
+		return d.missing(d.config.Requires)
+	}
 	if d.config.Platform == Windows {
 		return d.notReady(ConditionUnsupported, "srt")
 	}
 	if _, err := d.config.Look("srt"); err != nil {
 		return d.notReady(ConditionMissing, "srt")
 	}
-	for _, group := range [][]string{dependencies(d.config.Platform), d.config.Requires} {
-		var missing []string
-		for _, name := range group {
-			if _, err := d.config.Look(strings.TrimSpace(name)); err != nil {
-				missing = append(missing, strings.TrimSpace(name))
-			}
+	if err := d.missing(dependencies(d.config.Platform)); err != nil {
+		return err
+	}
+	return d.missing(d.config.Requires)
+}
+
+// missing returns the refusal for the executables in names that do not
+// resolve, or nil when all of them do.
+func (d *Driver) missing(names []string) error {
+	var missing []string
+	for _, name := range names {
+		if _, err := d.config.Look(strings.TrimSpace(name)); err != nil {
+			missing = append(missing, strings.TrimSpace(name))
 		}
-		if len(missing) > 0 {
-			return d.notReady(ConditionMissing, missing...)
-		}
+	}
+	if len(missing) > 0 {
+		return d.notReady(ConditionMissing, missing...)
 	}
 	return nil
 }
 
-// Capabilities declares the two egress policies srt enforces. There is no open
-// mode: srt is allow-only and refuses a wildcard, so this driver can neither
-// enforce nor express unrestricted egress. PackageManagers and
-// MaxAttachmentBytes are left to the consumer.
+// Capabilities declares the egress policies the driver enforces. There is no
+// open mode under either isolation: srt is allow-only and refuses a
+// wildcard, and the Seatbelt profile allows no destination but the egress
+// proxy, which admits only named hosts. Under Seatbelt the allowlist is
+// declared only once this program's main has called Main, because without
+// it no proxy can run beside a stage and an allowlisted stage is refused.
+// PackageManagers and MaxAttachmentBytes are left to the consumer.
 func (d *Driver) Capabilities() Capabilities {
-	return Capabilities{NetworkModes: map[string]bool{NetworkNone: true, NetworkAllowlist: true}}
+	modes := map[string]bool{NetworkNone: true, NetworkAllowlist: true}
+	if d.Isolation() == IsolationSeatbelt && !launcherInstalled.Load() {
+		delete(modes, NetworkAllowlist)
+	}
+	return Capabilities{NetworkModes: modes}
 }
 
 // Profile is the access policy Launch renders for a stage. Inside the home
@@ -162,8 +198,8 @@ func (d *Driver) Profile(spec StageSpec) Profile {
 	return profile
 }
 
-// Launch starts one stage under srt, detached, with its output written to a
-// file the stage cannot write. A wrapper script records the exit status in a
+// Launch starts one stage under the driver's isolation, detached, with its
+// output written to a file the stage cannot write. A wrapper script records the exit status in a
 // second file, because the exit status of a reaped child is lost and this
 // process may have exited before anyone asks for it.
 func (d *Driver) Launch(ctx context.Context, spec StageSpec) (StageHandle, error) {
@@ -183,33 +219,21 @@ func (d *Driver) Launch(ctx context.Context, spec StageSpec) (StageHandle, error
 	if !hasPath(base) {
 		return StageHandle{}, fmt.Errorf("%w: the driver was composed with no PATH, so a stage could run nothing", ErrNotReady)
 	}
-	srt, err := d.config.Look("srt")
-	if err != nil {
-		return StageHandle{}, d.notReady(ConditionMissing, "srt")
-	}
 	logDir := filepath.Dir(spec.LogPath)
 	if err := os.MkdirAll(logDir, 0o700); err != nil {
 		return StageHandle{}, fmt.Errorf("launch stage %s: %w", spec.Name, err)
 	}
-	settingsPath := sidecar(spec.LogPath, ".srt.json")
-	body, err := Render(d.Profile(spec)).Encode()
+	run, err := d.prepare(spec, d.Profile(spec), func(ext string) string { return sidecar(spec.LogPath, ext) })
 	if err != nil {
 		return StageHandle{}, err
-	}
-	if err := os.WriteFile(settingsPath, body, 0o600); err != nil {
-		return StageHandle{}, fmt.Errorf("launch stage %s: %w", spec.Name, err)
 	}
 	statusPath := sidecar(spec.LogPath, ".status")
 	_ = os.Remove(statusPath)
 	_ = os.Remove(statusPath + ".part")
 
-	// The "--" is required. srt parses options anywhere in its arguments
-	// unless they are separated, so an argv containing -d, -s, -c, -V or -h
-	// would have them consumed by srt.
-	command := append([]string{srt, "--settings", settingsPath, "--"}, spec.Argv...)
-	launcher := exec.Command("/bin/sh", "-c", wrapperScript(command, statusPath)) //nolint:gosec,noctx // a quoted argv; the stage outlives this context by design
+	launcher := exec.Command("/bin/sh", "-c", wrapperScript(run.argv, statusPath)) //nolint:gosec,noctx // a quoted argv; the stage outlives this context by design
 	launcher.Dir = spec.Workdir
-	launcher.Env = d.environment(base, spec)
+	launcher.Env = append(d.environment(base, spec), run.env...)
 	log, err := os.OpenFile(spec.LogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // the consumer's own log path
 	if err != nil {
 		return StageHandle{}, fmt.Errorf("launch stage %s: open log: %w", spec.Name, err)
@@ -242,19 +266,20 @@ func (d *Driver) Launch(ctx context.Context, spec StageSpec) (StageHandle, error
 	return StageHandle{Driver: Host, ID: formatHandle(pid, start, spec.LogPath)}, nil
 }
 
-// Command renders one stage as an attached command: srt with the settings
-// Profile renders, then the argv, in the stage's workdir and environment, the
+// Command renders one stage as an attached command: the driver's isolation
+// with the policy Profile renders, then the argv, in the stage's workdir and environment, the
 // same rendering, deny rules and network Launch uses. The caller sets its
 // stdin, stdout and stderr, starts it and waits for it; the stage's exit code
 // is the command's. Unlike a launched stage it is not detached and records no
 // status: its pipes close when the calling process exits. It runs in a
 // session and process group of its own, and ctx ending kills that whole
-// group, because srt starts helper processes and a stage can leave a
-// background process behind, and killing srt's pid alone would leave both
-// running. LogPath is not written; when it is set, its directory is still
+// group, because the isolation starts helper processes (srt's own, or the
+// launcher that serves a Seatbelt stage's egress proxy) and a stage can
+// leave a background process behind, and killing the first pid alone would
+// leave both running. LogPath is not written; when it is set, its directory is still
 // denied writing as in Launch.
 //
-// The settings file is written into a directory of its own under the system
+// The policy files are written into a directory of its own under the system
 // temporary directory, which the stage is denied writing. The returned
 // cleanup removes that directory; call it after the command has been waited
 // for, or when it is never started. It is idempotent, and nil when err is not.
@@ -269,10 +294,6 @@ func (d *Driver) Command(ctx context.Context, spec StageSpec) (*exec.Cmd, func()
 	if !hasPath(base) {
 		return nil, nil, fmt.Errorf("%w: the driver was composed with no PATH, so a stage could run nothing", ErrNotReady)
 	}
-	srt, err := d.config.Look("srt")
-	if err != nil {
-		return nil, nil, d.notReady(ConditionMissing, "srt")
-	}
 	dir, err := os.MkdirTemp("", "hostsandbox-")
 	if err != nil {
 		return nil, nil, fmt.Errorf("command stage %s: %w", spec.Name, err)
@@ -282,20 +303,14 @@ func (d *Driver) Command(ctx context.Context, spec StageSpec) (*exec.Cmd, func()
 	cleanup := func() { _ = os.RemoveAll(dir) }
 	profile := d.Profile(spec)
 	profile.DenyWrites = append(profile.DenyWrites, dir)
-	body, err := Render(profile).Encode()
+	run, err := d.prepare(spec, profile, func(ext string) string { return filepath.Join(dir, "stage"+ext) })
 	if err != nil {
 		cleanup()
 		return nil, nil, err
 	}
-	settingsPath := filepath.Join(dir, "srt.json")
-	if err := os.WriteFile(settingsPath, body, 0o600); err != nil {
-		cleanup()
-		return nil, nil, fmt.Errorf("command stage %s: %w", spec.Name, err)
-	}
-	// The "--" separates the argv from srt's own options, as in Launch.
-	command := exec.CommandContext(ctx, srt, append([]string{"--settings", settingsPath, "--"}, spec.Argv...)...) //nolint:gosec // the consumer's argv, never a shell fragment
+	command := exec.CommandContext(ctx, run.argv[0], run.argv[1:]...) //nolint:gosec // the consumer's argv, never a shell fragment
 	command.Dir = spec.Workdir
-	command.Env = d.environment(base, spec)
+	command.Env = append(d.environment(base, spec), run.env...)
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	command.Cancel = func() error { return killGroup(command.Process.Pid) }
 	return command, cleanup, nil
@@ -309,6 +324,89 @@ func killGroup(pid int) error {
 	if errors.Is(err, syscall.ESRCH) {
 		return os.ErrProcessDone
 	}
+	return err
+}
+
+// prepared is how one stage runs: the program and its arguments, and the
+// variables it needs beside the stage's own environment.
+type prepared struct {
+	argv []string
+	env  []string
+}
+
+// prepare writes the policy a stage runs under into the files policy names
+// by extension, and returns how to run the stage under it.
+func (d *Driver) prepare(spec StageSpec, profile Profile, policy func(ext string) string) (prepared, error) {
+	if d.Isolation() == IsolationSeatbelt {
+		return d.prepareSeatbelt(spec, profile, policy)
+	}
+	srt, err := d.config.Look("srt")
+	if err != nil {
+		return prepared{}, d.notReady(ConditionMissing, "srt")
+	}
+	body, err := Render(profile).Encode()
+	if err != nil {
+		return prepared{}, err
+	}
+	path := policy(".srt.json")
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		return prepared{}, fmt.Errorf("stage %s: %w", spec.Name, err)
+	}
+	// The "--" is required. srt parses options anywhere in its arguments
+	// unless they are separated, so an argv containing -d, -s, -c, -V or -h
+	// would have them consumed by srt.
+	return prepared{argv: append([]string{srt, "--settings", path, "--"}, spec.Argv...)}, nil
+}
+
+// prepareSeatbelt runs a stage with no network straight under sandbox-exec.
+// A stage with an allowlist runs under this program started again as its
+// launcher (Main), which serves the egress proxy and renders the profile
+// once it knows the proxy's port.
+func (d *Driver) prepareSeatbelt(spec StageSpec, profile Profile, policy func(ext string) string) (prepared, error) {
+	path := policy(".sb")
+	if !proxied(profile.Network) {
+		text, err := RenderSeatbelt(profile, 0)
+		if err != nil {
+			return prepared{}, err
+		}
+		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+			return prepared{}, fmt.Errorf("stage %s: %w", spec.Name, err)
+		}
+		// The "--" ends sandbox-exec's own options, so an argv that begins
+		// with a dash is the stage's.
+		return prepared{argv: append([]string{sandboxExec, "-f", path, "--"}, spec.Argv...)}, nil
+	}
+	if !launcherInstalled.Load() {
+		return prepared{}, d.noLauncher()
+	}
+	self, err := executable()
+	if err != nil {
+		return prepared{}, fmt.Errorf("stage %s: finding this program to launch the stage with: %w", spec.Name, err)
+	}
+	body, err := json.Marshal(stageFile{Profile: profile, Argv: spec.Argv, SandboxExec: sandboxExec, Policy: path, Local: localDestinations})
+	if err != nil {
+		return prepared{}, fmt.Errorf("stage %s: %w", spec.Name, err)
+	}
+	stage := policy(".stage.json")
+	if err := os.WriteFile(stage, body, 0o600); err != nil {
+		return prepared{}, fmt.Errorf("stage %s: %w", spec.Name, err)
+	}
+	return prepared{argv: []string{self}, env: []string{stageFileVariable + "=" + stage}}, nil
+}
+
+// proxied reports whether a stage's network needs the egress proxy: an
+// allowlist that names a host. An empty allowlist is no network.
+func proxied(network Network) bool {
+	return network.Mode == NetworkAllowlist && len(sorted(network.Domains)) > 0
+}
+
+// noLauncher is the refusal for an allowlisted stage under Seatbelt in a
+// program whose main did not call Main.
+func (d *Driver) noLauncher() *NotReadyError {
+	err := d.notReady(ConditionNoLauncher)
+	err.Remediation = "This program does not call hostsandbox.Main at the start of main, so a stage under Seatbelt cannot get its network allowlist: " +
+		"the allowlist's proxy runs in a launcher the driver starts from this program. Call hostsandbox.Main() as the first statement of main, " +
+		"or compose the driver with Isolation: IsolationSRT."
 	return err
 }
 

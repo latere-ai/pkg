@@ -16,7 +16,7 @@ import (
 // another, whose handles have a different meaning.
 type DriverName string
 
-// Host is the srt driver's name.
+// Host is the host sandbox's name, under Seatbelt and under srt alike.
 const Host DriverName = "host"
 
 // Access is how a stage may use one path.
@@ -30,7 +30,7 @@ const (
 )
 
 // Path is one filesystem path a stage may use, given as a host path. A driver
-// maps it to what the stage sees: the same path under the srt driver, or a
+// maps it to what the stage sees: the same path under the host sandbox, or a
 // mount destination under a container driver.
 type Path struct {
 	// Host is the absolute path on the machine running the stage.
@@ -51,8 +51,9 @@ func (p Path) Destination() string {
 }
 
 // The network modes a StageSpec can carry. A driver declares in its
-// Capabilities which of them it enforces; the srt driver cannot express
-// NetworkOpen, because srt refuses a wildcard.
+// Capabilities which of them it enforces; the host sandbox does not express
+// NetworkOpen, because srt refuses a wildcard and Seatbelt allows a stage no
+// destination but its egress proxy.
 const (
 	NetworkNone      = "none"
 	NetworkAllowlist = "allowlist"
@@ -119,7 +120,7 @@ type StageHandle struct {
 	// Driver is which driver launched the stage.
 	Driver DriverName `json:"driver"`
 	// ID is the driver's own reference: a pid, start time and log path for
-	// the srt driver, a container name for a container driver.
+	// the host sandbox, a container name for a container driver.
 	ID string `json:"id"`
 }
 
@@ -149,7 +150,7 @@ func (s StageStatus) Succeeded() bool { return !s.Running && !s.Gone && s.ExitCo
 // silently becomes open egress.
 type Capabilities struct {
 	// PackageManagers are the managers a stage under this driver can install
-	// with. The srt driver declares none: what the host toolchain provides
+	// with. The host sandbox declares none: what the host toolchain provides
 	// is the consumer's knowledge.
 	PackageManagers map[string]bool
 	// NetworkModes are the egress policies this driver enforces.

@@ -40,6 +40,9 @@ const (
 	ConditionMissing Condition = "missing"
 	// ConditionUnsupported is a platform the driver refuses outright.
 	ConditionUnsupported Condition = "unsupported"
+	// ConditionNoLauncher is a program whose main does not call Main, so
+	// no egress proxy can run beside a Seatbelt stage with an allowlist.
+	ConditionNoLauncher Condition = "no-launcher"
 )
 
 // NotReadyError is a refusal that carries its own remedy. The remediation is
@@ -120,6 +123,11 @@ func DefaultRemedies() Remedies {
 		}},
 		"socat": {Install: map[Platform][]string{
 			Linux: {"sudo apt-get install -y socat           # Debian, Ubuntu", "sudo dnf install -y socat               # Fedora, RHEL"},
+		}},
+		// sandbox-exec is part of macOS; it is missing only from a system
+		// whose /usr/bin was changed.
+		"sandbox-exec": {Install: map[Platform][]string{
+			Darwin: {"# sandbox-exec ships with macOS at /usr/bin/sandbox-exec; reinstall macOS to restore it"},
 		}},
 		"rg": {Install: map[Platform][]string{
 			Darwin: {"brew install ripgrep"},
