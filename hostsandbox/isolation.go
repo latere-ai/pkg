@@ -11,8 +11,9 @@ type Isolation string
 
 // The isolations.
 const (
-	// IsolationAuto picks the platform's own: IsolationSeatbelt on macOS,
-	// IsolationSRT elsewhere.
+	// IsolationAuto picks IsolationSeatbelt on macOS in a program whose
+	// main called Main, and IsolationSRT otherwise: a program that has not
+	// adopted Seatbelt keeps the mechanism it had.
 	IsolationAuto Isolation = ""
 	// IsolationSeatbelt runs a stage under macOS's Seatbelt through
 	// /usr/bin/sandbox-exec, with a profile this package renders. It needs
@@ -25,12 +26,13 @@ const (
 	IsolationSRT Isolation = "srt"
 )
 
-// resolve is the isolation a Config with this value runs on platform.
-func (i Isolation) resolve(platform Platform) Isolation {
+// resolve is the isolation a Config with this value runs on platform, in a
+// program whose main called Main when launcher is true.
+func (i Isolation) resolve(platform Platform, launcher bool) Isolation {
 	if i != IsolationAuto {
 		return i
 	}
-	if platform == Darwin {
+	if platform == Darwin && launcher {
 		return IsolationSeatbelt
 	}
 	return IsolationSRT

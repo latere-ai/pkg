@@ -52,7 +52,8 @@ type Config struct {
 	// admits through it. There is no way to pass the whole environment.
 	Lookup func(string) (string, bool)
 	// Isolation is the mechanism a stage is confined with. IsolationAuto,
-	// the zero value, picks Seatbelt on macOS and srt elsewhere.
+	// the zero value, picks Seatbelt on macOS in a program that called Main,
+	// and srt otherwise.
 	Isolation Isolation
 }
 
@@ -84,7 +85,9 @@ func New(config Config) *Driver {
 func (d *Driver) Name() DriverName { return Host }
 
 // Isolation is the mechanism this driver confines a stage with.
-func (d *Driver) Isolation() Isolation { return d.config.Isolation.resolve(d.config.Platform) }
+func (d *Driver) Isolation() Isolation {
+	return d.config.Isolation.resolve(d.config.Platform, launcherInstalled.Load())
+}
 
 // dependencies returns the executables srt itself needs on a platform, by the
 // name each is looked up under. macOS uses Seatbelt, which is part of the

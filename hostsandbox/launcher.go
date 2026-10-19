@@ -52,8 +52,9 @@ var executable = os.Executable
 // this program again as the stage's launcher, which serves the proxy on a
 // loopback port, renders the stage's profile to allow that port alone, runs
 // the stage under sandbox-exec and exits with its exit code. A program that
-// does not call Main has its allowlisted stages refused with a
-// NotReadyError; its stages with no network run as before.
+// does not call Main keeps srt under IsolationAuto; under an explicit
+// IsolationSeatbelt its allowlisted stages are refused with a NotReadyError
+// and its stages with no network run as before.
 func Main() {
 	path, ok := os.LookupEnv(stageFileVariable)
 	if !ok {
