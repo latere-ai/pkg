@@ -5,6 +5,7 @@ package hostsandbox
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -65,18 +66,28 @@ var seatbeltDevices = []string{"/dev/dtracehelper", "/dev/null", "/dev/tty", "/d
 // network destination the stage may reach. Zero renders no network at all:
 // no connection, no name lookup and no local socket.
 //
-// Seatbelt matches the resolved path a process opens, so every path is
-// written both as given and with its symbolic links resolved. A path holding
-// a control character is refused, because the profile language has no safe
-// way to write it.
+// Seatbelt matches the resolved path a process opens. A denial is written
+// both as given and with its symbolic links resolved, so it holds whichever
+// way the path is reached. A grant is written as given, and resolved only
+// when the resolution stays inside the granted tree (macOS's /tmp and /var
+// are the same trees under /private): a link that leads elsewhere, which a
+// stage can put in place of a directory it may write, grants nothing beyond
+// its own spelling. A writable grant that is itself a symbolic link is
+// refused, as is a path holding a control character, which the profile
+// language has no safe way to write.
 func RenderSeatbelt(profile Profile, proxyPort int) (string, error) {
+	for _, path := range profile.Writes {
+		if info, err := lstat(filepath.Clean(path)); err == nil && info.Mode()&os.ModeSymlink != 0 {
+			return "", fmt.Errorf("render seatbelt profile: the writable grant %s is a symbolic link; grant the directory it names", path)
+		}
+	}
 	var homes []string
 	if profile.Home != "" {
 		homes = canonicalAll([]string{profile.Home})
 	}
 	denyRead := canonicalAll(expandAll(profile.Home, append(append([]string(nil), AlwaysDenyRead...), profile.Denies...)))
-	reads := canonicalAll(profile.Reads)
-	writes := canonicalAll(profile.Writes)
+	reads := allowAll(profile.Reads)
+	writes := allowAll(profile.Writes)
 	denyWrites := canonicalAll(append(append([]string(nil), profile.DenyWrites...), denyRead...))
 	var ancestors []string
 	for _, home := range homes {
@@ -142,8 +153,54 @@ func sbString(value string) string {
 
 func isControl(r rune) bool { return r < 0x20 || r == 0x7f }
 
-// evalSymlinks resolves a path's symbolic links. A test replaces it.
-var evalSymlinks = filepath.EvalSymlinks
+// evalSymlinks resolves a path's symbolic links, and lstat describes a path
+// without following its last link. A test replaces them.
+var (
+	evalSymlinks = filepath.EvalSymlinks
+	lstat        = os.Lstat
+)
+
+// allowSpellings returns a grant as written and, when the resolution stays
+// inside the granted tree, with its symbolic links resolved. The resolution
+// stays inside when it is the path itself, the same path under /private for
+// macOS's /tmp, /var and /etc, or a path below either. Any other resolution
+// (the home directory, the root, a sibling) is a link that leads out of the
+// grant, and only the spelling is kept: Seatbelt then matches nothing
+// through the link.
+func allowSpellings(path string) []string {
+	spellings := canonical(path)
+	if len(spellings) < 2 {
+		return spellings
+	}
+	given, resolved := spellings[0], spellings[1]
+	inside := func(tree string) bool {
+		return resolved == tree || strings.HasPrefix(resolved, tree+string(filepath.Separator))
+	}
+	if inside(given) {
+		return spellings
+	}
+	for _, firm := range []string{"/tmp", "/var", "/etc"} {
+		if given == firm || strings.HasPrefix(given, firm+string(filepath.Separator)) {
+			if inside("/private" + given) {
+				return spellings
+			}
+		}
+	}
+	return spellings[:1]
+}
+
+// allowAll is allowSpellings over every grant, trimmed, without empties or
+// duplicates, and sorted.
+func allowAll(paths []string) []string {
+	var out []string
+	for _, path := range paths {
+		if strings.TrimSpace(path) == "" {
+			continue
+		}
+		out = append(out, allowSpellings(strings.TrimSpace(path))...)
+	}
+	return sorted(out)
+}
 
 // canonical returns a path as written and, when it differs, with its
 // symbolic links resolved: /tmp/x is also /private/tmp/x. A path that does

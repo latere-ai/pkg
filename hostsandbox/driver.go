@@ -175,9 +175,17 @@ func (d *Driver) Profile(spec StageSpec) Profile {
 		if err != nil {
 			continue
 		}
-		profile.Reads = append(profile.Reads, filepath.Dir(resolved))
+		dirs := []string{filepath.Dir(resolved)}
 		if real, err := filepath.EvalSymlinks(resolved); err == nil {
-			profile.Reads = append(profile.Reads, filepath.Dir(real))
+			dirs = append(dirs, filepath.Dir(real))
+		}
+		// A program's directory is granted so it can run, never the root or
+		// a directory that holds the home directory: a program reached
+		// through a link a stage planted would otherwise open all of it.
+		for _, dir := range dirs {
+			if !d.coversHome(dir) {
+				profile.Reads = append(profile.Reads, dir)
+			}
 		}
 	}
 	for _, path := range spec.Paths {
@@ -196,6 +204,17 @@ func (d *Driver) Profile(spec StageSpec) Profile {
 		profile.DenyWrites = append(profile.DenyWrites, filepath.Dir(spec.LogPath))
 	}
 	return profile
+}
+
+// coversHome reports whether granting dir would grant the root or the whole
+// home directory.
+func (d *Driver) coversHome(dir string) bool {
+	dir = filepath.Clean(dir)
+	if dir == "/" || dir == "." {
+		return true
+	}
+	home := filepath.Clean(d.config.Home)
+	return d.config.Home != "" && (home == dir || strings.HasPrefix(home, dir+string(filepath.Separator)))
 }
 
 // Launch starts one stage under the driver's isolation, detached, with its
