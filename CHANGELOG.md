@@ -23,16 +23,21 @@ under **Removed** or **Changed** with what to do about it.
 - The Seatbelt profile (`RenderSeatbelt`) follows srt's path policy, with a
   grant never widened through a symbolic link that leads out of it and a
   writable grant that is a link refused. Inside a writable grant, at any
-  depth, a stage can neither write nor move, create or replace what a
-  shell, git or an editor's agent acts on later: shell startup files,
-  `.gitconfig`, `.gitmodules`, `.vscode`, `.idea`, an agent's commands, the
-  config and hooks of every gitdir in git's layout (submodules' and
-  worktrees' included), and `.git` itself with the directories its layout
-  depends on. Git's objects, refs and index stay writable, so everyday git
-  works; `git init`, `git clone`, `git config`, `git submodule` and `git
-  worktree add` inside a grant fail, as under srt's default. A stage reaches
-  no preferences service; it reads preferences only from files it is
-  granted.
+  depth, a stage can neither write nor move, create or replace what a shell,
+  direnv, git, an editor or an agent acts on later: shell startup files,
+  `.envrc`, `.gitconfig`, `.gitmodules`, `.mcp.json`, `.ripgreprc`, any
+  `*.code-workspace`, the whole of `.vscode`, `.idea`, `.claude` and
+  `.cursor`, and every `.git` in git's layout. A gitdir allows back only what
+  everyday git writes (objects, refs, logs, the index, the merge and rebase
+  state, and the like), so a control file the allowance does not name
+  (config, hooks, commondir, gitdir, info, an objects alternates file, or a
+  name git adds later) stays denied by default: a stage cannot point git at a
+  hook, object store or common directory of its own. Everyday git works
+  (add, commit, branch, checkout, merge, rebase, cherry-pick, stash, tag,
+  bisect, gc and fetch); `git init`, `git clone`, `git config`, `git remote`,
+  `git submodule` and `git worktree add` inside a grant fail, as under srt's
+  default. A stage reaches no preferences service; it reads preferences only
+  from files it is granted.
 - Under Seatbelt, a network allowlist is enforced by an egress proxy beside
   the stage. A host named alone is admitted for a CONNECT to port 443 and a
   plain request to port 80, a host named as `host:port` on that port alone.

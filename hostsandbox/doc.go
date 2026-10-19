@@ -91,25 +91,41 @@
 // terminal.
 //
 // Inside every writable grant, at any depth and in any case, a stage may not
-// write, move, create or replace what a shell, git or an editor's agent acts
-// on once the operator runs it: shell startup files, .gitconfig,
-// .gitmodules, .mcp.json and .ripgreprc; .vscode, .idea and an agent's
-// .claude/commands and .claude/agents with everything in them; in each
-// gitdir of git's layout (.git, a submodule's under .git/modules at any
-// depth, a worktree's under .git/worktrees) its config, config.worktree and
-// hooks; and the directories that layout and those paths depend on: .git
-// itself, whether a directory or a file pointing git at a gitdir,
-// .git/modules, .git/worktrees and each gitdir in them, and .claude. Each is
-// named by its path, so a rename is refused at its source and at its
-// destination, and a directory holding a repository may still be moved,
-// since the protection follows the name .git. Ordinary git work goes on:
-// objects, refs, the index and logs stay writable, so add, commit, branch,
-// checkout and fetch work. What it costs, as srt's default costs it: git
-// init, git clone, git config, git submodule and git worktree add inside a
-// grant fail, since each writes what is protected. Its limit: a .git file
-// the operator already pointed at a gitdir outside git's layout leaves that
-// gitdir's config and hooks unprotected, unless they lie in another
-// protected place. srt protects the same kinds of path at its working
+// write, move, create or replace what a shell, direnv, git, an editor or an
+// agent acts on once the operator runs it. By name, at any depth: shell
+// startup files, .envrc, .gitconfig, .gitmodules, .mcp.json, .ripgreprc and
+// any *.code-workspace. As whole trees, the directory included: .vscode,
+// .idea, and an agent's .claude and .cursor, which name commands and
+// servers. And git's layout: every .git, whether a directory or a file
+// pointing git at a gitdir, with everything below it, so a gitdir and git's
+// layout of them (.git/modules, .git/worktrees and the gitdirs they hold)
+// can be neither written nor moved, created, replaced or repointed.
+//
+// Inside a gitdir, what everyday git writes is allowed back, and nothing
+// else: a gitdir is denied, then objects (but not objects/info/alternates or
+// objects/info/http-alternates, which make git read another repository),
+// refs, logs, rebase-merge, rebase-apply and sequencer with everything in
+// them; the index with its .lock and temporary companions; HEAD, ORIG_HEAD,
+// FETCH_HEAD, MERGE_HEAD, MERGE_MSG, MERGE_MODE, AUTO_MERGE, CHERRY_PICK_HEAD,
+// REVERT_HEAD, REBASE_HEAD, COMMIT_EDITMSG, SQUASH_MSG, TAG_EDITMSG,
+// packed-refs, gc.pid, gc.log and shallow, each with its .lock companion; and
+// the BISECT_ files. Because the allowance lists what everyday git writes
+// rather than what is dangerous, a control file the list does not name,
+// config, config.worktree, hooks, commondir, gitdir, info, an alternates
+// file or a name git adds later, stays denied by default. So add, commit,
+// branch, checkout, merge, rebase, cherry-pick, revert, stash, tag, bisect,
+// gc and fetch work, while a stage cannot point git at a hook, object store
+// or common directory of its own.
+//
+// Each path is named by its path, so a rename is refused at its source and
+// at its destination, and a directory holding a repository may still be
+// moved, since the protection follows the name .git. What it costs, as srt's
+// default costs it: git init, git clone, git config, git remote, git
+// submodule and git worktree add inside a grant fail, since each writes what
+// is protected. Its limit: a .git file the operator already pointed at a
+// gitdir outside git's layout leaves that gitdir's control files unprotected,
+// unless they lie in another protected place. srt protects the same kinds of
+// path at its working
 // directory.
 //
 // A stage with no network runs straight under sandbox-exec and may connect
