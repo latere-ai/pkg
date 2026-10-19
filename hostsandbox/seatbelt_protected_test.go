@@ -8,62 +8,99 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 )
 
 // A stage must not write, inside a writable grant, what a shell, git or an
 // editor's agent acts on once the operator runs it.
 
-// TestProtectedPatternsMatchAnyCaseAtAnyDepth checks the patterns that keep
-// a stage from writing what runs code later: each protected name at any
-// depth below the grant and in any case, a protected directory's contents,
-// nothing that only resembles a name, and nothing beside the grant.
-func TestProtectedPatternsMatchAnyCaseAtAnyDepth(t *testing.T) {
-	grant := "/data/my.repo+(1)"
-	var compiled []*regexp.Regexp
-	for _, pattern := range protectedPatterns(grant) {
-		compiled = append(compiled, regexp.MustCompile(pattern))
+// writableIn reports whether a stage may write path inside the writable
+// grant, deciding as Seatbelt does from the rules RenderSeatbelt writes in
+// that order, the last that matches deciding: the grant allows, the
+// protection denies, git's allow-backs allow, their exceptions deny.
+func writableIn(grant, path string) bool {
+	compile := func(patterns []string) []*regexp.Regexp {
+		out := make([]*regexp.Regexp, len(patterns))
+		for i, pattern := range patterns {
+			out[i] = regexp.MustCompile(pattern)
+		}
+		return out
 	}
-	matches := func(path string) bool {
-		return slices.ContainsFunc(compiled, func(r *regexp.Regexp) bool { return r.MatchString(path) })
+	matches := func(rules []*regexp.Regexp) bool {
+		return slices.ContainsFunc(rules, func(r *regexp.Regexp) bool { return r.MatchString(path) })
 	}
-	for _, path := range []string{
-		grant + "/.zshrc", grant + "/deep/er/.ZshRC", grant + "/.gitconfig", grant + "/sub/.gitmodules",
-		grant + "/.git/config", grant + "/vendor/x/.git/config", grant + "/.git/hooks", grant + "/.git/hooks/pre-commit",
-		grant + "/.GIT/Hooks/post-checkout", grant + "/.vscode/settings.json", grant + "/.idea/workspace.xml",
-		grant + "/.claude/commands/run.md", grant + "/.claude/agents/a.md", grant + "/.mcp.json", grant + "/.bash_profile",
-		grant + "/.git", grant + "/sub/.GIT", grant + "/.claude", grant + "/.git/config.worktree",
-		grant + "/.git/modules", grant + "/.git/modules/sub", grant + "/.git/modules/sub/config", grant + "/.git/modules/sub/hooks/pre-commit",
-		grant + "/.git/modules/a/modules/b/config", grant + "/.git/modules/a/modules/b", grant + "/.git/worktrees", grant + "/.git/worktrees/w",
-		grant + "/.git/worktrees/w/config.worktree", grant + "/.git/worktrees/w/hooks/post-checkout",
-	} {
-		if !matches(path) {
-			t.Errorf("%s is writable", path)
+	allowed, denied := gitPatterns(grant)
+	writable := path == grant || strings.HasPrefix(path, grant+"/")
+	for _, step := range []struct {
+		rules []*regexp.Regexp
+		allow bool
+	}{{compile(protectedPatterns(grant)), false}, {compile(allowed), true}, {compile(denied), false}} {
+		if matches(step.rules) {
+			writable = step.allow
 		}
 	}
-	for _, path := range []string{
-		grant + "/notes.zshrc", grant + "/.git/objects/ab/cd", grant + "/.git/hooksx", grant + "/.git/configs",
-		grant + "/.claude/settings.json", "/data/my.repo+(1)x/.zshrc", "/data/myXrepo+(1)/.zshrc", "/data/.zshrc", grant,
-		grant + "/.git/refs/heads/config", grant + "/.git/refs/heads/hooks", grant + "/.git/refs/heads/modules", grant + "/.git/HEAD",
-		grant + "/.git/index", grant + "/.git/modules/sub/objects/ab/cd", grant + "/.gitx", grant + "/x.git",
+	return writable
+}
+
+// TestTheProtectionDecidesAsSeatbeltDoes checks what a stage may write in a
+// grant, under the rules in their order: shell, direnv, git, editor and
+// agent files and trees denied at any depth and in any case; every gitdir
+// denied but for what everyday git writes, so commondir, gitdir, info and a
+// name nobody listed stay denied; and nothing beside the grant matched.
+func TestTheProtectionDecidesAsSeatbeltDoes(t *testing.T) {
+	grant := "/data/my.repo+(1)"
+	for _, relative := range []string{
+		".zshrc", "deep/er/.ZshRC", ".bash_profile", ".envrc", "sub/.ENVRC", "team.code-workspace", "a/b/X.CODE-WORKSPACE",
+		".gitconfig", "sub/.gitmodules", ".mcp.json", ".ripgreprc",
+		".claude", ".claude/settings.json", ".claude/settings.local.json", ".claude/commands/run.md", ".cursor", ".cursor/mcp.json",
+		".vscode", ".vscode/settings.json", ".idea/workspace.xml",
+		".git", "sub/.git", ".GIT/CONFIG", ".git/config", ".git/config.worktree", ".git/hooks", ".git/hooks/pre-commit",
+		".git/commondir", ".git/info/exclude", ".git/description", ".git/newcontrol", ".git/objects/info/alternates",
+		".git/objects/info/http-alternates", ".git/modules", ".git/modules/sub", ".git/modules/sub/config", ".git/modules/sub/commondir",
+		".git/modules/a/modules/b/hooks/post-checkout", ".git/worktrees", ".git/worktrees/wt", ".git/worktrees/wt/commondir",
+		".git/worktrees/wt/gitdir", ".git/worktrees/wt/config.worktree", ".git/worktrees/wt/locked",
 	} {
-		if matches(path) {
-			t.Errorf("%s is protected, though it is not on the list or not in the grant", path)
+		if writableIn(grant, grant+"/"+relative) {
+			t.Errorf("%s is writable", relative)
+		}
+	}
+	for _, relative := range []string{
+		"notes.txt", ".gitignore", "sub/.gitattributes", ".github/workflows/ci.yml", ".gitx", "x.git", "code-workspace.md",
+		".git/objects/ab/cd", ".git/objects/pack/p.pack", ".git/objects/info/commit-graph", ".git/refs/heads/config",
+		".git/refs/heads/hooks", ".git/refs/stash", ".git/logs/HEAD", ".git/HEAD", ".git/HEAD.lock", ".git/index", ".git/index.lock",
+		".git/packed-refs", ".git/packed-refs.lock", ".git/ORIG_HEAD", ".git/FETCH_HEAD", ".git/MERGE_HEAD", ".git/MERGE_MSG",
+		".git/AUTO_MERGE", ".git/CHERRY_PICK_HEAD", ".git/REBASE_HEAD", ".git/COMMIT_EDITMSG", ".git/TAG_EDITMSG", ".git/BISECT_LOG",
+		".git/rebase-merge/git-rebase-todo", ".git/sequencer/todo", ".git/gc.pid", ".git/shallow.lock",
+		".git/modules/sub/objects/ab/cd", ".git/modules/sub/HEAD", ".git/worktrees/wt/HEAD", ".git/worktrees/wt/index",
+		".git/worktrees/wt/logs/HEAD", ".git/modules/a/modules/b/refs/heads/main",
+	} {
+		if !writableIn(grant, grant+"/"+relative) {
+			t.Errorf("%s, which everyday work writes, is not writable", relative)
+		}
+	}
+	for _, pattern := range protectedPatterns(grant) {
+		for _, beside := range []string{"/data/my.repo+(1)x/.zshrc", "/data/myXrepo+(1)/.git/config", "/data/.claude/settings.json"} {
+			if regexp.MustCompile(pattern).MatchString(beside) {
+				t.Errorf("%s, beside the grant, matches %s", beside, pattern)
+			}
 		}
 	}
 }
 
 // TestAStageCannotWriteWhatRunsCodeLater writes, under the real Seatbelt,
-// each kind of file a shell, git or an editor's agent acts on, inside a
-// writable grant, and checks that none is written while an ordinary file
-// and git's objects are, and that the protected files stay readable.
+// each kind of file a shell, direnv, git, an editor or an agent acts on,
+// inside a writable grant, an agent's settings among them while its
+// directory exists, and a name in .git nobody listed, and checks that none
+// is written while an ordinary file and git's objects and refs are, and that
+// the protected files stay readable.
 func TestAStageCannotWriteWhatRunsCodeLater(t *testing.T) {
 	driver, _ := realSeatbelt(t)
 	repo, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, dir := range []string{".git/hooks", ".git/objects", "sub"} {
+	for _, dir := range []string{".git/hooks", ".git/objects/info", ".claude", "sub"} {
 		if err := os.MkdirAll(filepath.Join(repo, dir), 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -82,7 +119,9 @@ func TestAStageCannotWriteWhatRunsCodeLater(t *testing.T) {
 	}
 	for _, relative := range []string{
 		".git/hooks/pre-commit", ".git/config", ".zshrc", ".ZSHRC", "sub/.gitconfig", ".bashrc",
-		".vscode/settings.json", ".claude/commands/run.md", ".mcp.json",
+		".vscode/settings.json", ".claude/commands/run.md", ".claude/settings.json", ".claude/settings.local.json",
+		".cursor/mcp.json", ".mcp.json", ".envrc", "team.code-workspace", ".git/newcontrol", ".git/info/exclude",
+		".git/objects/info/alternates", ".git/objects/info/http-alternates",
 	} {
 		if err := write(relative); err == nil {
 			t.Errorf("%s was written", relative)
@@ -91,7 +130,7 @@ func TestAStageCannotWriteWhatRunsCodeLater(t *testing.T) {
 	if body, err := os.ReadFile(filepath.Join(repo, ".git", "config")); err != nil || string(body) != "[core]\n" {
 		t.Errorf(".git/config changed: %q, %v", body, err)
 	}
-	for _, relative := range []string{"notes.txt", ".git/objects/ab", "sub/main.go"} {
+	for _, relative := range []string{"notes.txt", ".git/objects/ab", ".git/objects/info/commit-graph", ".git/refs/heads/main", "sub/main.go"} {
 		if err := write(relative); err != nil {
 			t.Errorf("%s, an ordinary file, could not be written: %v", relative, err)
 		}

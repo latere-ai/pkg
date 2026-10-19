@@ -51,28 +51,47 @@ var seatbeltDevices = []string{"/dev/dtracehelper", "/dev/null", "/dev/tty", "/d
 
 // writeProtectedFiles are files inside a writable grant that a stage may not
 // write, move, create or replace: each is read and acted on by a program the
-// operator runs later, a shell, git or an editor's agent, so writing one is
-// running code outside the sandbox. Each is protected at any depth below the
-// grant, in any case.
-var writeProtectedFiles = []string{
-	".bash_login", ".bash_profile", ".bashrc", ".profile",
-	".zlogin", ".zprofile", ".zshenv", ".zshrc",
-	".gitconfig", ".gitmodules",
-	".mcp.json", ".ripgreprc",
-}
+// operator runs later, a shell, direnv, git, an editor or an agent, so
+// writing one is running code outside the sandbox. Each is protected at any
+// depth below the grant, in any case; writeProtectedSuffixes are protected
+// the same way by the end of their name.
+var (
+	writeProtectedFiles = []string{
+		".bash_login", ".bash_profile", ".bashrc", ".profile",
+		".zlogin", ".zprofile", ".zshenv", ".zshrc",
+		".envrc", ".gitconfig", ".gitmodules", ".mcp.json", ".ripgreprc",
+	}
+	writeProtectedSuffixes = []string{".code-workspace"}
+)
 
-// writeProtectedDirs are directories inside a writable grant that a stage may
-// neither write into nor move, create or replace, for the same reason: an
-// editor's settings and an agent's commands.
-var writeProtectedDirs = []string{".vscode", ".idea", ".claude/commands", ".claude/agents"}
+// writeProtectedTrees are directories inside a writable grant that a stage
+// may not write at all, the directory itself included: an editor's or an
+// agent's settings, which name commands it runs and servers it starts. A
+// Latere session has no reason to write them.
+var writeProtectedTrees = []string{".claude", ".cursor", ".idea", ".vscode"}
 
-// pinnedNames are directories inside a writable grant that hold protected
-// paths: a stage may write inside them, but may not move, create, replace or
-// otherwise write the directory itself, so it cannot move one away, write
-// into it under another name and move it back. A .git that is a file,
-// pointing git at a gitdir, is held the same way, so it can be neither
-// written nor put in place.
-var pinnedNames = []string{".git", ".claude"}
+// A gitdir is denied every write except what everyday git writes, so a name
+// git reads and this list forgets, or one git adds later, stays denied.
+// gitWritableDirs and everything in them, and gitWritableFiles with their
+// .lock companions, are written back by commit, branch, checkout, merge,
+// rebase, cherry-pick, revert, stash, tag, fetch, bisect and gc; nothing in
+// them names a command git runs. gitDeniedInWritable are the exceptions
+// inside an allowed directory: an alternates file makes git read objects
+// from another repository.
+var (
+	gitWritableDirs  = []string{"objects", "refs", "logs", "rebase-merge", "rebase-apply", "sequencer"}
+	gitWritableFiles = []string{
+		"HEAD", "ORIG_HEAD", "FETCH_HEAD", "MERGE_HEAD", "MERGE_MSG", "MERGE_MODE",
+		"AUTO_MERGE", "CHERRY_PICK_HEAD", "REVERT_HEAD", "REBASE_HEAD", "COMMIT_EDITMSG",
+		"SQUASH_MSG", "TAG_EDITMSG", "packed-refs", "gc.pid", "gc.log", "shallow",
+	}
+	// Prefixes cover a family of files git writes under one name: BISECT_*,
+	// and git's index and the temporary indexes it writes beside it
+	// (index.lock, index.stash.<pid>), which hold tracked content, never a
+	// command.
+	gitWritablePrefixes = []string{"BISECT_", "index"}
+	gitDeniedInWritable = []string{"objects/info/alternates", "objects/info/http-alternates"}
+)
 
 // RenderSeatbelt turns a profile into the Seatbelt profile sandbox-exec runs
 // a stage under.
@@ -84,9 +103,11 @@ var pinnedNames = []string{".git", ".claude"}
 // table and the profile's denials are denied again, so a denial wins inside
 // any grant. The directories above a grant inside the home directory may be
 // examined but not listed, so a program can resolve the grant's path. Writes
-// are allowed only in the profile's writes, then DenyWrites, every denied
-// read, and what protectedPatterns names at any depth are denied inside
-// them.
+// are allowed only in the profile's writes; then what protectedPatterns
+// names at any depth is denied inside them, every gitdir among it; then what
+// everyday git writes in a gitdir is allowed back and its exceptions denied
+// again; then DenyWrites and every denied read are denied, last, so a
+// consumer's denial wins over every allowance.
 //
 // proxyPort is the loopback port of the stage's egress proxy, the one
 // network destination the stage may reach. Zero renders no network at all:
@@ -115,9 +136,12 @@ func RenderSeatbelt(profile Profile, proxyPort int) (string, error) {
 	reads := allowAll(profile.Reads)
 	writes := allowAll(profile.Writes)
 	denyWrites := canonicalAll(append(append([]string(nil), profile.DenyWrites...), denyRead...))
-	var protected []string
+	var protected, gitAllowed, gitDenied []string
 	for _, write := range writes {
 		protected = append(protected, protectedPatterns(write)...)
+		allowed, denied := gitPatterns(write)
+		gitAllowed = append(gitAllowed, allowed...)
+		gitDenied = append(gitDenied, denied...)
 	}
 	var ancestors []string
 	for _, home := range homes {
@@ -151,8 +175,10 @@ func RenderSeatbelt(profile Profile, proxyPort int) (string, error) {
 
 	b.WriteString(";; Writes: only the grants, less what stays read-only inside them.\n")
 	rule(&b, "allow", "file-write*", "subpath", writes)
-	rule(&b, "deny", "file-write*", "subpath", denyWrites)
 	rule(&b, "deny", "file-write*", "regex", protected)
+	rule(&b, "allow", "file-write*", "regex", gitAllowed)
+	rule(&b, "deny", "file-write*", "regex", gitDenied)
+	rule(&b, "deny", "file-write*", "subpath", denyWrites)
 	rule(&b, "allow", "file-write*", "literal", seatbeltDevices)
 	rule(&b, "allow", "file-ioctl", "literal", seatbeltDevices)
 
@@ -235,37 +261,57 @@ func allowAll(paths []string) []string {
 
 // protectedPatterns are the regular expressions, for the profile's regex
 // filter, of what a stage may not write below the writable grant write:
-// writeProtectedFiles, writeProtectedDirs and everything in them, the
-// pinnedNames directories themselves, and git's own: in a gitdir (.git, a
-// submodule's under .git/modules at any depth, or a worktree's under
-// .git/worktrees), its config, its config.worktree and its hooks with
-// everything in them, and the .git/modules and .git/worktrees directories
-// and each gitdir they hold, so none can be moved out of git's layout and
-// back. The grant's own path is matched literally, and each protected name
-// in any case, since a name on a case-insensitive volume reaches the same
-// file whatever its case. Each pattern names the path itself and so covers
-// a rename's source and destination as well as a write.
+// writeProtectedFiles and writeProtectedSuffixes, writeProtectedTrees with
+// the directories themselves, and every .git, whether a directory or a file
+// pointing git at a gitdir, with everything below it, so a gitdir and
+// git's layout of them (.git/modules, .git/worktrees and the gitdirs they
+// hold) can be neither written nor moved, created, replaced or repointed.
+// gitPatterns allows back what everyday git writes. The grant's own path is
+// matched literally, and each protected name in any case, since a name on a
+// case-insensitive volume reaches the same file whatever its case. Each
+// pattern names the path itself and so covers a rename's source and
+// destination as well as a write.
 func protectedPatterns(write string) []string {
 	base := "^" + regexLiteral(write) + "(/.*)?/"
 	var out []string
 	for _, name := range writeProtectedFiles {
 		out = append(out, base+anyCase(name)+"$")
 	}
-	for _, name := range writeProtectedDirs {
+	for _, suffix := range writeProtectedSuffixes {
+		out = append(out, base+"[^/]*"+anyCase(suffix)+"$")
+	}
+	for _, name := range writeProtectedTrees {
 		out = append(out, base+anyCase(name)+"(/.*)?$")
 	}
-	for _, name := range pinnedNames {
-		out = append(out, base+anyCase(name)+"$")
+	return append(out, base+anyCase(".git")+"(/.*)?$")
+}
+
+// gitPatterns are the regular expressions of what everyday git writes in
+// each gitdir below the writable grant write, allowed back inside the
+// protection of .git, and of the exceptions denied again inside those. A
+// gitdir is .git, a submodule's under .git/modules at any depth, or a
+// worktree's under .git/worktrees; what the list leaves out (config,
+// config.worktree, hooks, commondir, gitdir, info, alternates and any name
+// git adds later) stays denied.
+func gitPatterns(write string) (allowed, denied []string) {
+	gitdir := "^" + regexLiteral(write) + "(/.*)?/" + anyCase(".git") +
+		"(/" + anyCase("modules") + "/[^/]+)*(/" + anyCase("worktrees") + "/[^/]+)?/"
+	names := func(list []string) string {
+		out := make([]string, len(list))
+		for i, name := range list {
+			out[i] = anyCase(name)
+		}
+		return "(" + strings.Join(out, "|") + ")"
 	}
-	nested := "(/" + anyCase("modules") + "/[^/]+)*"
-	gitdirs := base + anyCase(".git") + nested
-	worktree := "(/" + anyCase("worktrees") + "/[^/]+)?"
-	out = append(out,
-		gitdirs+"/("+anyCase("modules")+"|"+anyCase("worktrees")+")(/[^/]+)?$",
-		gitdirs+worktree+"/"+anyCase("config")+"("+anyCase(".worktree")+")?$",
-		gitdirs+worktree+"/"+anyCase("hooks")+"(/.*)?$",
-	)
-	return out
+	allowed = []string{
+		gitdir + names(gitWritableDirs) + "(/.*)?$",
+		gitdir + names(gitWritableFiles) + "(" + anyCase(".lock") + ")?$",
+		gitdir + names(gitWritablePrefixes) + "[^/]*$",
+	}
+	for _, path := range gitDeniedInWritable {
+		denied = append(denied, gitdir+anyCase(path)+"$")
+	}
+	return allowed, denied
 }
 
 // regexLiteral escapes every character a regular expression gives meaning.

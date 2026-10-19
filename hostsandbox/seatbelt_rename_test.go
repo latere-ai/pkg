@@ -4,11 +4,8 @@
 package hostsandbox
 
 import (
-	"maps"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -128,77 +125,5 @@ func TestRenamingARepositoryKeepsItsProtection(t *testing.T) {
 		}); err == nil {
 			t.Errorf("after the move, %q succeeded: %q", script, output)
 		}
-	}
-}
-
-// gitIn runs git under the real Seatbelt in repo, inside a writable grant,
-// with its own home and temporary directory, and returns its output.
-func gitIn(t *testing.T, driver *Driver, grant, repo string, args ...string) (string, error) {
-	t.Helper()
-	home := filepath.Join(grant, "home")
-	tmp := filepath.Join(grant, "tmp")
-	for _, dir := range []string{home, tmp} {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	env := coverage(t)
-	maps.Copy(env, map[string]string{
-		"HOME": home, "TMPDIR": tmp, "GIT_CONFIG_NOSYSTEM": "1",
-		"GIT_AUTHOR_NAME": "Stage", "GIT_AUTHOR_EMAIL": "stage@example.com",
-		"GIT_COMMITTER_NAME": "Stage", "GIT_COMMITTER_EMAIL": "stage@example.com",
-	})
-	return attached(t, driver, StageSpec{
-		Name: "git", Argv: append([]string{"/usr/bin/git"}, args...), Workdir: repo, Env: env,
-		Paths: []Path{{Host: grant, Access: ReadWrite}}, Network: Network{Mode: NetworkNone},
-	})
-}
-
-// TestEverydayGitStillWorks runs a day's git under the real Seatbelt in a
-// repository inside a writable grant: edit, add, commit, branch, commit,
-// switch back. None of it touches what the protection covers. It also pins
-// what the protection costs, as srt's default costs it: git init and git
-// config, which write a .git directory and git's config, fail inside a grant.
-func TestEverydayGitStillWorks(t *testing.T) {
-	driver, _ := realSeatbelt(t)
-	if err := exec.Command("/usr/bin/git", "--version").Run(); err != nil { //nolint:noctx // a probe
-		t.Skipf("no git here: %v", err)
-	}
-	grant, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	repo := filepath.Join(grant, "work")
-	// The repository is made outside the sandbox, as the operator's clone
-	// would be.
-	init := exec.Command("/usr/bin/git", "init", "-q", "-b", "main", repo) //nolint:noctx // test setup
-	init.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "HOME="+grant)
-	if output, err := init.CombinedOutput(); err != nil {
-		t.Fatalf("git init outside the sandbox: %v\n%s", err, output)
-	}
-	if err := os.WriteFile(filepath.Join(repo, "notes.txt"), []byte("one\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for _, step := range [][]string{
-		{"add", "notes.txt"},
-		{"commit", "-q", "-m", "first"},
-		{"checkout", "-q", "-b", "feature"},
-		{"commit", "-q", "--allow-empty", "-m", "second"},
-		{"checkout", "-q", "main"},
-		{"log", "--oneline", "feature"},
-	} {
-		if output, err := gitIn(t, driver, grant, repo, step...); err != nil {
-			t.Fatalf("git %s failed under Seatbelt: %v\n%s", strings.Join(step, " "), err, output)
-		}
-	}
-	output, _ := gitIn(t, driver, grant, repo, "log", "--format=%s", "feature")
-	if !strings.Contains(output, "second") || !strings.Contains(output, "first") {
-		t.Fatalf("the branch does not hold both commits: %q", output)
-	}
-	if _, err := gitIn(t, driver, grant, repo, "config", "user.name", "x"); err == nil {
-		t.Error("git config wrote git's config inside a grant")
-	}
-	if _, err := gitIn(t, driver, grant, grant, "init", "-q", "fresh"); err == nil {
-		t.Error("git init made a .git directory inside a grant")
 	}
 }
