@@ -284,3 +284,42 @@ func TestEverydayGitStillWorks(t *testing.T) {
 		t.Error("git init made a .git directory inside a grant")
 	}
 }
+
+// TestABareRepositoryIsProtected treats a directory whose name ends in .git
+// as a gitdir: under the real Seatbelt a stage cannot write its config or a
+// hook, while a push into it from a working clone, run as the stage, still
+// writes its objects and refs.
+func TestABareRepositoryIsProtected(t *testing.T) {
+	driver, grant, repo := newRepo(t)
+	bare := filepath.Join(grant, "origin.git")
+	gitOut(t, grant, grant, "clone", "-q", "--bare", repo, bare)
+
+	for _, relative := range []string{"hooks/post-receive", "config"} {
+		path := filepath.Join(bare, relative)
+		script := fmt.Sprintf("mkdir -p %s && printf x >> %s", ShellQuote(filepath.Dir(path)), ShellQuote(path))
+		if output, err := gitShell(t, driver, grant, grant, script); err == nil {
+			t.Errorf("a bare repository's %s was written: %q", relative, output)
+		}
+	}
+	if body := readFile(t, filepath.Join(bare, "config")); !strings.Contains(body, "bare = true") {
+		t.Errorf("the bare repository's config changed: %q", body)
+	}
+
+	// The stage commits in the working clone and pushes into the bare
+	// repository, which writes its objects and refs.
+	if err := os.WriteFile(filepath.Join(repo, "pushed.txt"), []byte("pushed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitIn(t, driver, grant, repo, "add", "pushed.txt"); err != nil {
+		t.Fatalf("add under Seatbelt: %v", err)
+	}
+	if _, err := gitIn(t, driver, grant, repo, "commit", "-q", "-m", "a commit to push"); err != nil {
+		t.Fatalf("commit under Seatbelt: %v", err)
+	}
+	if output, err := gitIn(t, driver, grant, repo, "push", "-q", bare, "main"); err != nil {
+		t.Fatalf("a push into the bare repository failed under Seatbelt: %v\n%s", err, output)
+	}
+	if out := gitOut(t, grant, bare, "log", "--format=%s", "-1", "main"); !strings.Contains(out, "a commit to push") {
+		t.Fatalf("the push did not reach the bare repository: %q", out)
+	}
+}

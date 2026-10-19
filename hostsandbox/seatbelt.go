@@ -283,7 +283,15 @@ func protectedPatterns(write string) []string {
 	for _, name := range writeProtectedTrees {
 		out = append(out, base+anyCase(name)+"(/.*)?$")
 	}
-	return append(out, base+anyCase(".git")+"(/.*)?$")
+	// Every .git, a directory or a file pointing git at a gitdir, with its
+	// contents: the node is pinned and the tree denied, then gitPatterns
+	// allows back what everyday git writes.
+	out = append(out, base+anyCase(".git")+"(/.*)?$")
+	// A bare repository is a directory whose name ends in .git, its gitdir at
+	// the top level. Its contents are denied here (its config and hooks among
+	// them), and gitPatterns allows back the same everyday-git paths. The
+	// node itself is not pinned, so a file simply named *.git stays writable.
+	return append(out, base+"[^/]+"+anyCase(".git")+"/.*$")
 }
 
 // gitPatterns are the regular expressions of what everyday git writes in
@@ -294,7 +302,10 @@ func protectedPatterns(write string) []string {
 // config.worktree, hooks, commondir, gitdir, info, alternates and any name
 // git adds later) stays denied.
 func gitPatterns(write string) (allowed, denied []string) {
-	gitdir := "^" + regexLiteral(write) + "(/.*)?/" + anyCase(".git") +
+	// A gitdir is .git, a submodule's or worktree's gitdir within it, or a
+	// bare repository, a directory whose name ends in .git. The anchor is a
+	// component ending in .git, so the allowance applies in each.
+	gitdir := "^" + regexLiteral(write) + "(/.*)?/[^/]*" + anyCase(".git") +
 		"(/" + anyCase("modules") + "/[^/]+)*(/" + anyCase("worktrees") + "/[^/]+)?/"
 	names := func(list []string) string {
 		out := make([]string, len(list))

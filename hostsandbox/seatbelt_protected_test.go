@@ -60,6 +60,7 @@ func TestTheProtectionDecidesAsSeatbeltDoes(t *testing.T) {
 		".git/objects/info/http-alternates", ".git/modules", ".git/modules/sub", ".git/modules/sub/config", ".git/modules/sub/commondir",
 		".git/modules/a/modules/b/hooks/post-checkout", ".git/worktrees", ".git/worktrees/wt", ".git/worktrees/wt/commondir",
 		".git/worktrees/wt/gitdir", ".git/worktrees/wt/config.worktree", ".git/worktrees/wt/locked",
+		"origin.git/config", "origin.git/hooks/post-receive", "origin.git/commondir", "sub/bare.GIT/hooks/update",
 	} {
 		if writableIn(grant, grant+"/"+relative) {
 			t.Errorf("%s is writable", relative)
@@ -74,6 +75,8 @@ func TestTheProtectionDecidesAsSeatbeltDoes(t *testing.T) {
 		".git/rebase-merge/git-rebase-todo", ".git/sequencer/todo", ".git/gc.pid", ".git/shallow.lock",
 		".git/modules/sub/objects/ab/cd", ".git/modules/sub/HEAD", ".git/worktrees/wt/HEAD", ".git/worktrees/wt/index",
 		".git/worktrees/wt/logs/HEAD", ".git/modules/a/modules/b/refs/heads/main",
+		"origin.git/objects/pack/p.pack", "origin.git/refs/heads/main", "origin.git/packed-refs", "origin.git/HEAD",
+		"x.git", ".gitx", "my.github/workflows/ci.yml",
 	} {
 		if !writableIn(grant, grant+"/"+relative) {
 			t.Errorf("%s, which everyday work writes, is not writable", relative)
