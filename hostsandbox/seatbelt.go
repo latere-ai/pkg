@@ -49,8 +49,28 @@ var seatbeltServices = []string{
 // terminal of the same user is not among them.
 var seatbeltDevices = []string{"/dev/dtracehelper", "/dev/null", "/dev/tty", "/dev/zero"}
 
+// writeProtectedFiles are files inside a writable grant that a stage may not
+// write: each is read and acted on by a program the operator runs later, a
+// shell, git or an editor's agent, so writing one is running code outside
+// the sandbox. Each is protected at any depth below the grant, in any case.
+var writeProtectedFiles = []string{
+	".bash_login", ".bash_profile", ".bashrc", ".profile",
+	".zlogin", ".zprofile", ".zshenv", ".zshrc",
+	".gitconfig", ".gitmodules", ".git/config",
+	".mcp.json", ".ripgreprc",
+}
+
+// writeProtectedDirs are directories inside a writable grant whose contents a
+// stage may not write, for the same reason: git's hooks, and an editor's or
+// an agent's settings and commands.
+var writeProtectedDirs = []string{
+	".git/hooks",
+	".vscode", ".idea",
+	".claude/commands", ".claude/agents",
+}
+
 // RenderSeatbelt turns a profile into the Seatbelt profile sandbox-exec runs
-// a stage under, with the same path policy Render gives srt.
+// a stage under.
 //
 // Everything is denied unless a rule allows it, and where rules overlap the
 // last one that matches decides, so the rules are written from the broadest
@@ -59,8 +79,9 @@ var seatbeltDevices = []string{"/dev/dtracehelper", "/dev/null", "/dev/tty", "/d
 // table and the profile's denials are denied again, so a denial wins inside
 // any grant. The directories above a grant inside the home directory may be
 // examined but not listed, so a program can resolve the grant's path. Writes
-// are allowed only in the profile's writes, then DenyWrites and every denied
-// read are denied inside them.
+// are allowed only in the profile's writes, then DenyWrites, every denied
+// read, and writeProtectedFiles and writeProtectedDirs at any depth are
+// denied inside them.
 //
 // proxyPort is the loopback port of the stage's egress proxy, the one
 // network destination the stage may reach. Zero renders no network at all:
@@ -89,6 +110,10 @@ func RenderSeatbelt(profile Profile, proxyPort int) (string, error) {
 	reads := allowAll(profile.Reads)
 	writes := allowAll(profile.Writes)
 	denyWrites := canonicalAll(append(append([]string(nil), profile.DenyWrites...), denyRead...))
+	var protected []string
+	for _, write := range writes {
+		protected = append(protected, protectedPatterns(write)...)
+	}
 	var ancestors []string
 	for _, home := range homes {
 		ancestors = append(ancestors, home)
@@ -122,6 +147,7 @@ func RenderSeatbelt(profile Profile, proxyPort int) (string, error) {
 	b.WriteString(";; Writes: only the grants, less what stays read-only inside them.\n")
 	rule(&b, "allow", "file-write*", "subpath", writes)
 	rule(&b, "deny", "file-write*", "subpath", denyWrites)
+	rule(&b, "deny", "file-write*", "regex", protected)
 	rule(&b, "allow", "file-write*", "literal", seatbeltDevices)
 	rule(&b, "allow", "file-ioctl", "literal", seatbeltDevices)
 
@@ -200,6 +226,51 @@ func allowAll(paths []string) []string {
 		out = append(out, allowSpellings(strings.TrimSpace(path))...)
 	}
 	return sorted(out)
+}
+
+// protectedPatterns are the regular expressions, for the profile's regex
+// filter, that match writeProtectedFiles and the contents of
+// writeProtectedDirs at any depth below the writable grant write. The
+// grant's own path is matched literally, and each protected name in any
+// case, since a name on a case-insensitive volume reaches the same file
+// whatever its case.
+func protectedPatterns(write string) []string {
+	base := "^" + regexLiteral(write) + "(/.*)?/"
+	var out []string
+	for _, name := range writeProtectedFiles {
+		out = append(out, base+anyCase(name)+"$")
+	}
+	for _, name := range writeProtectedDirs {
+		out = append(out, base+anyCase(name)+"(/.*)?$")
+	}
+	return out
+}
+
+// regexLiteral escapes every character a regular expression gives meaning.
+func regexLiteral(value string) string {
+	var b strings.Builder
+	for _, r := range value {
+		if strings.ContainsRune(`\.^$|?*+()[]{}`, r) {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// anyCase writes a name as a pattern matching it in any case: each letter a
+// class of its two cases, everything else escaped.
+func anyCase(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		lower, upper := strings.ToLower(string(r)), strings.ToUpper(string(r))
+		if lower != upper {
+			b.WriteString("[" + lower + upper + "]")
+			continue
+		}
+		b.WriteString(regexLiteral(string(r)))
+	}
+	return b.String()
 }
 
 // canonical returns a path as written and, when it differs, with its
