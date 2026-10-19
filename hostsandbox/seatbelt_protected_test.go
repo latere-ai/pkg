@@ -32,6 +32,10 @@ func TestProtectedPatternsMatchAnyCaseAtAnyDepth(t *testing.T) {
 		grant + "/.git/config", grant + "/vendor/x/.git/config", grant + "/.git/hooks", grant + "/.git/hooks/pre-commit",
 		grant + "/.GIT/Hooks/post-checkout", grant + "/.vscode/settings.json", grant + "/.idea/workspace.xml",
 		grant + "/.claude/commands/run.md", grant + "/.claude/agents/a.md", grant + "/.mcp.json", grant + "/.bash_profile",
+		grant + "/.git", grant + "/sub/.GIT", grant + "/.claude", grant + "/.git/config.worktree",
+		grant + "/.git/modules", grant + "/.git/modules/sub", grant + "/.git/modules/sub/config", grant + "/.git/modules/sub/hooks/pre-commit",
+		grant + "/.git/modules/a/modules/b/config", grant + "/.git/modules/a/modules/b", grant + "/.git/worktrees", grant + "/.git/worktrees/w",
+		grant + "/.git/worktrees/w/config.worktree", grant + "/.git/worktrees/w/hooks/post-checkout",
 	} {
 		if !matches(path) {
 			t.Errorf("%s is writable", path)
@@ -40,6 +44,8 @@ func TestProtectedPatternsMatchAnyCaseAtAnyDepth(t *testing.T) {
 	for _, path := range []string{
 		grant + "/notes.zshrc", grant + "/.git/objects/ab/cd", grant + "/.git/hooksx", grant + "/.git/configs",
 		grant + "/.claude/settings.json", "/data/my.repo+(1)x/.zshrc", "/data/myXrepo+(1)/.zshrc", "/data/.zshrc", grant,
+		grant + "/.git/refs/heads/config", grant + "/.git/refs/heads/hooks", grant + "/.git/refs/heads/modules", grant + "/.git/HEAD",
+		grant + "/.git/index", grant + "/.git/modules/sub/objects/ab/cd", grant + "/.gitx", grant + "/x.git",
 	} {
 		if matches(path) {
 			t.Errorf("%s is protected, though it is not on the list or not in the grant", path)

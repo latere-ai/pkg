@@ -50,24 +50,29 @@ var seatbeltServices = []string{
 var seatbeltDevices = []string{"/dev/dtracehelper", "/dev/null", "/dev/tty", "/dev/zero"}
 
 // writeProtectedFiles are files inside a writable grant that a stage may not
-// write: each is read and acted on by a program the operator runs later, a
-// shell, git or an editor's agent, so writing one is running code outside
-// the sandbox. Each is protected at any depth below the grant, in any case.
+// write, move, create or replace: each is read and acted on by a program the
+// operator runs later, a shell, git or an editor's agent, so writing one is
+// running code outside the sandbox. Each is protected at any depth below the
+// grant, in any case.
 var writeProtectedFiles = []string{
 	".bash_login", ".bash_profile", ".bashrc", ".profile",
 	".zlogin", ".zprofile", ".zshenv", ".zshrc",
-	".gitconfig", ".gitmodules", ".git/config",
+	".gitconfig", ".gitmodules",
 	".mcp.json", ".ripgreprc",
 }
 
-// writeProtectedDirs are directories inside a writable grant whose contents a
-// stage may not write, for the same reason: git's hooks, and an editor's or
-// an agent's settings and commands.
-var writeProtectedDirs = []string{
-	".git/hooks",
-	".vscode", ".idea",
-	".claude/commands", ".claude/agents",
-}
+// writeProtectedDirs are directories inside a writable grant that a stage may
+// neither write into nor move, create or replace, for the same reason: an
+// editor's settings and an agent's commands.
+var writeProtectedDirs = []string{".vscode", ".idea", ".claude/commands", ".claude/agents"}
+
+// pinnedNames are directories inside a writable grant that hold protected
+// paths: a stage may write inside them, but may not move, create, replace or
+// otherwise write the directory itself, so it cannot move one away, write
+// into it under another name and move it back. A .git that is a file,
+// pointing git at a gitdir, is held the same way, so it can be neither
+// written nor put in place.
+var pinnedNames = []string{".git", ".claude"}
 
 // RenderSeatbelt turns a profile into the Seatbelt profile sandbox-exec runs
 // a stage under.
@@ -80,8 +85,8 @@ var writeProtectedDirs = []string{
 // any grant. The directories above a grant inside the home directory may be
 // examined but not listed, so a program can resolve the grant's path. Writes
 // are allowed only in the profile's writes, then DenyWrites, every denied
-// read, and writeProtectedFiles and writeProtectedDirs at any depth are
-// denied inside them.
+// read, and what protectedPatterns names at any depth are denied inside
+// them.
 //
 // proxyPort is the loopback port of the stage's egress proxy, the one
 // network destination the stage may reach. Zero renders no network at all:
@@ -229,11 +234,17 @@ func allowAll(paths []string) []string {
 }
 
 // protectedPatterns are the regular expressions, for the profile's regex
-// filter, that match writeProtectedFiles and the contents of
-// writeProtectedDirs at any depth below the writable grant write. The
-// grant's own path is matched literally, and each protected name in any
-// case, since a name on a case-insensitive volume reaches the same file
-// whatever its case.
+// filter, of what a stage may not write below the writable grant write:
+// writeProtectedFiles, writeProtectedDirs and everything in them, the
+// pinnedNames directories themselves, and git's own: in a gitdir (.git, a
+// submodule's under .git/modules at any depth, or a worktree's under
+// .git/worktrees), its config, its config.worktree and its hooks with
+// everything in them, and the .git/modules and .git/worktrees directories
+// and each gitdir they hold, so none can be moved out of git's layout and
+// back. The grant's own path is matched literally, and each protected name
+// in any case, since a name on a case-insensitive volume reaches the same
+// file whatever its case. Each pattern names the path itself and so covers
+// a rename's source and destination as well as a write.
 func protectedPatterns(write string) []string {
 	base := "^" + regexLiteral(write) + "(/.*)?/"
 	var out []string
@@ -243,6 +254,17 @@ func protectedPatterns(write string) []string {
 	for _, name := range writeProtectedDirs {
 		out = append(out, base+anyCase(name)+"(/.*)?$")
 	}
+	for _, name := range pinnedNames {
+		out = append(out, base+anyCase(name)+"$")
+	}
+	nested := "(/" + anyCase("modules") + "/[^/]+)*"
+	gitdirs := base + anyCase(".git") + nested
+	worktree := "(/" + anyCase("worktrees") + "/[^/]+)?"
+	out = append(out,
+		gitdirs+"/("+anyCase("modules")+"|"+anyCase("worktrees")+")(/[^/]+)?$",
+		gitdirs+worktree+"/"+anyCase("config")+"("+anyCase(".worktree")+")?$",
+		gitdirs+worktree+"/"+anyCase("hooks")+"(/.*)?$",
+	)
 	return out
 }
 
