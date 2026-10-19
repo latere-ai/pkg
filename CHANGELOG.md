@@ -14,27 +14,33 @@ under **Removed** or **Changed** with what to do about it.
 
 - **`hostsandbox` runs stages under macOS's own Seatbelt,** with nothing
   installed: no srt, no Node.js, no ripgrep. `Config.Isolation` chooses
-  `IsolationSeatbelt` or `IsolationSRT`; `IsolationAuto`, the zero value,
-  picks Seatbelt on macOS and srt elsewhere. The path policy is the one srt
-  enforces, rendered as a Seatbelt profile (`RenderSeatbelt`), and handles,
+  `IsolationSeatbelt` or `IsolationSRT`. `IsolationAuto`, the zero value,
+  picks Seatbelt on macOS in a program whose `main` calls `hostsandbox.Main`,
+  and srt otherwise, so a program that has not adopted it keeps srt. Handles,
   status files, `Observe`, `Output`, `Stop`, `Discard` and `Command` behave
   the same under both, so a stage launched under one is managed by a driver
-  composed with the other. Under Seatbelt a network allowlist is enforced by
-  an egress proxy beside the stage that admits named hosts by their CONNECT
-  target or URL, without terminating TLS, and refuses this machine and its
-  link-local network.
-- `hostsandbox.Main`, for a program whose stages run under Seatbelt with a
-  network allowlist: call it as the first statement of `main`. The driver
-  starts the program again as the stage's launcher, which serves the proxy
-  for as long as the stage runs, after the process that launched it is gone.
+  composed with the other.
+- The Seatbelt profile (`RenderSeatbelt`) follows srt's path policy, with a
+  grant never widened through a symbolic link that leads out of it, a
+  writable grant that is a link refused, and the files a shell, git or an
+  editor's agent acts on later (shell startup files, `.gitconfig`,
+  `.git/config`, `.git/hooks`, `.vscode` and others) unwritable at any depth
+  inside a writable grant. A stage reaches no preferences service; it reads
+  preferences only from files it is granted.
+- Under Seatbelt, a network allowlist is enforced by an egress proxy beside
+  the stage. A host named alone is admitted for a CONNECT to port 443 and a
+  plain request to port 80, a host named as `host:port` on that port alone.
+  The proxy does not terminate TLS, and refuses this machine and its
+  link-local network. A refusal is noted in the stage's output.
+- `hostsandbox.Main`, called as the first statement of `main`, lets the
+  driver start the program again as an allowlisted stage's launcher, which
+  serves its proxy for as long as the stage runs.
 
 ### Changed
 
-- **On macOS, `hostsandbox.New` now runs stages under Seatbelt.** A program
-  whose stages use a network allowlist calls `hostsandbox.Main` at the start
-  of `main`; until it does, such a stage is refused with a `NotReadyError`
-  of `ConditionNoLauncher`, and `Capabilities` declares no allowlist. Set
-  `Isolation: hostsandbox.IsolationSRT` to keep srt.
+- **A required program's directory is never granted when it is the root or
+  holds the home directory,** under srt as under Seatbelt, so a program
+  reached through a planted link cannot open the home directory.
 
 ## v0.102.0 - 2026-10-18
 

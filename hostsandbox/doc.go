@@ -3,11 +3,11 @@
 
 // Package hostsandbox runs a process on the operator's own machine inside the
 // operating system's sandbox, detached from the process that started it, with
-// its output written where the sandboxed process cannot reach. On macOS it
-// uses Seatbelt directly, through /usr/bin/sandbox-exec and a profile this
-// package renders; elsewhere it uses srt, Anthropic's sandbox runtime
-// (bubblewrap with seccomp on Linux). Config.Isolation chooses either
-// explicitly.
+// its output written where the sandboxed process cannot reach. On macOS, in
+// a program whose main calls Main, it uses Seatbelt directly, through
+// /usr/bin/sandbox-exec and a profile this package renders; otherwise it uses
+// srt, Anthropic's sandbox runtime (Seatbelt on macOS, bubblewrap with
+// seccomp on Linux). Config.Isolation chooses either explicitly.
 //
 // # The stage vocabulary
 //
@@ -70,24 +70,42 @@
 // # Seatbelt
 //
 // The profile denies everything, then allows what a program needs to run at
-// all (starting processes, the user and group database, the system log,
-// preferences, its temporary directory's lookup and TLS certificate checks
-// among Mach services), then the path policy below, written from the
-// broadest rule to the narrowest because the last rule that matches decides.
-// Paths are written both as given and with their symbolic links resolved,
-// because Seatbelt matches the resolved path. The directories above a grant
-// inside the home directory may be examined but not listed. Writes are
-// allowed to the null and zero devices and the controlling terminal, and
-// read denials are also denied writing.
+// all (starting processes, and among Mach services the user and group
+// database, the system log, its temporary directory's lookup and certificate
+// trust evaluation, each listed with why), then the path policy above, written
+// from the broadest rule to the narrowest because the last rule that matches
+// decides. Preferences are not a service a stage reaches: it reads them only
+// from files it is granted, so the operator's preferences stay with the home
+// directory they live in.
+//
+// The path policy is srt's, with these differences. Seatbelt matches the
+// resolved path a process opens, so a denial is written both as given and
+// with its symbolic links resolved. A grant is written as given, and its
+// resolution kept only when it stays inside the granted tree (macOS's /tmp,
+// /var and /etc are the same trees under /private): a link that leads out of
+// a grant, which a stage can leave in place of a directory it may write,
+// grants nothing beyond its own spelling, and a writable grant that is itself
+// a link is refused. The directories above a grant inside the home directory
+// may be examined but not listed. Read denials are also denied writing.
+// Inside every writable grant, at any depth and in any case, a stage may not
+// write the files a shell, git or an editor's agent acts on later
+// (writeProtectedFiles: shell startup files, .gitconfig, .gitmodules,
+// .git/config and others) or the contents of the directories they read
+// (writeProtectedDirs: .git/hooks, .vscode, .idea, and an agent's commands);
+// srt protects the same kinds of file at its working directory. Writes are
+// also allowed to the null and zero devices and the controlling terminal.
 //
 // A stage with no network runs straight under sandbox-exec and may connect
 // to nothing: no address, no name lookup, no local socket. A stage with a
 // network allowlist reaches the network only through an egress proxy on a
 // loopback port, the one destination its profile allows. The proxy admits a
-// CONNECT by its target host and a plain request by its absolute URL's host,
-// matched as hostmatch matches, and never terminates TLS: there is no
-// certificate authority and nothing to inspect, so Network.Passthrough has
-// nothing to exempt. A destination on this machine or its link-local network
+// CONNECT by its target host and port and a plain request by its absolute
+// URL's, the host matched as hostmatch matches: a host named alone is
+// admitted for a CONNECT to 443 and a plain request to 80, a host named as
+// host:port on that port alone, and every other port is refused. It never
+// terminates TLS: there is no certificate authority and nothing to inspect,
+// so Network.Passthrough has nothing to exempt, and unlike srt it does not
+// see inside a tunnel. A destination on this machine or its link-local network
 // is refused on the address it resolves to, even when its name is allowed.
 // The stage's proxy variables name the proxy; a client that ignores them
 // cannot connect at all.
@@ -97,9 +115,11 @@
 // the stage's launcher, which serves the proxy, renders the profile once the
 // proxy's port is known, runs the stage under sandbox-exec and exits with
 // its exit code. That needs the consumer's main to call Main as its first
-// statement; without it, an allowlisted stage is refused with a
-// NotReadyError of ConditionNoLauncher, Capabilities declares no allowlist,
-// and stages with no network run as before. The cost is one launcher
+// statement, which is also what makes IsolationAuto pick Seatbelt: a program
+// that has not called it keeps srt. Under an explicit IsolationSeatbelt
+// without Main, an allowlisted stage is refused with a NotReadyError of
+// ConditionNoLauncher, Capabilities declares no allowlist, and stages with
+// no network run as before. The cost is one launcher
 // process per allowlisted stage, the consumer's binary, which holds the
 // stage's environment and runs outside the sandbox.
 //
