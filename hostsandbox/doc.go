@@ -87,13 +87,30 @@
 // grants nothing beyond its own spelling, and a writable grant that is itself
 // a link is refused. The directories above a grant inside the home directory
 // may be examined but not listed. Read denials are also denied writing.
+// Writes are also allowed to the null and zero devices and the controlling
+// terminal.
+//
 // Inside every writable grant, at any depth and in any case, a stage may not
-// write the files a shell, git or an editor's agent acts on later
-// (writeProtectedFiles: shell startup files, .gitconfig, .gitmodules,
-// .git/config and others) or the contents of the directories they read
-// (writeProtectedDirs: .git/hooks, .vscode, .idea, and an agent's commands);
-// srt protects the same kinds of file at its working directory. Writes are
-// also allowed to the null and zero devices and the controlling terminal.
+// write, move, create or replace what a shell, git or an editor's agent acts
+// on once the operator runs it: shell startup files, .gitconfig,
+// .gitmodules, .mcp.json and .ripgreprc; .vscode, .idea and an agent's
+// .claude/commands and .claude/agents with everything in them; in each
+// gitdir of git's layout (.git, a submodule's under .git/modules at any
+// depth, a worktree's under .git/worktrees) its config, config.worktree and
+// hooks; and the directories that layout and those paths depend on: .git
+// itself, whether a directory or a file pointing git at a gitdir,
+// .git/modules, .git/worktrees and each gitdir in them, and .claude. Each is
+// named by its path, so a rename is refused at its source and at its
+// destination, and a directory holding a repository may still be moved,
+// since the protection follows the name .git. Ordinary git work goes on:
+// objects, refs, the index and logs stay writable, so add, commit, branch,
+// checkout and fetch work. What it costs, as srt's default costs it: git
+// init, git clone, git config, git submodule and git worktree add inside a
+// grant fail, since each writes what is protected. Its limit: a .git file
+// the operator already pointed at a gitdir outside git's layout leaves that
+// gitdir's config and hooks unprotected, unless they lie in another
+// protected place. srt protects the same kinds of path at its working
+// directory.
 //
 // A stage with no network runs straight under sandbox-exec and may connect
 // to nothing: no address, no name lookup, no local socket. A stage with a

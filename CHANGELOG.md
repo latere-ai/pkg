@@ -21,12 +21,18 @@ under **Removed** or **Changed** with what to do about it.
   the same under both, so a stage launched under one is managed by a driver
   composed with the other.
 - The Seatbelt profile (`RenderSeatbelt`) follows srt's path policy, with a
-  grant never widened through a symbolic link that leads out of it, a
-  writable grant that is a link refused, and the files a shell, git or an
-  editor's agent acts on later (shell startup files, `.gitconfig`,
-  `.git/config`, `.git/hooks`, `.vscode` and others) unwritable at any depth
-  inside a writable grant. A stage reaches no preferences service; it reads
-  preferences only from files it is granted.
+  grant never widened through a symbolic link that leads out of it and a
+  writable grant that is a link refused. Inside a writable grant, at any
+  depth, a stage can neither write nor move, create or replace what a
+  shell, git or an editor's agent acts on later: shell startup files,
+  `.gitconfig`, `.gitmodules`, `.vscode`, `.idea`, an agent's commands, the
+  config and hooks of every gitdir in git's layout (submodules' and
+  worktrees' included), and `.git` itself with the directories its layout
+  depends on. Git's objects, refs and index stay writable, so everyday git
+  works; `git init`, `git clone`, `git config`, `git submodule` and `git
+  worktree add` inside a grant fail, as under srt's default. A stage reaches
+  no preferences service; it reads preferences only from files it is
+  granted.
 - Under Seatbelt, a network allowlist is enforced by an egress proxy beside
   the stage. A host named alone is admitted for a CONNECT to port 443 and a
   plain request to port 80, a host named as `host:port` on that port alone.
