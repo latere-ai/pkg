@@ -267,6 +267,7 @@ func TestEverydayGitStillWorks(t *testing.T) {
 	git("checkout", "-q", "main")
 	git("branch", "-D", "left")
 	git("gc", "-q")
+	git("update-index", "--split-index") // writes .git/sharedindex.<hash>
 
 	// A fetch from a local bare repository, which writes refs and objects.
 	bare := filepath.Join(grant, "origin.git")
@@ -321,5 +322,50 @@ func TestABareRepositoryIsProtected(t *testing.T) {
 	}
 	if out := gitOut(t, grant, bare, "log", "--format=%s", "-1", "main"); !strings.Contains(out, "a commit to push") {
 		t.Fatalf("the push did not reach the bare repository: %q", out)
+	}
+}
+
+// TestASubmoduleWithASlashInItsName works a submodule at the path a/b, whose
+// gitdir git stores at .git/modules/a/b, under the real Seatbelt: a commit
+// and a branch inside it write its objects and refs, while its config and a
+// hook stay denied.
+func TestASubmoduleWithASlashInItsName(t *testing.T) {
+	driver, grant, repo := newRepo(t)
+	// A source for the submodule, and the submodule added, outside the
+	// sandbox, as the operator sets it up: it writes .gitmodules and config.
+	src := filepath.Join(grant, "src")
+	gitOut(t, grant, grant, "init", "-q", "-b", "main", src)
+	if err := os.WriteFile(filepath.Join(src, "lib.txt"), []byte("lib\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitOut(t, grant, src, "add", "lib.txt")
+	gitOut(t, grant, src, "commit", "-q", "-m", "lib")
+	gitOut(t, grant, repo, "-c", "protocol.file.allow=always", "submodule", "add", "-q", src, "a/b")
+	gitOut(t, grant, repo, "commit", "-q", "-m", "add the submodule")
+
+	module := filepath.Join(repo, "a", "b")
+	gitdir := strings.TrimSpace(strings.TrimPrefix(readFile(t, filepath.Join(module, ".git")), "gitdir:"))
+	if !strings.Contains(gitdir, filepath.Join(".git", "modules", "a", "b")) {
+		t.Fatalf("the submodule's gitdir is %q, not under .git/modules/a/b", gitdir)
+	}
+
+	// Inside the submodule, a commit and a branch write its objects and refs.
+	if err := os.WriteFile(filepath.Join(module, "lib.txt"), []byte("changed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range [][]string{{"add", "lib.txt"}, {"commit", "-q", "-m", "work in the submodule"}, {"checkout", "-q", "-b", "side"}} {
+		if output, err := gitIn(t, driver, grant, module, step...); err != nil {
+			t.Fatalf("git %s in the submodule failed under Seatbelt: %v\n%s", strings.Join(step, " "), err, output)
+		}
+	}
+
+	// Its config and a hook stay denied.
+	base := filepath.Join(repo, ".git", "modules", "a", "b")
+	for _, relative := range []string{"config", filepath.Join("hooks", "pre-commit")} {
+		path := filepath.Join(base, relative)
+		script := fmt.Sprintf("mkdir -p %s && printf x >> %s", ShellQuote(filepath.Dir(path)), ShellQuote(path))
+		if output, err := gitShell(t, driver, grant, module, script); err == nil {
+			t.Errorf("the submodule's %s was written: %q", relative, output)
+		}
 	}
 }

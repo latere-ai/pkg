@@ -61,6 +61,9 @@ func TestTheProtectionDecidesAsSeatbeltDoes(t *testing.T) {
 		".git/modules/a/modules/b/hooks/post-checkout", ".git/worktrees", ".git/worktrees/wt", ".git/worktrees/wt/commondir",
 		".git/worktrees/wt/gitdir", ".git/worktrees/wt/config.worktree", ".git/worktrees/wt/locked",
 		"origin.git/config", "origin.git/hooks/post-receive", "origin.git/commondir", "sub/bare.GIT/hooks/update",
+		".git/refs/heads/.git/config", ".git/refs/heads/.git/hooks/pre-commit", ".git/objects/.git/hooks/pre-commit",
+		".git/refs/heads/.gitconfig", ".git/logs/.claude/settings.json", "origin.git/refs/.claude/settings.json",
+		".git/refs/heads/sub/.vscode/settings.json", ".git/modules/a/b/config", ".git/modules/a/b/hooks/pre-commit",
 	} {
 		if writableIn(grant, grant+"/"+relative) {
 			t.Errorf("%s is writable", relative)
@@ -77,6 +80,8 @@ func TestTheProtectionDecidesAsSeatbeltDoes(t *testing.T) {
 		".git/worktrees/wt/logs/HEAD", ".git/modules/a/modules/b/refs/heads/main",
 		"origin.git/objects/pack/p.pack", "origin.git/refs/heads/main", "origin.git/packed-refs", "origin.git/HEAD",
 		"x.git", ".gitx", "my.github/workflows/ci.yml",
+		".git/sharedindex.0e2f", ".git/modules/a/b/refs/heads/main", ".git/modules/a/b/objects/ab/cd", ".git/modules/a/b/HEAD",
+		".git/refs/heads/feature/my.git.work", ".git/refs/tags/v1.2.3",
 	} {
 		if !writableIn(grant, grant+"/"+relative) {
 			t.Errorf("%s, which everyday work writes, is not writable", relative)
@@ -125,6 +130,8 @@ func TestAStageCannotWriteWhatRunsCodeLater(t *testing.T) {
 		".vscode/settings.json", ".claude/commands/run.md", ".claude/settings.json", ".claude/settings.local.json",
 		".cursor/mcp.json", ".mcp.json", ".envrc", "team.code-workspace", ".git/newcontrol", ".git/info/exclude",
 		".git/objects/info/alternates", ".git/objects/info/http-alternates",
+		".git/refs/heads/.git/config", ".git/refs/heads/.git/hooks/pre-commit", ".git/objects/.git/hooks/pre-commit",
+		".git/refs/heads/.gitconfig", ".git/logs/.claude/settings.json",
 	} {
 		if err := write(relative); err == nil {
 			t.Errorf("%s was written", relative)
@@ -133,7 +140,7 @@ func TestAStageCannotWriteWhatRunsCodeLater(t *testing.T) {
 	if body, err := os.ReadFile(filepath.Join(repo, ".git", "config")); err != nil || string(body) != "[core]\n" {
 		t.Errorf(".git/config changed: %q, %v", body, err)
 	}
-	for _, relative := range []string{"notes.txt", ".git/objects/ab", ".git/objects/info/commit-graph", ".git/refs/heads/main", "sub/main.go"} {
+	for _, relative := range []string{"notes.txt", ".git/objects/ab", ".git/objects/info/commit-graph", ".git/refs/heads/main", ".git/refs/tags/v1.2.3", "sub/main.go"} {
 		if err := write(relative); err != nil {
 			t.Errorf("%s, an ordinary file, could not be written: %v", relative, err)
 		}

@@ -86,10 +86,10 @@ var (
 		"SQUASH_MSG", "TAG_EDITMSG", "packed-refs", "gc.pid", "gc.log", "shallow",
 	}
 	// Prefixes cover a family of files git writes under one name: BISECT_*,
-	// and git's index and the temporary indexes it writes beside it
-	// (index.lock, index.stash.<pid>), which hold tracked content, never a
-	// command.
-	gitWritablePrefixes = []string{"BISECT_", "index"}
+	// git's index and the temporary indexes it writes beside it (index.lock,
+	// index.stash.<pid>), and the split index's sharedindex.<hash>, all of
+	// which hold tracked content, never a command.
+	gitWritablePrefixes = []string{"BISECT_", "index", "sharedindex"}
 	gitDeniedInWritable = []string{"objects/info/alternates", "objects/info/http-alternates"}
 )
 
@@ -302,11 +302,6 @@ func protectedPatterns(write string) []string {
 // config.worktree, hooks, commondir, gitdir, info, alternates and any name
 // git adds later) stays denied.
 func gitPatterns(write string) (allowed, denied []string) {
-	// A gitdir is .git, a submodule's or worktree's gitdir within it, or a
-	// bare repository, a directory whose name ends in .git. The anchor is a
-	// component ending in .git, so the allowance applies in each.
-	gitdir := "^" + regexLiteral(write) + "(/.*)?/[^/]*" + anyCase(".git") +
-		"(/" + anyCase("modules") + "/[^/]+)*(/" + anyCase("worktrees") + "/[^/]+)?/"
 	names := func(list []string) string {
 		out := make([]string, len(list))
 		for i, name := range list {
@@ -314,6 +309,15 @@ func gitPatterns(write string) (allowed, denied []string) {
 		}
 		return "(" + strings.Join(out, "|") + ")"
 	}
+	// A gitdir is .git, a bare repository (a directory whose name ends in
+	// .git), or a submodule's or worktree's gitdir within either. git stores
+	// a submodule at a/b under .git/modules/a/b, so a submodule name carries
+	// any depth of segments; a worktree name is one segment. The anchor is a
+	// component ending in .git and, optionally, that layout down to the inner
+	// gitdir, so the allowance applies in each without opening the layout's
+	// own config or hooks.
+	gitdir := "^" + regexLiteral(write) + "(/.*)?/[^/]*" + anyCase(".git") +
+		"(/" + anyCase("modules") + "(/[^/]+)+)?(/" + anyCase("worktrees") + "/[^/]+)?/"
 	allowed = []string{
 		gitdir + names(gitWritableDirs) + "(/.*)?$",
 		gitdir + names(gitWritableFiles) + "(" + anyCase(".lock") + ")?$",
@@ -321,6 +325,22 @@ func gitPatterns(write string) (allowed, denied []string) {
 	}
 	for _, path := range gitDeniedInWritable {
 		denied = append(denied, gitdir+anyCase(path)+"$")
+	}
+	// A writable subdir of a gitdir holds data, not a repository or an
+	// agent's or editor's settings. The allowance above would re-open a
+	// protected name nested in one (git never writes such a name there, since
+	// its refs, logs and objects carry no path component beginning with a
+	// dot), so each is denied again below a writable subdir, scoped there so
+	// the layout's own refs, logs and objects stay allowed.
+	below := gitdir + names(gitWritableDirs) + "/(.*/)?"
+	for _, name := range append([]string{".git"}, writeProtectedTrees...) {
+		denied = append(denied, below+anyCase(name)+"(/.*)?$")
+	}
+	for _, name := range writeProtectedFiles {
+		denied = append(denied, below+anyCase(name)+"$")
+	}
+	for _, suffix := range writeProtectedSuffixes {
+		denied = append(denied, below+"[^/]*"+anyCase(suffix)+"$")
 	}
 	return allowed, denied
 }
