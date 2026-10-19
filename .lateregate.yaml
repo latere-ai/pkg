@@ -19,8 +19,10 @@ hermetic:
   #   cmdexec      runs true, echo, printf, sh and bash -- exercising real
   #                command execution is the package's entire purpose
   #   gitutil      runs git, for the same reason
-  #   hostsandbox  runs sh, echo, env and ps around a stand-in for srt; the
-  #                one test that needs a real srt skips when PATH has none
+  #   hostsandbox  runs sh, echo, env and ps around stand-ins for srt and
+  #                sandbox-exec; the tests that need a real srt skip when PATH
+  #                has none, and those that need macOS's /usr/bin/sandbox-exec
+  #                and /usr/bin/curl skip on any other system
   #
   # Anything a test needs beyond these two directories has to be added here,
   # which is a decision someone makes rather than an accident.

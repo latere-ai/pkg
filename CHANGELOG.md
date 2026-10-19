@@ -10,6 +10,32 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- **`hostsandbox` runs stages under macOS's own Seatbelt,** with nothing
+  installed: no srt, no Node.js, no ripgrep. `Config.Isolation` chooses
+  `IsolationSeatbelt` or `IsolationSRT`; `IsolationAuto`, the zero value,
+  picks Seatbelt on macOS and srt elsewhere. The path policy is the one srt
+  enforces, rendered as a Seatbelt profile (`RenderSeatbelt`), and handles,
+  status files, `Observe`, `Output`, `Stop`, `Discard` and `Command` behave
+  the same under both, so a stage launched under one is managed by a driver
+  composed with the other. Under Seatbelt a network allowlist is enforced by
+  an egress proxy beside the stage that admits named hosts by their CONNECT
+  target or URL, without terminating TLS, and refuses this machine and its
+  link-local network.
+- `hostsandbox.Main`, for a program whose stages run under Seatbelt with a
+  network allowlist: call it as the first statement of `main`. The driver
+  starts the program again as the stage's launcher, which serves the proxy
+  for as long as the stage runs, after the process that launched it is gone.
+
+### Changed
+
+- **On macOS, `hostsandbox.New` now runs stages under Seatbelt.** A program
+  whose stages use a network allowlist calls `hostsandbox.Main` at the start
+  of `main`; until it does, such a stage is refused with a `NotReadyError`
+  of `ConditionNoLauncher`, and `Capabilities` declares no allowlist. Set
+  `Isolation: hostsandbox.IsolationSRT` to keep srt.
+
 ## v0.102.0 - 2026-10-18
 
 ### Added

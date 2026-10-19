@@ -1,10 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: Apache-2.0
 
-// Package hostsandbox runs a process on the operator's own machine inside an
-// srt sandbox (Seatbelt on macOS, bubblewrap with seccomp on Linux), detached
-// from the process that started it, with its output written where the
-// sandboxed process cannot reach.
+// Package hostsandbox runs a process on the operator's own machine inside the
+// operating system's sandbox, detached from the process that started it, with
+// its output written where the sandboxed process cannot reach. On macOS it
+// uses Seatbelt directly, through /usr/bin/sandbox-exec and a profile this
+// package renders; elsewhere it uses srt, Anthropic's sandbox runtime
+// (bubblewrap with seccomp on Linux). Config.Isolation chooses either
+// explicitly.
 //
 // # The stage vocabulary
 //
@@ -18,10 +21,11 @@
 // StageSpec, a container engine or a remote executor as much as srt,
 // implements Sandbox and is held to the same contract by hostsandboxtest.
 //
-// # The srt driver
+// # The driver
 //
-// New builds the Driver. Launch renders the StageSpec into srt's settings file
-// (Render, Profile, Settings), starts the stage in its own session with
+// New builds the Driver. Under srt, Launch renders the StageSpec into srt's
+// settings file (Render, Profile, Settings); under Seatbelt, into a Seatbelt
+// profile (RenderSeatbelt). Either way it starts the stage in its own session with
 // setsid so that it outlives the launching process, and runs it under a
 // wrapper script that records the exit status in a file beside the log. The
 // handle is "pid:<pid>@<start>:<log>": the pid, the process start time in
@@ -29,7 +33,10 @@
 // answers from the status file first, then from the pid and start time, so a
 // pid the operating system has reused is not mistaken for the stage and a
 // driver built after a restart recovers the stage from the handle alone.
-// Output reads the log from an offset. Stop signals the whole process group
+// Both isolations keep the same handles, status files and process groups, and
+// the driver's name, Host, is the same under both, so a stage launched under
+// one is observed, read, stopped and discarded by a driver composed with the
+// other. Output reads the log from an offset. Stop signals the whole process group
 // with SIGTERM, waits for the grace period for the group to empty, then sends
 // SIGKILL, so it also ends a process the stage left running after its main
 // process exited. The group is signaled only while it provably is the
@@ -60,6 +67,42 @@
 // from a read grant that would otherwise cover it; srt honors a denial that
 // is more specific than the allowance it falls inside.
 //
+// # Seatbelt
+//
+// The profile denies everything, then allows what a program needs to run at
+// all (starting processes, the user and group database, the system log,
+// preferences, its temporary directory's lookup and TLS certificate checks
+// among Mach services), then the path policy below, written from the
+// broadest rule to the narrowest because the last rule that matches decides.
+// Paths are written both as given and with their symbolic links resolved,
+// because Seatbelt matches the resolved path. The directories above a grant
+// inside the home directory may be examined but not listed. Writes are
+// allowed to the null and zero devices and the controlling terminal, and
+// read denials are also denied writing.
+//
+// A stage with no network runs straight under sandbox-exec and may connect
+// to nothing: no address, no name lookup, no local socket. A stage with a
+// network allowlist reaches the network only through an egress proxy on a
+// loopback port, the one destination its profile allows. The proxy admits a
+// CONNECT by its target host and a plain request by its absolute URL's host,
+// matched as hostmatch matches, and never terminates TLS: there is no
+// certificate authority and nothing to inspect, so Network.Passthrough has
+// nothing to exempt. A destination on this machine or its link-local network
+// is refused on the address it resolves to, even when its name is allowed.
+// The stage's proxy variables name the proxy; a client that ignores them
+// cannot connect at all.
+//
+// A detached stage outlives the process that launched it, so its proxy
+// cannot live there. The driver starts the consumer's own program again as
+// the stage's launcher, which serves the proxy, renders the profile once the
+// proxy's port is known, runs the stage under sandbox-exec and exits with
+// its exit code. That needs the consumer's main to call Main as its first
+// statement; without it, an allowlisted stage is refused with a
+// NotReadyError of ConditionNoLauncher, Capabilities declares no allowlist,
+// and stages with no network run as before. The cost is one launcher
+// process per allowlisted stage, the consumer's binary, which holds the
+// stage's environment and runs outside the sandbox.
+//
 // # The network policy
 //
 // srt is allow-only and refuses a wildcard, so the driver declares
@@ -82,7 +125,9 @@
 //
 // # Readiness
 //
-// Preflight resolves srt, the executables srt needs on the platform (bwrap,
+// Under Seatbelt, Preflight needs /usr/bin/sandbox-exec, which is part of
+// macOS, and Config.Requires; nothing is installed. Under srt, Preflight
+// resolves srt, the executables srt needs on the platform (bwrap,
 // which the bubblewrap package installs, socat and ripgrep on Linux, ripgrep
 // on macOS), and
 // Config.Requires. When one is missing it returns a *NotReadyError whose
