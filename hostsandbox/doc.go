@@ -115,18 +115,25 @@
 // file or a name git adds later, stays denied by default. So add, commit,
 // branch, checkout, merge, rebase, cherry-pick, revert, stash, tag, bisect,
 // gc and fetch work, while a stage cannot point git at a hook, object store
-// or common directory of its own.
+// or common directory of its own. A bare repository, a directory whose name
+// ends in .git with its gitdir at the top level, is protected the same way:
+// its config and hooks are denied and a push into it, which writes its
+// objects and refs, works.
 //
 // Each path is named by its path, so a rename is refused at its source and
 // at its destination, and a directory holding a repository may still be
 // moved, since the protection follows the name .git. What it costs, as srt's
 // default costs it: git init, git clone, git config, git remote, git
 // submodule and git worktree add inside a grant fail, since each writes what
-// is protected. Its limit: a .git file the operator already pointed at a
+// is protected. Its limits: a .git file the operator already pointed at a
 // gitdir outside git's layout leaves that gitdir's control files unprotected,
-// unless they lie in another protected place. srt protects the same kinds of
-// path at its working
-// directory.
+// unless they lie in another protected place; a bare repository whose name
+// does not end in .git is not recognized as a gitdir, so its config and
+// hooks are writable; and a stage may write .git/rebase-merge and
+// .git/sequencer, so it can fake an in-progress rebase whose todo holds an
+// exec line, which runs only if the operator later continues that rebase
+// outside the sandbox (git rebase --continue). srt protects the same kinds
+// of path at its working directory.
 //
 // A stage with no network runs straight under sandbox-exec and may connect
 // to nothing: no address, no name lookup, no local socket. A stage with a

@@ -32,7 +32,9 @@ under **Removed** or **Changed** with what to do about it.
   state, and the like), so a control file the allowance does not name
   (config, hooks, commondir, gitdir, info, an objects alternates file, or a
   name git adds later) stays denied by default: a stage cannot point git at a
-  hook, object store or common directory of its own. Everyday git works
+  hook, object store or common directory of its own. A bare repository, a
+  directory whose name ends in `.git`, is protected the same way: its config
+  and hooks are denied and a push into it still works. Everyday git works
   (add, commit, branch, checkout, merge, rebase, cherry-pick, stash, tag,
   bisect, gc and fetch); `git init`, `git clone`, `git config`, `git remote`,
   `git submodule` and `git worktree add` inside a grant fail, as under srt's
