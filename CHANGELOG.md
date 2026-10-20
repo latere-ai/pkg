@@ -10,6 +10,17 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- **`otel` exports the Go runtime's metrics.** When export is on,
+  `Bootstrap` and `Setup` start the OpenTelemetry runtime instrumentation on
+  the exporting meter provider: memory in use, allocated and its GC goal,
+  goroutines, GOMAXPROCS, GOGC and the scheduling latency histogram, as
+  `go.memory.*`, `go.goroutine.count`, `go.processor.limit`,
+  `go.config.gogc` and `go.schedule.duration`. A service gets them by taking
+  this release; nothing in its code changes. Without an endpoint, or with
+  `OTEL_SDK_DISABLED=true`, they are not started.
+
 ## v0.105.0 - 2026-10-20
 
 ### Changed

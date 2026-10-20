@@ -29,6 +29,7 @@ import (
 	"strings"
 	"time"
 
+	otelruntime "go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -102,6 +103,9 @@ var (
 	newMetricExporter = func(ctx context.Context) (metric.Exporter, error) {
 		return otlpmetrichttp.New(ctx)
 	}
+	startRuntimeMetrics = func(mp *metric.MeterProvider) error {
+		return otelruntime.Start(otelruntime.WithMeterProvider(mp))
+	}
 )
 
 // exportDisabled reports whether OTEL_SDK_DISABLED turns the SDK off. The
@@ -117,8 +121,10 @@ func exportDisabled() bool {
 }
 
 // Setup initializes OpenTelemetry. If OTEL_EXPORTER_OTLP_ENDPOINT is set,
-// traces and metrics are exported via OTLP/HTTP. Otherwise, telemetry is
-// a noop (no overhead). Returns a shutdown function.
+// traces and metrics are exported via OTLP/HTTP, and the metrics include the
+// Go runtime's: memory, goroutines, scheduling latency, GOGC and GOMAXPROCS
+// under the go.* semantic-convention names. Otherwise, telemetry is a noop
+// (no overhead). Returns a shutdown function.
 //
 // OTEL_SDK_DISABLED=true forces the noop path even when an endpoint is set.
 func Setup(ctx context.Context, serviceName, serviceVersion string) func() {
@@ -165,11 +171,21 @@ func Setup(ctx context.Context, serviceName, serviceVersion string) func() {
 		}
 	}
 
+	// The runtime producer adds go.schedule.duration, a histogram the runtime
+	// precomputes, to every collection; startRuntimeMetrics registers the
+	// gauges and counters (memory, goroutines, GOGC, GOMAXPROCS) on the same
+	// provider. Both stop when the provider shuts down.
 	mp := metric.NewMeterProvider(
-		metric.WithReader(metric.NewPeriodicReader(metricExp, metric.WithInterval(30*time.Second))),
+		metric.WithReader(metric.NewPeriodicReader(metricExp,
+			metric.WithInterval(30*time.Second),
+			metric.WithProducer(otelruntime.NewProducer()),
+		)),
 		metric.WithResource(res),
 	)
 	otel.SetMeterProvider(mp)
+	if err := startRuntimeMetrics(mp); err != nil {
+		slog.ErrorContext(ctx, "telemetry: runtime metrics error; other metrics still export", "error", err)
+	}
 
 	slog.InfoContext(ctx, "telemetry: exporting", "endpoint", endpoint)
 

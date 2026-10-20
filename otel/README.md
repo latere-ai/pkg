@@ -62,6 +62,10 @@ env:
 
 Without it the instrumentation is a noop: spans are created and discarded, and nothing reaches a backend. Importing the package and setting the variable are both required for a service to be observable.
 
+### Go runtime metrics
+
+With export on, the metrics include the Go runtime's, with no code in the service: `go.memory.used`, `go.memory.limit` (when a limit is set), `go.memory.allocated`, `go.memory.allocations`, `go.memory.gc.goal`, `go.goroutine.count`, `go.processor.limit`, `go.config.gogc`, and the `go.schedule.duration` histogram, under the OpenTelemetry semantic-convention names. They are read on each 30-second collection and stop with the shutdown. Without an endpoint, or with `OTEL_SDK_DISABLED=true`, they are not started.
+
 ## Functions
 
 - `Bootstrap(ctx, Config)`: one-call logs + traces + metrics; sets slog default; returns a combined shutdown. Noop export when the endpoint is unset.
@@ -69,7 +73,7 @@ Without it the instrumentation is a noop: spans are created and discarded, and n
 - `Version(override)`: resolves a version string from the override, then build info (module version or short VCS revision), then `"dev"`.
 - `Replica()`: resolves a replica label from `POD_NAME`, `HOSTNAME`, or the OS hostname.
 - `Transport(base)` / `HTTPClient()`: instrument an outbound `http.Client` and propagate the trace context.
-- `Setup(ctx, name, version)`: lower-level traces + metrics only (used by `Bootstrap`).
+- `Setup(ctx, name, version)`: lower-level traces + metrics only (used by `Bootstrap`), the Go runtime's metrics among them.
 - `SetupLogs(ctx, LogsConfig)`: lower-level logging only (used by `Bootstrap`).
 - `Handler(h, operation, opts...)`: wraps an `http.Handler` with tracing/metrics and sets the `X-Trace-Id` response header.
 - `TraceIDs(ctx)` / `LogAttrs(ctx)`: extract trace/span IDs for log correlation.
