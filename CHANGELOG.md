@@ -10,6 +10,46 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- **`llmdirect` calls a provider directly in the Lux dialect,** with
+  the caller's own key and the translation done on the caller's machine
+  through the same backends the Lux gateway uses: Anthropic, OpenAI (its
+  reasoning models through the Responses API), Gemini, OpenRouter, Ollama,
+  Moonshot, xAI and Zhipu. `Generate` and `Stream` take and return the Go
+  SDK's `llm` types, with the signatures of `llm.Client`'s, so an interface a
+  program declares takes either client. Fields the provider cannot represent
+  are named in `Result.Loss` and `Stream.Loss`. Each call is traced through
+  `otel`, as in `luxsdk`. It sits beside `llmdialect`, not in it, since it
+  owns the transport and credential that `llmdialect` leaves to its consumer.
+
+### Changed
+
+- **The lux dialect's wire types are the Go SDK's.** `llmdialect/lux`'s
+  `Request`, `Response`, `Message`, `Block`, `Event` and the rest, and the
+  IR's closed vocabularies (`ir.Role`, `ir.BlockType`, `ir.ToolChoiceMode`,
+  `ir.Effort`, `ir.LogProb`, `ir.StopReason`, `ir.EventType`, `ir.Dialect`),
+  are aliases of the types in `latere.ai/x/sdk-go/llm/wire`, which the SDK's
+  `llm` client names too, so the public client and the gateway's codec read
+  and write one definition. The bytes on the wire are unchanged, held to a
+  golden written by the codec before the move. Code that names the types
+  through `lux` or `ir` compiles unchanged. `llmdialect` now reaches that one
+  package, which imports the standard library alone and sends nothing; a
+  footprint gate that lists what `llmdialect` may reach admits
+  `latere.ai/x/sdk-go/llm/wire`.
+
+### Removed
+
+- **`luxsdk`.** Calls to Latere's models through the platform are the Go SDK's
+  `latere.ai/x/sdk-go/llm`: `llm.New(cfg)` with a `latere.Config` in place of
+  `luxsdk.New(baseURL, luxsdk.WithAPIKey(key))`, the key read from
+  `LATERE_KEY` in place of `LUX_API_KEY`, `llm.WithLabels` in place of
+  `WithCostTags`, and `Stream.Events()`, a range-over-func iterator, in place
+  of `Stream.Next`. Calls straight to a provider are `llmdirect`:
+  `llmdirect.New` in place of `luxsdk.NewDirect`, with the same providers and
+  options. `luxsdk.Caller` has no replacement; declare the interface where it
+  is used.
+
 ## v0.103.0 - 2026-10-19
 
 ### Added

@@ -62,13 +62,19 @@ func main() {
 }
 ```
 
-Call the Lux gateway with a typed request:
+Call a provider with your own key in the Lux dialect, translated on your
+machine (the request and answer types are the Go SDK's
+[`llm`](https://pkg.go.dev/latere.ai/x/sdk-go/llm) package, which calls
+Latere's models through the platform instead):
 
 ```go
-c := luxsdk.New("https://api.latere.ai/v1/models", luxsdk.WithAPIKey(key))
-res, err := c.Generate(ctx, &luxsdk.Request{
-	Model:    "claude-sonnet-5",
-	Messages: []luxsdk.Message{luxsdk.UserText("hello")},
+c, err := llmdirect.New(llmdirect.ProviderAnthropic, key, "")
+if err != nil {
+	log.Fatal(err)
+}
+res, err := c.Generate(ctx, &llm.Request{
+	Model:    "claude-sonnet-4-5",
+	Messages: []llm.Message{llm.UserText("hello")},
 })
 ```
 
@@ -90,9 +96,9 @@ Each row links to the package directory. The full API, with examples, is on
 | [`email`](email/) | Transactional mail over Mailgun or SMTP, with a log-only fallback and an HTML layout that works across mail clients; refuses header injection. What a message says stays with the calling service |
 | [`health`](health/) | The probe surface a service serves on its internal listener: `/livez`, `/readyz` with named checks, `/version`, and `/metrics`. Why two probes and how to move a service is in [`docs/health.md`](docs/health.md) |
 | [`hostsandbox`](hostsandbox/) | Runs a process on the operator's own machine inside an `srt` sandbox (Seatbelt on macOS, bubblewrap on Linux), detached, with output written where the process cannot reach it, and a handle that survives a restart, or attached, with its pipes left to the caller. `hostsandbox/hostsandboxtest` is the contract every driver is held to |
-| [`llmdialect`](llmdialect/) | Translation between LLM wire dialects (Anthropic Messages, OpenAI Chat Completions, OpenAI Responses, and the Lux-native dialect) through a neutral intermediate representation, with an explicit loss report instead of silent drops. Standard library only. `llmdialect/bridge` translates requests, responses, and streams with no server in between; `llmdialect/tokencount` estimates input tokens without a tokenizer |
+| [`llmdialect`](llmdialect/) | Translation between LLM wire dialects (Anthropic Messages, OpenAI Chat Completions, OpenAI Responses, and the Lux-native dialect) through a neutral intermediate representation, with an explicit loss report instead of silent drops. It reaches the standard library and the Go SDK's `llm/wire` alone: the Lux dialect's wire types are that package's, shared with the SDK's client. `llmdialect/bridge` translates requests, responses, and streams with no server in between; `llmdialect/tokencount` estimates input tokens without a tokenizer |
+| [`llmdirect`](llmdirect/) | Calls a model provider directly in the Lux dialect with the caller's own key, translated on the caller's machine through `llmdialect`'s backends: Anthropic, OpenAI, Gemini, OpenRouter, Ollama, Moonshot, xAI and Zhipu. The request and answer types are the Go SDK's `llm` types |
 | [`llmjson`](llmjson/) | Repairs the JSON a model meant to send: strips a Markdown fence and escapes raw newlines and tabs inside strings, so a correct answer in the wrong encoding still decodes |
-| [`luxsdk`](luxsdk/) | Go client for the Lux gateway's native dialect: typed generate, streaming, and token counting, or the same calls straight to a provider. See [`luxsdk/README.md`](luxsdk/README.md) |
 | [`md`](md/) | YAML frontmatter parsing and GitHub Flavored Markdown to HTML. See [`md/README.md`](md/README.md) |
 | [`otel`](otel/) | One-call OpenTelemetry setup for traces, metrics, and structured logs, HTTP server and client instrumentation, child spans, and a same-origin relay for browser telemetry. See [`otel/README.md`](otel/README.md) |
 | [`pgxmigrate`](pgxmigrate/) | Applies embedded golang-migrate migrations and closes migrate's own connection pool afterward |
@@ -159,9 +165,8 @@ layout are stable.
 ## Documentation
 
 - [pkg.go.dev](https://pkg.go.dev/latere.ai/x/pkg): the API of every package.
-- [`agentweb`](agentweb/README.md), [`luxsdk`](luxsdk/README.md),
-  [`md`](md/README.md), and [`otel`](otel/README.md) carry a usage guide
-  beside the code.
+- [`agentweb`](agentweb/README.md), [`md`](md/README.md), and
+  [`otel`](otel/README.md) carry a usage guide beside the code.
 - [`docs/health.md`](docs/health.md): the probe paths and how to adopt them.
 - [`docs/writing/registers.md`](docs/writing/registers.md): the writing rule
   for everything a Latere product emits, and the canonical statement that
