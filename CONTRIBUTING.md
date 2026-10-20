@@ -53,8 +53,10 @@ Every package meets these on its own:
 - **Few dependencies.** The standard library first. No test-only
   dependencies: `net/http/httptest` and the rest of the standard library
   cover what a test needs. A new direct dependency is justified in the pull
-  request. `llmdialect` takes no module dependency at all, and nothing in the
-  module uses cgo.
+  request. `llmdialect` takes no module dependency but the Go SDK's
+  `latere.ai/x/sdk-go/llm/wire`, the lux dialect's types, which imports the
+  standard library alone and sends nothing, and nothing in the module uses
+  cgo.
 - **Hermetic tests.** The suite needs no database, no credentials, and no
   outbound network: HTTP tests run against `httptest` servers on loopback.
   Three packages drive real binaries on purpose (`cmdexec`, `gitutil`, and

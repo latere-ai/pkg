@@ -29,16 +29,22 @@ hermetic:
   allow: [/usr/bin, /bin]
 
 depcheck:
-  # llmdialect is stdlib-only, and that is a promise other repositories build
-  # on: forma's own footprint gate watches this subtree from the outside because
-  # its server carries the three wire dialects. Watching it from the outside
-  # catches the breakage; watching it here is where it can be prevented.
+  # llmdialect reaches the standard library and the Go SDK's wire types, and
+  # that is a promise other repositories build on: forma's own footprint gate
+  # watches this subtree from the outside because its server carries the three
+  # wire dialects. Watching it from the outside catches the breakage; watching
+  # it here is where it can be prevented.
   #
-  # The allowlist is empty on purpose. Any module at all is a violation.
+  # The one allowance is the SDK's llm/wire, the lux dialect's types, which
+  # imports the standard library alone and sends nothing: the public client
+  # and the gateway's codec share it, so they cannot drift. The rest of the
+  # SDK, its HTTP client and token exchange among it, is a violation, as is
+  # any other module.
   packages:
     latere.ai/x/pkg/llmdialect:
-      decision: llmdialect-stdlib-only
-      allow: {}
+      decision: llmdialect-sdk-wire-only
+      allow:
+        latere.ai/x/sdk-go/llm/wire: the lux wire types and the IR's vocabularies; it imports the standard library alone and sends nothing
     # agentweb is served by static sites whose whole binary is an embedded
     # tree and this package; standard library only keeps that true.
     latere.ai/x/pkg/agentweb:

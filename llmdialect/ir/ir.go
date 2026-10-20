@@ -19,14 +19,23 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
-	"math"
 	"slices"
 	"strconv"
+
+	"latere.ai/x/sdk-go/llm/wire"
 )
 
 // Dialect names an LLM inference wire dialect. Every codec package
 // exports its own DialectName typed as this.
-type Dialect string
+//
+// Dialect and the IR's other closed vocabularies below (Role, BlockType,
+// ToolChoiceMode, Effort, LogProb, StopReason, EventType) are the public Lux
+// dialect's types in latere.ai/x/sdk-go/llm/wire, so the gateway's codec
+// and the SDK's client read and write one definition and cannot drift. That
+// package imports the standard library alone and sends nothing. The IR
+// declares its own constants of them, so it may name a value the dialect's
+// public constants do not list.
+type Dialect = wire.Dialect
 
 // Dialects.
 const (
@@ -39,7 +48,7 @@ const (
 // Role is a conversation turn author. The IR keeps the Anthropic
 // two-role model; system content lives on Request.System and
 // tool results are blocks inside a user message.
-type Role string
+type Role = wire.Role
 
 // Roles.
 const (
@@ -48,7 +57,7 @@ const (
 )
 
 // BlockType discriminates Block variants.
-type BlockType string
+type BlockType = wire.BlockType
 
 // Block types.
 const (
@@ -200,7 +209,7 @@ type WebSearch struct {
 }
 
 // ToolChoiceMode says how the model may use tools.
-type ToolChoiceMode string
+type ToolChoiceMode = wire.ToolChoiceMode
 
 // Tool choice modes.
 const (
@@ -220,7 +229,7 @@ type ToolChoice struct {
 // Effort is the OpenAI-style reasoning effort scale. It is an open
 // enum: decoders pass unknown wire values through unchanged so a new
 // upstream tier does not break translation.
-type Effort string
+type Effort = wire.Effort
 
 // Efforts.
 const (
@@ -244,31 +253,8 @@ type Reasoning struct {
 // drawn at all — and JSON has no infinity, so any non-finite value
 // encodes as null and null decodes back to math.Inf(-1). null is what
 // "this token could not be drawn" means; a floor value is worse,
-// because a consumer averages it.
-type LogProb float64
-
-// MarshalJSON renders the value, or null when it is not finite.
-func (l LogProb) MarshalJSON() ([]byte, error) {
-	f := float64(l)
-	if math.IsInf(f, 0) || math.IsNaN(f) {
-		return []byte("null"), nil
-	}
-	return json.Marshal(f)
-}
-
-// UnmarshalJSON reads the value, mapping null back to math.Inf(-1).
-func (l *LogProb) UnmarshalJSON(data []byte) error {
-	if string(data) == "null" {
-		*l = LogProb(math.Inf(-1))
-		return nil
-	}
-	var f float64
-	if err := json.Unmarshal(data, &f); err != nil {
-		return err
-	}
-	*l = LogProb(f)
-	return nil
-}
+// because a consumer averages it. Its JSON methods are wire.LogProb's.
+type LogProb = wire.LogProb
 
 // TokenLogProb is one token and its log probability under the
 // distribution it was drawn from: the post-policy distribution, after
@@ -533,7 +519,7 @@ func (l *Loss) Strings() []string {
 
 // StopReason says why generation ended, in Anthropic vocabulary (the
 // richer of the two); codecs map to dialect-native values.
-type StopReason string
+type StopReason = wire.StopReason
 
 // Stop reasons.
 const (
@@ -586,7 +572,7 @@ type Response struct {
 }
 
 // EventType discriminates streaming events.
-type EventType string
+type EventType = wire.EventType
 
 // Event types. A well-formed stream is:
 //

@@ -24,6 +24,7 @@ require (
 	golang.org/x/net v0.60.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/time v0.15.0
+	latere.ai/x/sdk-go v0.0.0-00010101000000-000000000000
 )
 
 require (
@@ -49,3 +50,7 @@ require (
 )
 
 tool latere.ai/x/ci-gate/cmd/lateregate
+
+// The SDK's llm package is unreleased; this points at its working tree
+// until it is tagged.
+replace latere.ai/x/sdk-go => ../sdk-llm
