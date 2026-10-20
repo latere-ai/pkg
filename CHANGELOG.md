@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.105.0 - 2026-10-20
+
 ### Changed
 
 - **The Go SDK is at v0.1.0, which renames two fields of the lux dialect's
