@@ -3,205 +3,42 @@
 
 package lux
 
-// The lux wire vocabulary: exported, JSON-tagged mirrors of the IR
-// types. These structs ARE the public lux dialect — luxsdk re-exports
-// them as its request/response/event types — so they freeze at v1
-// while the internal IR stays free to evolve; the conversions in this
-// file absorb drift.
+// The lux wire vocabulary is the public Lux dialect, defined once in
+// latere.ai/x/sdk-go/llm/wire and aliased here, so the gateway's codec and
+// the SDK's client read and write the same types and cannot drift. The IR's
+// structs stay free to evolve; the conversions in this file absorb the
+// difference.
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
 
+	"latere.ai/x/sdk-go/llm/wire"
+
 	"latere.ai/x/pkg/llmdialect/ir"
 )
 
-// Request is a lux-dialect inference request.
-type Request struct {
-	Model         string          `json:"model"`
-	System        []Block         `json:"system,omitempty"`
-	Messages      []Message       `json:"messages"`
-	Tools         []Tool          `json:"tools,omitempty"`
-	ServerTools   []ServerTool    `json:"server_tools,omitempty"`
-	ToolChoice    *ToolChoice     `json:"tool_choice,omitempty"`
-	MaxTokens     *int64          `json:"max_tokens,omitempty"`
-	Temperature   *float64        `json:"temperature,omitempty"`
-	TopP          *float64        `json:"top_p,omitempty"`
-	TopK          *int64          `json:"top_k,omitempty"`
-	StopSequences []string        `json:"stop_sequences,omitempty"`
-	Stream        bool            `json:"stream,omitempty"`
-	Reasoning     *Reasoning      `json:"reasoning,omitempty"`
-	Schema        *ResponseSchema `json:"schema,omitempty"`
-	WebSearch     *WebSearch      `json:"web_search,omitempty"`
-	UserID        string          `json:"user_id,omitempty"`
-	// CacheKey is the caller's prefix-cache key, carried verbatim: the
-	// lux dialect is the IR on the wire, so a lux caller names its own
-	// key and no key is derived from its cache_hint blocks.
-	CacheKey        string `json:"cache_key,omitempty"`
-	LogProbs        bool   `json:"logprobs,omitempty"`
-	TopLogProbs     int    `json:"top_logprobs,omitempty"`
-	ReasoningReplay bool   `json:"reasoning_replay,omitempty"`
-}
-
-// TokenLogProb is one token and its log probability under the
-// distribution it was drawn from. A token the policy masked scores
-// -Inf, which travels as null: JSON has no infinity, and a floor value
-// is a number a consumer averages.
-//
-// Bytes is the base64 string encoding/json gives a []byte. The lux
-// dialect is the IR made public, so its members are spelled the way Go
-// spells them rather than in a second dialect's shape.
-type TokenLogProb struct {
-	Token   string         `json:"token"`
-	Bytes   []byte         `json:"bytes,omitempty"`
-	LogProb ir.LogProb     `json:"logprob"`
-	Top     []TokenLogProb `json:"top,omitempty"`
-}
-
-// Message is one conversation turn.
-type Message struct {
-	Role   ir.Role `json:"role"`
-	Blocks []Block `json:"blocks"`
-}
-
-// Block is one typed content unit. Exactly the fields for its Type
-// are set.
-type Block struct {
-	Type       ir.BlockType `json:"type"`
-	Text       string       `json:"text,omitempty"`
-	Image      *Image       `json:"image,omitempty"`
-	ToolUse    *ToolUse     `json:"tool_use,omitempty"`
-	ToolResult *ToolResult  `json:"tool_result,omitempty"`
-	Signature  string       `json:"signature,omitempty"`
-	Redacted   string       `json:"redacted,omitempty"`
-	Opaque     *Opaque      `json:"opaque,omitempty"`
-	CacheHint  bool         `json:"cache_hint,omitempty"`
-}
-
-// Opaque is a provider item carried verbatim for replay to the dialect
-// that produced it (ir.Opaque). Raw travels as the JSON value itself,
-// not as a string, so the lux body stays readable and the item's bytes
-// come back exactly as they went out.
-type Opaque struct {
-	Dialect ir.Dialect      `json:"dialect"`
-	Kind    string          `json:"kind,omitempty"`
-	Raw     json.RawMessage `json:"raw"`
-}
-
-// Image is image content, either inline base64 or by URL.
-type Image struct {
-	MediaType string `json:"media_type,omitempty"`
-	Data      string `json:"data,omitempty"`
-	URL       string `json:"url,omitempty"`
-}
-
-// ToolUse is a model-issued tool invocation.
-type ToolUse struct {
-	ID   string          `json:"id"`
-	Name string          `json:"name"`
-	Args json.RawMessage `json:"args,omitempty"`
-}
-
-// ToolResult is a caller-supplied result for a prior ToolUse.
-type ToolResult struct {
-	ToolUseID string  `json:"tool_use_id"`
-	Blocks    []Block `json:"blocks,omitempty"`
-	IsError   bool    `json:"is_error,omitempty"`
-}
-
-// Tool is a callable tool definition.
-type Tool struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
-	InputSchema json.RawMessage `json:"input_schema"`
-}
-
-// ServerTool is a tool the provider runs itself. Type and Name select it;
-// Config carries the provider's own options, unread.
-type ServerTool struct {
-	Type   string          `json:"type"`
-	Name   string          `json:"name,omitempty"`
-	Config json.RawMessage `json:"config,omitempty"`
-}
-
-// WebSearch asks the provider to ground its answer in a search it runs.
-type WebSearch struct {
-	ContextSize  string          `json:"context_size,omitempty"`
-	UserLocation json.RawMessage `json:"user_location,omitempty"`
-}
-
-// ToolChoice constrains tool use for a request.
-type ToolChoice struct {
-	Mode            ir.ToolChoiceMode `json:"mode"`
-	Name            string            `json:"name,omitempty"`
-	DisableParallel bool              `json:"disable_parallel,omitempty"`
-}
-
-// Reasoning configures extended thinking. Exactly one of Effort
-// (OpenAI style) or BudgetTokens (Anthropic style) is set.
-type Reasoning struct {
-	Effort       ir.Effort `json:"effort,omitempty"`
-	BudgetTokens int64     `json:"budget_tokens,omitempty"`
-}
-
-// ResponseSchema requests structured output conforming to Schema.
-type ResponseSchema struct {
-	Name        string          `json:"name,omitempty"`
-	Description string          `json:"description,omitempty"`
-	Schema      json.RawMessage `json:"schema"`
-	Strict      bool            `json:"strict,omitempty"`
-}
-
-// Usage is token and cost accounting for one call.
-type Usage struct {
-	InputTokens  int64 `json:"input_tokens"`
-	OutputTokens int64 `json:"output_tokens"`
-	// CacheReadInputTokens and CacheWriteInputTokens are the input
-	// tokens served from and written to the provider's prompt cache.
-	// The pointers carry the nil/zero distinction onto the wire, as
-	// CostUSDMicro's does: omitempty drops only nil, so a count the
-	// backend reported as zero travels as "cache_read_input_tokens":0
-	// and stays distinguishable from a backend that reported none.
-	CacheReadInputTokens  *int64 `json:"cache_read_input_tokens,omitempty"`
-	CacheWriteInputTokens *int64 `json:"cache_write_input_tokens,omitempty"`
-	ReasoningTokens       int64  `json:"reasoning_tokens,omitempty"`
-	// CostUSDMicro is the gateway-reported cost in millionths of a USD.
-	// The pointer carries the nil/zero distinction onto the wire:
-	// omitempty drops only nil, so an explicitly reported zero cost
-	// still travels as "cost_usd_micro":0 and stays distinguishable
-	// from a gateway that reported nothing.
-	CostUSDMicro *int64 `json:"cost_usd_micro,omitempty"`
-}
-
-// Response is a lux-dialect non-streaming response.
-type Response struct {
-	ID           string         `json:"id"`
-	Model        string         `json:"model"`
-	Blocks       []Block        `json:"blocks"`
-	StopReason   ir.StopReason  `json:"stop_reason"`
-	StopSequence string         `json:"stop_sequence,omitempty"`
-	Usage        Usage          `json:"usage"`
-	LogProbs     []TokenLogProb `json:"logprobs,omitempty"`
-}
-
-// Event is one lux-dialect streaming event, carried as the data of an
-// SSE frame whose event name equals Type. The stream grammar is the
-// IR grammar verbatim:
-//
-//	message_start (block_start (text_delta|args_delta|thinking_delta|signature_delta)* block_stop)* message_delta message_stop
-type Event struct {
-	Type         ir.EventType   `json:"type"`
-	ID           string         `json:"id,omitempty"`
-	Model        string         `json:"model,omitempty"`
-	Index        int            `json:"index"`
-	Block        *Block         `json:"block,omitempty"`
-	Delta        string         `json:"delta,omitempty"`
-	StopReason   ir.StopReason  `json:"stop_reason,omitempty"`
-	StopSequence string         `json:"stop_sequence,omitempty"`
-	Usage        *Usage         `json:"usage,omitempty"`
-	LogProbs     []TokenLogProb `json:"logprobs,omitempty"`
-}
+// The wire types, by their lux names.
+type (
+	Request        = wire.Request
+	TokenLogProb   = wire.TokenLogProb
+	Message        = wire.Message
+	Block          = wire.Block
+	Opaque         = wire.Opaque
+	Image          = wire.Image
+	ToolUse        = wire.ToolUse
+	ToolResult     = wire.ToolResult
+	Tool           = wire.Tool
+	ServerTool     = wire.ServerTool
+	WebSearch      = wire.WebSearch
+	ToolChoice     = wire.ToolChoice
+	Reasoning      = wire.Reasoning
+	ResponseSchema = wire.ResponseSchema
+	Usage          = wire.Usage
+	Response       = wire.Response
+	Event          = wire.Event
+)
 
 // validEventTypes is the closed set of event names on the wire.
 var validEventTypes = map[ir.EventType]bool{
@@ -403,7 +240,7 @@ func copyInt64(v *int64) *int64 {
 
 // EventFromIR converts a canonical IR event to the wire vocabulary.
 // Exported for consumers that drive a non-lux SSE decoder and want
-// the lux wire shape out (luxsdk's direct mode).
+// the lux wire shape out, as llmdirect does.
 func EventFromIR(ev ir.Event) (Event, error) { return eventFromIR(ev) }
 
 // eventFromIR converts a canonical IR event to the wire.

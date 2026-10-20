@@ -1,0 +1,41 @@
+request: {"model":"anthropic/claude-sonnet-4.5","system":[{"type":"text","text":"Be brief.","cache_hint":true}],"messages":[{"role":"user","blocks":[{"type":"text","text":"Hi"},{"type":"image","image":{"media_type":"image/png","data":"aGk="}},{"type":"tool_result","tool_result":{"tool_use_id":"tu_0","blocks":[{"type":"text","text":"no"}],"is_error":true}}]},{"role":"assistant","blocks":[{"type":"thinking","text":"hm","signature":"sig"},{"type":"redacted_thinking","redacted":"xx"},{"type":"opaque","opaque":{"dialect":"openai-responses","kind":"reasoning","raw":{"id":"rs_1"}}},{"type":"tool_use","tool_use":{"id":"tu_1","name":"bash","args":{"cmd":"ls"}}}]}],"tools":[{"name":"bash","description":"run","input_schema":{"type":"object"}}],"server_tools":[{"type":"web_search","name":"search","config":{"max_uses":2}}],"tool_choice":{"mode":"tool","name":"bash","disable_parallel":true},"max_tokens":256,"temperature":0.5,"top_p":0.9,"top_k":40,"stop_sequences":["END"],"stream":true,"reasoning":{"effort":"high"},"schema":{"name":"answer","description":"d","schema":{"type":"object"},"strict":true},"web_search":{"context_size":"low","user_location":{"country":"DE"}},"user_id":"u_1","cache_key":"k","logprobs":true,"top_logprobs":2,"reasoning_replay":true}
+response: {"id":"msg_1","model":"m","blocks":[{"type":"text","text":"Hello"},{"type":"thinking","text":"hm","signature":"sig"},{"type":"tool_use","tool_use":{"id":"tu_1","name":"bash","args":{"cmd":"ls"}}}],"stop_reason":"stop_sequence","stop_sequence":"END","usage":{"input_tokens":3,"output_tokens":4,"cache_read_input_tokens":0,"cache_write_input_tokens":7,"reasoning_tokens":2,"cost_usd_micro":12},"logprobs":[{"token":"He","bytes":"SGU=","logprob":null,"top":[{"token":"Hi","logprob":-0.5}]},{"token":"llo","logprob":-0.25}]}
+event: message_start
+data: {"type":"message_start","id":"msg_1","model":"m","index":0,"usage":{"input_tokens":9,"output_tokens":0}}
+
+event: block_start
+data: {"type":"block_start","index":0,"block":{"type":"tool_use","tool_use":{"id":"tu_1","name":"bash"}}}
+
+event: args_delta
+data: {"type":"args_delta","index":0,"delta":"{\"cmd\":"}
+
+event: block_stop
+data: {"type":"block_stop","index":0}
+
+event: block_start
+data: {"type":"block_start","index":1,"block":{"type":"thinking"}}
+
+event: thinking_delta
+data: {"type":"thinking_delta","index":1,"delta":"hm"}
+
+event: signature_delta
+data: {"type":"signature_delta","index":1,"delta":"sig"}
+
+event: block_stop
+data: {"type":"block_stop","index":1}
+
+event: block_start
+data: {"type":"block_start","index":2,"block":{"type":"text"}}
+
+event: text_delta
+data: {"type":"text_delta","index":2,"delta":"Hel","logprobs":[{"token":"Hel","logprob":null}]}
+
+event: block_stop
+data: {"type":"block_stop","index":2}
+
+event: message_delta
+data: {"type":"message_delta","index":0,"stop_reason":"tool_use","usage":{"input_tokens":0,"output_tokens":7,"cost_usd_micro":12}}
+
+event: message_stop
+data: {"type":"message_stop","index":0}
+
