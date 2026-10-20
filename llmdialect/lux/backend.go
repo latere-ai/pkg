@@ -5,8 +5,8 @@ package lux
 
 // The backend codec (upstream side): encoding an IR request as a lux
 // body and decoding lux responses and SSE streams back into the IR.
-// This is what luxsdk rides — an SDK call is exactly "encode toward a
-// lux upstream" — and what a future lux-to-lux chaining hop would use.
+// It is what a lux-to-lux chaining hop would use: a call to a Lux
+// gateway is exactly "encode toward a lux upstream".
 
 import (
 	"encoding/json"
@@ -166,8 +166,7 @@ func (e *StreamError) Error() string {
 // io.ErrUnexpectedEOF when it ends before one, so a truncated response is
 // distinguishable from a complete one. Unknown event names are skipped
 // (forward compatibility); an `event: error` frame surfaces as a
-// *StreamError. luxsdk consumes this directly; the Backend's IR
-// decoder wraps it.
+// *StreamError. The Backend's IR decoder wraps it.
 type StreamReader struct {
 	r *sse.Reader
 	// done records that message_stop was delivered, which makes the
