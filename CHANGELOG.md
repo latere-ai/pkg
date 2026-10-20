@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.106.0 - 2026-10-20
+
 ### Added
 
 - **`otel` exports the Go runtime's metrics.** When export is on,
