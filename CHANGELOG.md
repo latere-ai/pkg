@@ -10,6 +10,16 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Changed
+
+- **The Go SDK is at v0.1.0, which renames two fields of the lux dialect's
+  types.** `lux.Reasoning`'s `Effort` is `Level`, and `lux.Usage`'s
+  `CostUSDMicro` is `CostMicroUSD`, since both are the SDK's
+  `llm/wire` types under another name. `ir.Effort` is now an alias of the
+  SDK's `wire.ReasoningLevel`; its name and constants in `ir` are unchanged,
+  so code that names them through `ir` compiles as before. The JSON on the
+  wire is unchanged, held to the same golden.
+
 ## v0.104.0 - 2026-10-20
 
 ### Added
