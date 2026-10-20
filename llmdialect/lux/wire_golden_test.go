@@ -53,7 +53,7 @@ func TestWireBytesAreUnchanged(t *testing.T) {
 		TopK:            &topK,
 		StopSequences:   []string{"END"},
 		Stream:          true,
-		Reasoning:       &Reasoning{Effort: ir.EffortHigh},
+		Reasoning:       &Reasoning{Level: ir.EffortHigh},
 		Schema:          &ResponseSchema{Name: "answer", Description: "d", Schema: json.RawMessage(`{"type":"object"}`), Strict: true},
 		WebSearch:       &WebSearch{ContextSize: "low", UserLocation: json.RawMessage(`{"country":"DE"}`)},
 		UserID:          "u_1",

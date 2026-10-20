@@ -129,10 +129,10 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 		req.ToolChoice = tc
 	}
 	if wire.Reasoning != nil {
-		if wire.Reasoning.Effort != "" && wire.Reasoning.BudgetTokens != 0 {
+		if wire.Reasoning.Level != "" && wire.Reasoning.BudgetTokens != 0 {
 			return nil, fmt.Errorf("lux: reasoning takes effort or budget_tokens, not both")
 		}
-		req.Reasoning = &ir.Reasoning{Effort: wire.Reasoning.Effort, BudgetTokens: wire.Reasoning.BudgetTokens}
+		req.Reasoning = &ir.Reasoning{Effort: wire.Reasoning.Level, BudgetTokens: wire.Reasoning.BudgetTokens}
 	}
 	if wire.Schema != nil {
 		req.Schema = &ir.ResponseSchema{

@@ -212,7 +212,7 @@ func usageToIR(u Usage) ir.Usage {
 		CacheReadInputTokens:  copyInt64(u.CacheReadInputTokens),
 		CacheWriteInputTokens: copyInt64(u.CacheWriteInputTokens),
 		ReasoningTokens:       u.ReasoningTokens,
-		CostUSDMicro:          copyInt64(u.CostUSDMicro),
+		CostUSDMicro:          copyInt64(u.CostMicroUSD),
 	}
 }
 
@@ -223,7 +223,7 @@ func usageFromIR(u ir.Usage) Usage {
 		CacheReadInputTokens:  copyInt64(u.CacheReadInputTokens),
 		CacheWriteInputTokens: copyInt64(u.CacheWriteInputTokens),
 		ReasoningTokens:       u.ReasoningTokens,
-		CostUSDMicro:          copyInt64(u.CostUSDMicro),
+		CostMicroUSD:          copyInt64(u.CostUSDMicro),
 	}
 }
 

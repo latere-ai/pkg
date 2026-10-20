@@ -226,10 +226,11 @@ type ToolChoice struct {
 	DisableParallel bool
 }
 
-// Effort is the OpenAI-style reasoning effort scale. It is an open
-// enum: decoders pass unknown wire values through unchanged so a new
+// Effort is the OpenAI-style reasoning effort scale, the SDK's
+// wire.ReasoningLevel under the name the providers' dialects use. It is an
+// open enum: decoders pass unknown wire values through unchanged so a new
 // upstream tier does not break translation.
-type Effort = wire.Effort
+type Effort = wire.ReasoningLevel
 
 // Efforts.
 const (

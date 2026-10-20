@@ -671,14 +671,14 @@ func TestStreamUsageCostUSDMicro(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if withCost.Usage == nil || withCost.Usage.CostUSDMicro == nil || *withCost.Usage.CostUSDMicro != 4343 {
+	if withCost.Usage == nil || withCost.Usage.CostMicroUSD == nil || *withCost.Usage.CostMicroUSD != 4343 {
 		t.Fatalf("bad usage: %#v", withCost.Usage)
 	}
 	without, err := r.Next()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if without.Usage == nil || without.Usage.CostUSDMicro != nil {
+	if without.Usage == nil || without.Usage.CostMicroUSD != nil {
 		t.Fatalf("absent cost must decode to nil, got %#v", without.Usage)
 	}
 }
@@ -687,14 +687,14 @@ func TestStreamUsageCostUSDMicro(t *testing.T) {
 // across the wire/IR boundary, so a caller mutating one usage value
 // cannot change the other.
 func TestUsageCostUSDMicroNotAliased(t *testing.T) {
-	wire := Usage{CostUSDMicro: i64(50)}
+	wire := Usage{CostMicroUSD: i64(50)}
 	got := usageToIR(wire)
 	*got.CostUSDMicro = 99
-	if *wire.CostUSDMicro != 50 {
-		t.Fatalf("usageToIR aliases the cost pointer: wire = %d", *wire.CostUSDMicro)
+	if *wire.CostMicroUSD != 50 {
+		t.Fatalf("usageToIR aliases the cost pointer: wire = %d", *wire.CostMicroUSD)
 	}
 	back := usageFromIR(got)
-	*back.CostUSDMicro = 7
+	*back.CostMicroUSD = 7
 	if *got.CostUSDMicro != 99 {
 		t.Fatalf("usageFromIR aliases the cost pointer: ir = %d", *got.CostUSDMicro)
 	}

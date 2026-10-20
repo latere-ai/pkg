@@ -91,7 +91,7 @@ func (*Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 		}
 	}
 	if req.Reasoning != nil {
-		wire.Reasoning = &Reasoning{Effort: req.Reasoning.Effort, BudgetTokens: req.Reasoning.BudgetTokens}
+		wire.Reasoning = &Reasoning{Level: req.Reasoning.Effort, BudgetTokens: req.Reasoning.BudgetTokens}
 	}
 	if req.Schema != nil {
 		wire.Schema = &ResponseSchema{
