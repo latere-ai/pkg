@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.104.0 - 2026-10-20
+
 ### Added
 
 - **`llmdirect` calls a provider directly in the Lux dialect,** with
