@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -120,7 +121,9 @@ func TestCommandSeparatesTheArgvAndPassesOnlyTheAllowlist(t *testing.T) {
 
 // TestCommandEndsItsGroupWithItsContext checks that the context ending kills
 // the stage and a process it started, not only srt's pid: the leftover
-// appends to a marker, and the marker stops growing.
+// appends to a marker, and after Wait the stage's whole process group
+// empties without the marker growing on. Each step waits on its condition,
+// bounded by the test's deadline, not on a fixed time.
 func TestCommandEndsItsGroupWithItsContext(t *testing.T) {
 	driver := New(Config{Isolation: IsolationSRT, Home: t.TempDir(), Look: shim(t), Lookup: os.LookupEnv})
 	dir := t.TempDir()
@@ -137,23 +140,120 @@ func TestCommandEndsItsGroupWithItsContext(t *testing.T) {
 	if err := command.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	appears(t, marker)
+	exited, waitErr := waitInBackground(command)
+	appears(t, marker, mainEnded(exited, waitErr))
 	cancel()
-	done := make(chan error, 1)
-	go func() { done <- command.Wait() }()
 	select {
-	case err := <-done:
-		if err == nil {
+	case <-exited:
+		if *waitErr == nil {
 			t.Fatal("a stage whose context ended reported success")
 		}
-	case <-time.After(10 * time.Second):
+	case <-time.After(time.Until(until(t))):
 		t.Fatal("the stage outlived its context")
 	}
+	// Every process of the group dies with it. Once Wait has returned, the
+	// group empties as the system finishes the killed processes, which is
+	// the condition waited for. A leftover still looping meanwhile appends a
+	// tick every 50 milliseconds, so two more ticks fail at once; one more
+	// could be a write already under way when the kill came.
+	pid := command.Process.Pid
 	size := fileSize(t, marker)
-	time.Sleep(300 * time.Millisecond)
-	if grown := fileSize(t, marker); grown != size {
-		t.Fatalf("the leftover kept running after the context ended: marker grew from %d to %d", size, grown)
+	by := until(t)
+	for {
+		if err := syscall.Kill(-pid, 0); errors.Is(err, syscall.ESRCH) {
+			break
+		}
+		if grown := fileSize(t, marker); grown >= size+2*int64(len("tick\n")) {
+			t.Fatalf("the leftover kept running after the context ended: marker grew from %d to %d", size, grown)
+		}
+		if time.Now().After(by) {
+			t.Fatal("the stage's process group outlived its context")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+// TestCommandWaitsForAStageSlowToStart checks that a stage which takes longer
+// to reach its first step than the five seconds the tests once allowed is
+// waited for, not failed: a loaded machine stalls a stage's startup for many
+// seconds, and only the stage's own end or the test's deadline ends the wait.
+func TestCommandWaitsForAStageSlowToStart(t *testing.T) {
+	driver := New(Config{Isolation: IsolationSRT, Home: t.TempDir(), Look: shim(t), Lookup: os.LookupEnv})
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "started")
+	spec := stage(t, dir, "/bin/sh", "-c", `sleep 5.5; touch "$MARK"; sleep 30`)
+	spec.Env = map[string]string{"MARK": marker}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	command, cleanup, err := driver.Command(ctx, spec)
+	if err != nil {
+		t.Fatalf("Command: %v", err)
+	}
+	defer cleanup()
+	if err := command.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	exited, waitErr := waitInBackground(command)
+	appears(t, marker, mainEnded(exited, waitErr))
+	cancel()
+	<-exited
+}
+
+// TestWaitForFileEndsWithTheStage checks the two other ends of the wait for a
+// stage's file: a stage that has ended without creating it fails the wait at
+// once, rather than at the test's deadline, and a deadline that has passed
+// ends it too. A file the stage created just before it ended still counts.
+func TestWaitForFileEndsWithTheStage(t *testing.T) {
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "never")
+	gone := errors.New("exit status 127")
+	start := time.Now()
+	err := waitForFile(missing, func() error { return gone }, time.Now().Add(time.Hour))
+	if !errors.Is(err, gone) {
+		t.Fatalf("a stage that ended gave %v, want its error", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("the wait for a stage that had ended took %v", elapsed)
+	}
+	if err := waitForFile(missing, nil, time.Now()); err == nil || !strings.Contains(err.Error(), "deadline") {
+		t.Fatalf("a passed deadline gave %v", err)
+	}
+	present := filepath.Join(dir, "made")
+	if err := os.WriteFile(present, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitForFile(present, func() error { return gone }, time.Now()); err != nil {
+		t.Fatalf("a file made before the stage ended gave %v", err)
+	}
+}
+
+// mainEnded is, for appears, an attached stage whose main process has
+// ended, as waitInBackground reports it.
+func mainEnded(exited <-chan struct{}, waitErr *error) func() error {
+	return func() error {
+		select {
+		case <-exited:
+			if *waitErr == nil {
+				return errors.New("its main process exited with status 0")
+			}
+			return fmt.Errorf("its main process ended: %w", *waitErr)
+		default:
+			return nil
+		}
+	}
+}
+
+// waitInBackground waits for command in a goroutine, so a test can tell
+// whether the stage's main process has ended while it waits for something
+// else. The error is readable once exited is closed.
+func waitInBackground(command *exec.Cmd) (exited chan struct{}, err *error) {
+	exited = make(chan struct{})
+	err = new(error)
+	go func() {
+		*err = command.Wait()
+		close(exited)
+	}()
+	return exited, err
 }
 
 // TestCommandRefusesWhatItCannotRun checks the refusals before a command is

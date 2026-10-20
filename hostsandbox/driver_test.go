@@ -62,8 +62,8 @@ func stage(t *testing.T, dir string, argv ...string) StageSpec {
 
 func waitFor(t *testing.T, driver *Driver, handle StageHandle) StageStatus {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
+	by := until(t)
+	for time.Now().Before(by) {
 		status, err := driver.Observe(context.Background(), handle)
 		if err != nil {
 			t.Fatalf("Observe: %v", err)
@@ -327,7 +327,7 @@ func TestStopKillsAStageThatIgnoresSIGTERM(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Launch: %v", err)
 	}
-	appears(t, marker)
+	appears(t, marker, stageEnded(driver, handle))
 	if status, err := driver.Observe(context.Background(), handle); err != nil || !status.Running {
 		t.Fatalf("a ticking stage is not running: %+v, %v", status, err)
 	}
@@ -363,7 +363,7 @@ func TestStopHonorsACancelledContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Launch: %v", err)
 	}
-	appears(t, marker)
+	appears(t, marker, stageEnded(driver, handle))
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	if err := driver.Stop(ctx, handle); !errors.Is(err, context.DeadlineExceeded) {
@@ -402,7 +402,7 @@ func TestStopEndsWhatAnExitedStageLeftRunning(t *testing.T) {
 			if status := waitFor(t, driver, handle); !status.Succeeded() {
 				t.Fatalf("status = %+v", status)
 			}
-			appears(t, marker)
+			appears(t, marker, groupEmpty(t, handle))
 			size := fileSize(t, marker)
 			time.Sleep(300 * time.Millisecond)
 			if grown := fileSize(t, marker); grown == size {
@@ -592,18 +592,88 @@ func FuzzParseGroupStarts(f *testing.F) {
 	})
 }
 
-// appears waits for a file a stage creates, which is how a test learns that
-// the stage has reached a given point.
-func appears(t *testing.T, path string) {
+// until is the latest time a test waits for what a stage does: shortly
+// before the test binary's own deadline. A test waits on the condition it
+// means, never on a guess at how slow the machine is: a stage starts in about
+// ten milliseconds alone, and has been seen to take more than fifteen seconds
+// while other race suites ran alongside. The margin leaves time to report a
+// condition that never held before the binary is stopped. Without a deadline
+// the wait is two minutes.
+func until(t *testing.T) time.Time {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	deadline, ok := t.Deadline()
+	if !ok {
+		return time.Now().Add(2 * time.Minute)
+	}
+	return deadline.Add(-min(time.Until(deadline)/10, 30*time.Second))
+}
+
+// waitForFile waits until path exists. It returns at once with ended's error
+// when ended reports one, since a stage that can no longer create the file
+// never will, and with an error once by has passed. A nil ended never ends
+// the wait early.
+func waitForFile(path string, ended func() error, by time.Time) error {
+	for {
 		if _, err := os.Stat(path); err == nil {
-			return
+			return nil
+		}
+		if ended != nil {
+			if err := ended(); err != nil {
+				// The stage may have created the file just before it ended.
+				if _, statErr := os.Stat(path); statErr == nil {
+					return nil
+				}
+				return fmt.Errorf("the stage ended before it created %s: %w", path, err)
+			}
+		}
+		if time.Now().After(by) {
+			return fmt.Errorf("the stage did not create %s before the test's deadline", path)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("the stage never created %s", path)
+}
+
+// appears waits for a file a stage creates, which is how a test learns that
+// the stage has reached a given point. It waits until the file exists, not
+// for a fixed time (see until), and fails at once when ended reports that the
+// stage can no longer create it.
+func appears(t *testing.T, path string, ended func() error) {
+	t.Helper()
+	if err := waitForFile(path, ended, until(t)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// stageEnded is, for appears, a launched stage whose main process is no
+// longer running.
+func stageEnded(driver *Driver, handle StageHandle) func() error {
+	return func() error {
+		status, err := driver.Observe(context.Background(), handle)
+		if err != nil {
+			return err
+		}
+		if !status.Running {
+			return fmt.Errorf("its main process ended: %+v", status)
+		}
+		return nil
+	}
+}
+
+// groupEmpty is, for appears, a stage whose process group has no member
+// left. What a stage leaves running after its main process exits stays in
+// the group, so an empty group creates nothing more.
+func groupEmpty(t *testing.T, handle StageHandle) func() error {
+	t.Helper()
+	pid, _, _, err := parseHandle(handle)
+	if err != nil {
+		t.Fatalf("parseHandle: %v", err)
+	}
+	return func() error {
+		if err := syscall.Kill(-pid, 0); errors.Is(err, syscall.ESRCH) {
+			return errors.New("its process group is empty")
+		}
+		return nil
+	}
 }
 
 func fileSize(t *testing.T, path string) int64 {
