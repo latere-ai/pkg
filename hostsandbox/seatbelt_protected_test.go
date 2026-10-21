@@ -96,27 +96,62 @@ func TestTheProtectionDecidesAsSeatbeltDoes(t *testing.T) {
 	}
 }
 
-// longGrant makes a directory below parent whose path makes its writable
-// grant's longest protection pattern longer than one string literal of the
-// profile language holds: each name shorter than a name may be, the whole
-// well under the longest path, with dots, parentheses and characters beyond
-// ASCII, which the pattern escapes or spells in more than one byte.
-func longGrant(t *testing.T, parent string) string {
+// longGrant makes a writable grant below parent whose escaped path alone is
+// longer than one string literal of the profile language holds, so every
+// protection pattern of it, the shortest included, is split, and the first
+// cut of each falls inside the path, between the backslash and the dot of an
+// escaped "." in its last name. It also makes sibling, a directory whose path
+// differs from the grant's by that dot alone. The grant's names hold dots,
+// parentheses and a plus, which the patterns escape, and, well before the
+// cut, characters beyond ASCII; the names repeat as often as parent's length
+// leaves room for, and the whole stays short enough that macOS opens every
+// file a test writes in it.
+func longGrant(t *testing.T, parent string) (grant, sibling string) {
 	t.Helper()
-	path := filepath.Join(parent, "Customer Projects (2026)", "northwind.data-platform+migration", "项目文档 (第二阶段)",
-		"services", "ingestion-pipeline.workers", "event-normalizer", "src")
-	allowed, denied := gitPatterns(path)
-	longest := 0
-	for _, pattern := range concat(protectedPatterns(path), allowed, denied) {
-		longest = max(longest, len(pattern))
+	const segment = "v1.2+(rc.3)"
+	path := filepath.Join(parent, "项目文档 (第二阶段)")
+	// A pattern is "^" and then the escaped path, and its first piece is its
+	// first seatbeltStringMax bytes, so the dot's backslash is that piece's
+	// last byte when the escaped path before it is this long.
+	before := seatbeltStringMax - 2
+	for len(regexLiteral(path))+len("/"+regexLiteral(segment)) < before-16 {
+		path += "/" + segment
 	}
-	if longest <= seatbeltStringMax {
-		t.Fatalf("the longest pattern of %s is %d bytes, within one literal, so the grant is not long", path, longest)
+	pad := before - len(regexLiteral(path)) - len("/")
+	if pad < 1 {
+		t.Fatalf("the temporary directory %s leaves no room below the limit for a grant to cross it", parent)
 	}
-	if err := os.MkdirAll(path, 0o700); err != nil {
-		t.Fatal(err)
+	name := strings.Repeat("x", pad)
+	grant, sibling = path+"/"+name+".cut", path+"/"+name+"_cut"
+	if len(grant)+64 > seatbeltStringMax {
+		t.Fatalf("the grant is %d bytes, too long for macOS to open the files a test writes in it", len(grant))
 	}
-	return path
+	allowed, denied := gitPatterns(grant)
+	for _, pattern := range concat(protectedPatterns(grant), allowed, denied) {
+		values, err := readProfileStrings(sbString(pattern))
+		if err != nil || len(values) != 1 || len(values[0]) < 2 ||
+			!strings.HasSuffix(values[0][0], `\`) || !strings.HasPrefix(values[0][1], ".cut") {
+			t.Fatalf("the pattern %.120q... of %d bytes is not cut inside the grant's escaped dot: %v", pattern, len(pattern), err)
+		}
+	}
+	for _, dir := range []string{grant, filepath.Join(sibling, ".git", "refs", "heads")} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return grant, sibling
+}
+
+// stageWrite appends a line to path, making its directory first, from a
+// stage whose one writable grant is grant, and returns the stage's error.
+func stageWrite(t *testing.T, driver *Driver, grant, path string) error {
+	t.Helper()
+	_, err := attached(t, driver, StageSpec{
+		Name: "protected", Workdir: grant, Network: Network{Mode: NetworkNone},
+		Argv:  []string{"/bin/sh", "-c", "mkdir -p " + ShellQuote(filepath.Dir(path)) + " && echo planted >> " + ShellQuote(path)},
+		Paths: []Path{{Host: grant, Access: ReadWrite}},
+	})
+	return err
 }
 
 // TestAStageCannotWriteWhatRunsCodeLater writes, under the real Seatbelt,
@@ -125,8 +160,11 @@ func longGrant(t *testing.T, parent string) string {
 // directory exists, and a name in .git nobody listed, and checks that none
 // is written while an ordinary file and git's objects, refs, HEAD and index
 // are, and that the protected files stay readable. It does so in a grant
-// with a short path and in one whose patterns are longer than one string
-// literal holds, which the profile writes split.
+// with a short path, and in one whose every pattern the profile writes split
+// inside the grant's path, where the denials must still deny and the
+// allowances allow; there it also writes the files git's allowances allow
+// in a sibling that differs from the grant by the byte at the cut alone, and
+// checks none is written, so a split allowance matches no more than whole.
 func TestAStageCannotWriteWhatRunsCodeLater(t *testing.T) {
 	driver, _ := realSeatbelt(t)
 	short, err := filepath.EvalSymlinks(t.TempDir())
@@ -138,7 +176,19 @@ func TestAStageCannotWriteWhatRunsCodeLater(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Run("a short path", func(t *testing.T) { cannotWriteWhatRunsCodeLater(t, driver, short) })
-	t.Run("a long path", func(t *testing.T) { cannotWriteWhatRunsCodeLater(t, driver, longGrant(t, long)) })
+	t.Run("a long path", func(t *testing.T) {
+		grant, sibling := longGrant(t, long)
+		cannotWriteWhatRunsCodeLater(t, driver, grant)
+		for _, relative := range []string{".git/HEAD", ".git/index", ".git/refs/heads/main", "notes.txt"} {
+			path := filepath.Join(sibling, relative)
+			if err := stageWrite(t, driver, grant, path); err == nil {
+				t.Errorf("%s, in the sibling beside the grant, was written", relative)
+			}
+			if _, err := os.Stat(path); err == nil {
+				t.Errorf("%s, in the sibling beside the grant, exists", relative)
+			}
+		}
+	})
 }
 
 // cannotWriteWhatRunsCodeLater is TestAStageCannotWriteWhatRunsCodeLater in
@@ -152,15 +202,7 @@ func cannotWriteWhatRunsCodeLater(t *testing.T, driver *Driver, repo string) {
 	if err := os.WriteFile(filepath.Join(repo, ".git", "config"), []byte("[core]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	write := func(relative string) error {
-		path := filepath.Join(repo, relative)
-		_, err := attached(t, driver, StageSpec{
-			Name: "protected", Workdir: repo, Network: Network{Mode: NetworkNone},
-			Argv:  []string{"/bin/sh", "-c", "mkdir -p " + ShellQuote(filepath.Dir(path)) + " && echo planted >> " + ShellQuote(path)},
-			Paths: []Path{{Host: repo, Access: ReadWrite}},
-		})
-		return err
-	}
+	write := func(relative string) error { return stageWrite(t, driver, repo, filepath.Join(repo, relative)) }
 	for _, relative := range []string{
 		".git/hooks/pre-commit", ".git/config", ".zshrc", ".ZSHRC", "sub/.gitconfig", ".bashrc",
 		".vscode/settings.json", ".claude/commands/run.md", ".claude/settings.json", ".claude/settings.local.json",
