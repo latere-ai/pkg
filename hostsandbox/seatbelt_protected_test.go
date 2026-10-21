@@ -96,18 +96,54 @@ func TestTheProtectionDecidesAsSeatbeltDoes(t *testing.T) {
 	}
 }
 
+// longGrant makes a directory below parent whose path makes its writable
+// grant's longest protection pattern longer than one string literal of the
+// profile language holds: each name shorter than a name may be, the whole
+// well under the longest path, with dots, parentheses and characters beyond
+// ASCII, which the pattern escapes or spells in more than one byte.
+func longGrant(t *testing.T, parent string) string {
+	t.Helper()
+	path := filepath.Join(parent, "Customer Projects (2026)", "northwind.data-platform+migration", "项目文档 (第二阶段)",
+		"services", "ingestion-pipeline.workers", "event-normalizer", "src")
+	allowed, denied := gitPatterns(path)
+	longest := 0
+	for _, pattern := range concat(protectedPatterns(path), allowed, denied) {
+		longest = max(longest, len(pattern))
+	}
+	if longest <= seatbeltStringMax {
+		t.Fatalf("the longest pattern of %s is %d bytes, within one literal, so the grant is not long", path, longest)
+	}
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 // TestAStageCannotWriteWhatRunsCodeLater writes, under the real Seatbelt,
 // each kind of file a shell, direnv, git, an editor or an agent acts on,
 // inside a writable grant, an agent's settings among them while its
 // directory exists, and a name in .git nobody listed, and checks that none
-// is written while an ordinary file and git's objects and refs are, and that
-// the protected files stay readable.
+// is written while an ordinary file and git's objects, refs, HEAD and index
+// are, and that the protected files stay readable. It does so in a grant
+// with a short path and in one whose patterns are longer than one string
+// literal holds, which the profile writes split.
 func TestAStageCannotWriteWhatRunsCodeLater(t *testing.T) {
 	driver, _ := realSeatbelt(t)
-	repo, err := filepath.EvalSymlinks(t.TempDir())
+	short, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
+	long, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Run("a short path", func(t *testing.T) { cannotWriteWhatRunsCodeLater(t, driver, short) })
+	t.Run("a long path", func(t *testing.T) { cannotWriteWhatRunsCodeLater(t, driver, longGrant(t, long)) })
+}
+
+// cannotWriteWhatRunsCodeLater is TestAStageCannotWriteWhatRunsCodeLater in
+// the writable grant repo.
+func cannotWriteWhatRunsCodeLater(t *testing.T, driver *Driver, repo string) {
 	for _, dir := range []string{".git/hooks", ".git/objects/info", ".claude", "sub"} {
 		if err := os.MkdirAll(filepath.Join(repo, dir), 0o700); err != nil {
 			t.Fatal(err)
@@ -140,7 +176,10 @@ func TestAStageCannotWriteWhatRunsCodeLater(t *testing.T) {
 	if body, err := os.ReadFile(filepath.Join(repo, ".git", "config")); err != nil || string(body) != "[core]\n" {
 		t.Errorf(".git/config changed: %q, %v", body, err)
 	}
-	for _, relative := range []string{"notes.txt", ".git/objects/ab", ".git/objects/info/commit-graph", ".git/refs/heads/main", ".git/refs/tags/v1.2.3", "sub/main.go"} {
+	for _, relative := range []string{
+		"notes.txt", ".git/objects/ab", ".git/objects/info/commit-graph", ".git/refs/heads/main", ".git/refs/tags/v1.2.3",
+		".git/HEAD", ".git/index", "sub/main.go",
+	} {
 		if err := write(relative); err != nil {
 			t.Errorf("%s, an ordinary file, could not be written: %v", relative, err)
 		}

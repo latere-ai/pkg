@@ -5,10 +5,13 @@ package hostsandbox
 
 import (
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // literalPaths makes canonical return every path as written, so a rendering
@@ -205,10 +208,86 @@ func TestAboveListsTheDirectoriesBetween(t *testing.T) {
 	}
 }
 
+// readProfileStrings reads every string value out of profile text as the
+// profile language reads it, each as the literals it is written in: one
+// literal in double quotes, its backslash escapes read, or (string-append
+// ...) of literals. It fails on a literal longer than seatbeltStringMax,
+// which sandbox-exec refuses, on a literal that does not end, and on a
+// string-append holding anything but literals.
+func readProfileStrings(text string) ([][]string, error) {
+	literal := func(at int) (string, int, error) {
+		var b strings.Builder
+		for i := at + 1; i < len(text); i++ {
+			switch text[i] {
+			case '\\':
+				i++
+				if i == len(text) {
+					return "", 0, errors.New("a literal ends in an escape")
+				}
+				b.WriteByte(text[i])
+			case '"':
+				if b.Len() > seatbeltStringMax {
+					return "", 0, fmt.Errorf("a literal holds %d bytes, over %d", b.Len(), seatbeltStringMax)
+				}
+				return b.String(), i + 1, nil
+			default:
+				b.WriteByte(text[i])
+			}
+		}
+		return "", 0, errors.New("a literal does not end")
+	}
+	const join = "(string-append"
+	var values [][]string
+	for i := 0; i < len(text); {
+		switch {
+		case text[i] == ';':
+			for i < len(text) && text[i] != '\n' {
+				i++
+			}
+		case text[i] == '"':
+			piece, next, err := literal(i)
+			if err != nil {
+				return nil, err
+			}
+			values, i = append(values, []string{piece}), next
+		case strings.HasPrefix(text[i:], join):
+			var pieces []string
+			for i += len(join); ; {
+				if i < len(text) && text[i] == ' ' {
+					i++
+				}
+				if i < len(text) && text[i] == ')' {
+					i++
+					break
+				}
+				if i >= len(text) || text[i] != '"' {
+					return nil, fmt.Errorf("a string-append holds something other than a literal at byte %d", i)
+				}
+				piece, next, err := literal(i)
+				if err != nil {
+					return nil, err
+				}
+				pieces, i = append(pieces, piece), next
+			}
+			values = append(values, pieces)
+		default:
+			i++
+		}
+	}
+	return values, nil
+}
+
 // FuzzSeatbeltString checks that any value without a control character is
-// written as one string of the profile language that reads back as itself.
+// written as one string of the profile language that reads back as itself:
+// one literal when it fits in one, and otherwise literals that each fit,
+// none ending inside a character of a value that is valid UTF-8.
 func FuzzSeatbeltString(f *testing.F) {
-	for _, seed := range []string{"", "/a", `a"b`, `a\b`, `\"`, "/Users/op/My Files"} {
+	for _, seed := range []string{
+		"", "/a", `a"b`, `a\b`, `\"`, "/Users/op/My Files",
+		strings.Repeat("a", seatbeltStringMax), strings.Repeat("a", 2*seatbeltStringMax+5),
+		strings.Repeat("a", seatbeltStringMax-1) + "项目", strings.Repeat(`\`, seatbeltStringMax+1),
+		strings.Repeat("a", seatbeltStringMax-1) + `"b`, strings.Repeat("\x80", 2*seatbeltStringMax),
+	} {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, value string) {
@@ -216,27 +295,84 @@ func FuzzSeatbeltString(f *testing.F) {
 			return
 		}
 		quoted := sbString(value)
-		if !strings.HasPrefix(quoted, `"`) || !strings.HasSuffix(quoted, `"`) || len(quoted) < 2 {
-			t.Fatalf("sbString(%q) = %q", value, quoted)
+		values, err := readProfileStrings(quoted)
+		if err != nil {
+			t.Fatalf("sbString(%.80q) = %.80q does not read: %v", value, quoted, err)
 		}
-		var b strings.Builder
-		inner := quoted[1 : len(quoted)-1]
-		for i := 0; i < len(inner); i++ {
-			switch inner[i] {
-			case '\\':
-				i++
-				if i == len(inner) {
-					t.Fatalf("sbString(%q) = %q ends in an escape", value, quoted)
+		if len(values) != 1 || strings.Join(values[0], "") != value {
+			t.Fatalf("sbString(%.80q) = %.80q reads back as %.80q", value, quoted, values)
+		}
+		if fits := len(value) <= seatbeltStringMax; fits != strings.HasPrefix(quoted, `"`) || fits != (len(values[0]) == 1) {
+			t.Fatalf("sbString(%.80q) = %.80q: a value of %d bytes is written in %d literals", value, quoted, len(value), len(values[0]))
+		}
+		if utf8.ValidString(value) {
+			for _, piece := range values[0] {
+				if !utf8.ValidString(piece) {
+					t.Fatalf("sbString(%.80q) splits a character: %.80q", value, piece)
 				}
-				b.WriteByte(inner[i])
-			case '"':
-				t.Fatalf("sbString(%q) = %q holds an unescaped quote", value, quoted)
-			default:
-				b.WriteByte(inner[i])
 			}
 		}
-		if b.String() != value {
-			t.Fatalf("sbString(%q) reads back as %q", value, b.String())
-		}
 	})
+}
+
+// TestSeatbeltProfileSplitsALongPattern renders a writable grant whose path
+// makes its protection patterns longer than one string literal holds, and
+// checks that no literal in the profile is over the limit and that every
+// pattern still reads back whole.
+func TestSeatbeltProfileSplitsALongPattern(t *testing.T) {
+	literalPaths(t)
+	grant := "/Users/op/" + strings.Repeat("Customer Projects (2026)/", 12) + "app.v2"
+	text, err := RenderSeatbelt(Profile{Home: "/Users/op", Reads: []string{grant}, Writes: []string{grant}}, 0)
+	if err != nil {
+		t.Fatalf("RenderSeatbelt: %v", err)
+	}
+	values, err := readProfileStrings(text)
+	if err != nil {
+		t.Fatalf("the profile does not read: %v\n%s", err, text)
+	}
+	read, split := map[string]bool{}, 0
+	for _, pieces := range values {
+		read[strings.Join(pieces, "")] = true
+		if len(pieces) > 1 {
+			split++
+		}
+	}
+	allowed, denied := gitPatterns(grant)
+	for _, pattern := range concat(protectedPatterns(grant), allowed, denied) {
+		if !read[pattern] {
+			t.Errorf("the pattern %q does not read back whole", pattern)
+		}
+	}
+	if split == 0 || !strings.Contains(text, "(regex (string-append ") {
+		t.Fatalf("no value over %d bytes was split, so this checks nothing:\n%s", seatbeltStringMax, text)
+	}
+}
+
+// TestSeatbeltReadsAStringAtItsLimit loads, under the real Seatbelt,
+// values around the longest literal sandbox-exec reads: one of exactly
+// seatbeltStringMax bytes, which sbString writes as one literal, and longer
+// ones it splits, one of them where a character straddles the limit. Should
+// macOS's reader come to hold fewer bytes, this fails here rather than every
+// stage whose grant has a long path.
+func TestSeatbeltReadsAStringAtItsLimit(t *testing.T) {
+	realSeatbelt(t)
+	if quoted := sbString("/" + strings.Repeat("a", seatbeltStringMax-1)); strings.Contains(quoted, "string-append") {
+		t.Fatalf("a value of exactly %d bytes was split", seatbeltStringMax)
+	}
+	for _, value := range []string{
+		"/" + strings.Repeat("a", seatbeltStringMax-1),
+		"/" + strings.Repeat("a", seatbeltStringMax),
+		"/" + strings.Repeat("a", seatbeltStringMax-2) + "项目",
+		"/" + strings.Repeat(`a\"`, seatbeltStringMax),
+	} {
+		profile := filepath.Join(t.TempDir(), "limit.sb")
+		text := "(version 1)\n(allow default)\n(deny file-write*\n  (literal " + sbString(value) + "))\n"
+		if err := os.WriteFile(profile, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		output, err := exec.Command(sandboxExec, "-f", profile, "/usr/bin/true").CombinedOutput() //nolint:gosec,noctx // sandbox-exec over a profile this test wrote
+		if err != nil {
+			t.Errorf("a value of %d bytes did not load: %v\n%s", len(value), err, output)
+		}
+	}
 }

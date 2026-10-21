@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // sandboxExec is macOS's own program that runs a command under a Seatbelt
@@ -202,10 +203,41 @@ func rule(b *strings.Builder, action, operation, filter string, values []string)
 	b.WriteString(")\n")
 }
 
+// seatbeltStringMax is the most bytes one string literal of the profile
+// language holds, counted after its escapes are read: sandbox-exec's reader
+// refuses a longer literal with "Error reading string", and with it the
+// whole profile, so no command runs. A literal of 1023 bytes loads and one of
+// 1024 does not. A protection pattern repeats its writable grant's path, so
+// a grant with a long path reaches it.
+const seatbeltStringMax = 1023
+
 // sbString writes a value as a string of the profile language: in double
-// quotes, with a backslash and a double quote escaped.
+// quotes, with a backslash and a double quote escaped. A value longer than
+// seatbeltStringMax is written as (string-append ...) of literals that each
+// fit, split between characters, which the profile language evaluates to the
+// same value; a value that fits is written as one literal.
 func sbString(value string) string {
-	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(value) + `"`
+	quote := func(piece string) string {
+		return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(piece) + `"`
+	}
+	if len(value) <= seatbeltStringMax {
+		return quote(value)
+	}
+	var b strings.Builder
+	b.WriteString("(string-append")
+	for value != "" {
+		cut := min(len(value), seatbeltStringMax)
+		// Back off to the start of a character, at most the bytes one
+		// character spans, so a piece never ends inside a character's
+		// encoding and a value that is not valid UTF-8 still advances.
+		for back := 0; cut < len(value) && back < utf8.UTFMax-1 && !utf8.RuneStart(value[cut]); back++ {
+			cut--
+		}
+		b.WriteString(" " + quote(value[:cut]))
+		value = value[cut:]
+	}
+	b.WriteString(")")
+	return b.String()
 }
 
 func isControl(r rune) bool { return r < 0x20 || r == 0x7f }

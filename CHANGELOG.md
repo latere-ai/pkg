@@ -14,6 +14,16 @@ under **Removed** or **Changed** with what to do about it.
 
 - **Built with Go 1.27.3,** which fixes GO-2026-6809, a flaw in the
   standard library's certificate verification that this code can reach.
+- **`hostsandbox` runs a stage whose writable folder has a long path under
+  Seatbelt.** macOS's sandbox-exec reads at most 1023 bytes in one string of
+  a profile and refuses the whole profile over that, so every command exited
+  65 with "Error reading string" and none ran. A writable folder's
+  protection patterns repeat its path, so any writable folder whose path is
+  255 bytes or more reached it, with each `.`, `(`, `)` or `+` counting
+  twice and each Chinese or Japanese character three times.
+  `RenderSeatbelt` now writes a longer value as `(string-append ...)` of
+  pieces that each fit, which reads as the same value; a profile with no
+  such value renders exactly as before.
 
 ## v0.106.0 - 2026-10-20
 
