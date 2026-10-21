@@ -12,20 +12,77 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
-
-	"golang.org/x/sys/unix"
+	"unsafe"
 )
+
+// The standard library names neither the clone system call nor the
+// descriptor that stands for the working directory on Darwin, so they are
+// written here: clonefileat is entry 462 of Darwin's system call table, and
+// AT_FDCWD is -2.
+const (
+	sysClonefileat = 462
+	atFDCWD        = -2
+)
+
+// clonefile clones source onto dest, each resolved against the working
+// directory, as clonefile(2) does.
+func clonefile(source, dest string) error {
+	src, err := syscall.BytePtrFromString(source)
+	if err != nil {
+		return err
+	}
+	dst, err := syscall.BytePtrFromString(dest)
+	if err != nil {
+		return err
+	}
+	cwd := atFDCWD
+	if _, _, errno := syscall.Syscall6(sysClonefileat, uintptr(cwd), uintptr(unsafe.Pointer(src)), uintptr(cwd), uintptr(unsafe.Pointer(dst)), 0, 0); errno != 0 {
+		return errno
+	}
+	return nil
+}
 
 // cloneStage, set here because the clone system call is macOS's, clones
 // source onto dest from inside the sandbox and reports whether the kernel
 // allowed it. The driver starts this test binary as the stage.
 func init() {
 	cloneStage = func(source, dest string) int {
-		if err := unix.Clonefile(source, dest, 0); err != nil {
+		if err := clonefile(source, dest); err != nil {
 			return 1
 		}
 		return 0
+	}
+}
+
+// TestCloneStageClones checks the clone call itself outside any sandbox: a
+// directory and a file are cloned, and a clone onto a name that exists is
+// refused, so a refusal under the profile is the profile's.
+func TestCloneStageClones(t *testing.T) {
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "tree", "inner"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tree", "inner", "file"), []byte("cloned"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := clonefile(filepath.Join(dir, "tree"), filepath.Join(dir, "tree-copy")); err != nil {
+		t.Fatalf("cloning a directory: %v", err)
+	}
+	if err := clonefile(filepath.Join(dir, "tree", "inner", "file"), filepath.Join(dir, "file-copy")); err != nil {
+		t.Fatalf("cloning a file: %v", err)
+	}
+	for _, path := range []string{filepath.Join(dir, "tree-copy", "inner", "file"), filepath.Join(dir, "file-copy")} {
+		if body, err := os.ReadFile(path); err != nil || string(body) != "cloned" {
+			t.Errorf("%s = %q, %v", path, body, err)
+		}
+	}
+	if err := clonefile(filepath.Join(dir, "tree"), filepath.Join(dir, "tree-copy")); err == nil {
+		t.Error("a clone onto a name that exists was not refused")
 	}
 }
 
