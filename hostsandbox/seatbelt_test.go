@@ -210,6 +210,40 @@ func TestSeatbeltProfileWritesResolvedPaths(t *testing.T) {
 	}
 }
 
+// TestSeatbeltProfileKeepsTheFoldersAboveTheDefaultDenials renders, on the
+// real file system, a profile granting the home directory writable, and
+// checks that ~/.docker and ~/.config, which hold always-denied paths, may
+// not be created while they do not exist, and that once they exist no
+// folder is kept from being created, as the package documents.
+func TestSeatbeltProfileKeepsTheFoldersAboveTheDefaultDenials(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := Profile{Home: home, Reads: []string{home}, Writes: []string{home}}
+	text, err := RenderSeatbelt(profile, 0)
+	if err != nil {
+		t.Fatalf("RenderSeatbelt: %v", err)
+	}
+	want := "(deny file-write-create\n" +
+		"  (literal " + sbString(filepath.Join(home, ".config")) + ")\n" +
+		"  (literal " + sbString(filepath.Join(home, ".docker")) + "))\n"
+	if !strings.Contains(text, want) {
+		t.Fatalf("the missing folders above the default denials may be created:\n%s", text)
+	}
+	for _, dir := range []string{".config", ".docker"} {
+		if err := os.Mkdir(filepath.Join(home, dir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if text, err = RenderSeatbelt(profile, 0); err != nil {
+		t.Fatalf("RenderSeatbelt: %v", err)
+	}
+	if strings.Contains(text, "file-write-create") {
+		t.Fatalf("with the folders in place a folder is still kept from being created:\n%s", text)
+	}
+}
+
 // TestSeatbeltProfileRefusesADenialThroughADanglingLink renders, on the
 // real file system, a write denial inside a writable grant whose path runs
 // through a directory that is a symbolic link leading nowhere, and checks it

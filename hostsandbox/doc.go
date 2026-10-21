@@ -95,9 +95,14 @@
 // grant and every directory between them in place: a stage may not rename,
 // swap or remove them, and may not create one that does not exist yet, while
 // it still creates, writes and removes files inside the ones that do, so the
-// denial stays on the path it names. A denial whose path runs through a
-// symbolic link that leads nowhere is refused, since a write through it would
-// land on a name the stage can create. Cloning a directory is denied
+// denial stays on the path it names. So when the home directory is granted
+// writable and ~/.docker or ~/.config does not exist, the always-deny
+// table's entries below them (~/.docker/config.json and ~/.config/gcloud)
+// keep a stage from creating either directory, and a tool that writes its
+// settings under ~/.config fails; create them before granting the home
+// directory. A denial whose path runs through a symbolic link that leads
+// nowhere is refused, since a write through it would land on a name the
+// stage can create. Cloning a directory is denied
 // everywhere, so a stage cannot copy a tree holding files it may not read
 // into a grant it may; cloning a file and an ordinary recursive copy still
 // work. Writes are also allowed to the null and zero devices and the

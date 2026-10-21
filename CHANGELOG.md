@@ -26,7 +26,11 @@ under **Removed** or **Changed** with what to do about it.
   the denied file under a name it controls. A denial whose path already runs
   through a symbolic link that leads nowhere is refused, with an error naming
   the link. Creating ordinary files and directories elsewhere in the folder
-  is unchanged.
+  is unchanged. If you grant a home folder writable while `~/.docker` or
+  `~/.config` does not exist, the always-denied `~/.docker/config.json` and
+  `~/.config/gcloud` keep a stage from creating those folders, so a tool
+  that keeps its settings under `~/.config` fails there: create both folders
+  before granting the home folder.
 
 ## v0.107.0 - 2026-10-21
 
