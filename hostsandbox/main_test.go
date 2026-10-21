@@ -60,6 +60,16 @@ func TestMain(m *testing.M) {
 	if source, ok := os.LookupEnv(cloneSourceVariable); ok && cloneStage != nil {
 		os.Exit(cloneStage(source, os.Getenv(cloneDestVariable)))
 	}
+	_, forge := os.LookupEnv(forgeVariable)
+	if forge {
+		forgeStage()
+	}
+	if targets, ok := os.LookupEnv(connectVariable); ok {
+		os.Exit(connectStage(targets))
+	}
+	if forge {
+		os.Exit(0)
+	}
 	os.Exit(m.Run())
 }
 

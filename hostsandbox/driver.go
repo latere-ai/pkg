@@ -269,6 +269,12 @@ func (d *Driver) Launch(ctx context.Context, spec StageSpec) (StageHandle, error
 	if err != nil {
 		return StageHandle{}, err
 	}
+	started := false
+	defer func() {
+		if !started {
+			run.refusals.close(0)
+		}
+	}()
 	statusPath := sidecar(spec.LogPath, ".status")
 	_ = os.Remove(statusPath)
 	_ = os.Remove(statusPath + ".part")
@@ -285,10 +291,16 @@ func (d *Driver) Launch(ctx context.Context, spec StageSpec) (StageHandle, error
 	// reads an inherited stdin waits on it, and a detached stage whose stdin
 	// is a pipe that nobody closes waits forever.
 	launcher.Stdout, launcher.Stderr = log, log
+	launcher.ExtraFiles = run.refusals.files()
 	launcher.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := launcher.Start(); err != nil {
 		return StageHandle{}, fmt.Errorf("launch stage %s: %w", spec.Name, err)
 	}
+	// The wrapper and the launcher hold the pipe's write end now, so the
+	// delivery ends when the stage's launcher has exited.
+	started = true
+	run.refusals.deliver(spec.OnRefused)
+	run.refusals.started()
 	pid := launcher.Process.Pid
 	// The start time is read before the child is reaped. A stage that has
 	// already exited is a zombie at this point, and a zombie still reports
@@ -325,6 +337,10 @@ func (d *Driver) Launch(ctx context.Context, spec StageSpec) (StageHandle, error
 // temporary directory, which the stage is denied writing. The returned
 // cleanup removes that directory; call it after the command has been waited
 // for, or when it is never started. It is idempotent, and nil when err is not.
+// For a stage whose OnRefused is set, the command's ExtraFiles carry the
+// pipe its refusals arrive on, and the cleanup waits up to two seconds for
+// those still on it to be delivered; leave ExtraFiles as they are. Until the
+// cleanup is called, that pipe and the goroutine delivering it stay open.
 func (d *Driver) Command(ctx context.Context, spec StageSpec) (*exec.Cmd, func(), error) {
 	if err := d.Preflight(ctx); err != nil {
 		return nil, nil, err
@@ -345,19 +361,25 @@ func (d *Driver) Command(ctx context.Context, spec StageSpec) (*exec.Cmd, func()
 	}
 	// Removing the directory is best effort: the cleanup has no error to
 	// return, and a leftover settings file holds the policy and no secret.
-	cleanup := func() { _ = os.RemoveAll(dir) }
+	removeDir := func() { _ = os.RemoveAll(dir) }
 	profile := d.Profile(spec)
 	profile.DenyWrites = append(profile.DenyWrites, dir)
 	run, err := d.prepare(spec, profile, func(ext string) string { return filepath.Join(dir, "stage"+ext) })
 	if err != nil {
-		cleanup()
+		removeDir()
 		return nil, nil, err
 	}
 	command := exec.CommandContext(ctx, run.argv[0], run.argv[1:]...) //nolint:gosec // the consumer's argv, never a shell fragment
 	command.Dir = spec.Workdir
 	command.Env = append(d.environment(base, spec), run.env...)
+	command.ExtraFiles = run.refusals.files()
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	command.Cancel = func() error { return killGroup(command.Process.Pid) }
+	run.refusals.deliver(spec.OnRefused)
+	cleanup := func() {
+		run.refusals.close(refusalFlush)
+		removeDir()
+	}
 	return command, cleanup, nil
 }
 
@@ -372,11 +394,14 @@ func killGroup(pid int) error {
 	return err
 }
 
-// prepared is how one stage runs: the program and its arguments, and the
-// variables it needs beside the stage's own environment.
+// prepared is how one stage runs: the program and its arguments, the
+// variables it needs beside the stage's own environment, and the pipe its
+// refusals arrive on, nil unless its OnRefused is set and its network goes
+// through the egress proxy.
 type prepared struct {
-	argv []string
-	env  []string
+	argv     []string
+	env      []string
+	refusals *refusalPipe
 }
 
 // prepare writes the policy a stage runs under into the files policy names
@@ -409,7 +434,7 @@ func (d *Driver) prepare(spec StageSpec, profile Profile, policy func(ext string
 // the profile once it knows the proxy's port.
 func (d *Driver) prepareSeatbelt(spec StageSpec, profile Profile, policy func(ext string) string) (prepared, error) {
 	path := policy(".sb")
-	if !proxied(profile.Network) {
+	if !proxiedStage(spec) {
 		text, err := RenderSeatbelt(profile, 0)
 		if err != nil {
 			return prepared{}, err
@@ -428,7 +453,7 @@ func (d *Driver) prepareSeatbelt(spec StageSpec, profile Profile, policy func(ex
 	if err != nil {
 		return prepared{}, fmt.Errorf("stage %s: finding this program to launch the stage with: %w", spec.Name, err)
 	}
-	body, err := json.Marshal(stageFile{Profile: profile, Argv: spec.Argv, SandboxExec: sandboxExec, Policy: path, Local: localDestinations})
+	body, err := json.Marshal(stageFile{Profile: profile, Argv: spec.Argv, SandboxExec: sandboxExec, Policy: path, Local: localDestinations, Refusals: spec.OnRefused != nil})
 	if err != nil {
 		return prepared{}, fmt.Errorf("stage %s: %w", spec.Name, err)
 	}
@@ -436,7 +461,13 @@ func (d *Driver) prepareSeatbelt(spec StageSpec, profile Profile, policy func(ex
 	if err := os.WriteFile(stage, body, 0o600); err != nil {
 		return prepared{}, fmt.Errorf("stage %s: %w", spec.Name, err)
 	}
-	return prepared{argv: []string{self}, env: []string{stageFileVariable + "=" + stage}}, nil
+	run := prepared{argv: []string{self}, env: []string{stageFileVariable + "=" + stage}}
+	if spec.OnRefused != nil {
+		if run.refusals, err = newRefusalPipe(); err != nil {
+			return prepared{}, fmt.Errorf("stage %s: %w", spec.Name, err)
+		}
+	}
+	return run, nil
 }
 
 // proxied reports whether a stage's network needs the egress proxy: an
@@ -444,6 +475,15 @@ func (d *Driver) prepareSeatbelt(spec StageSpec, profile Profile, policy func(ex
 // network.
 func proxied(network Network) bool {
 	return network.Mode == NetworkAllowlist && len(sorted(network.Domains)) > 0 || network.Mode == NetworkDenylist
+}
+
+// proxiedStage reports whether a stage runs beside the egress proxy: when
+// its network needs it, and for an empty allowlist whose refusals are
+// reported, which the proxy, admitting nothing, makes and reports, in a
+// program that can run the proxy. Without one, an empty allowlist is no
+// network, as it always was.
+func proxiedStage(spec StageSpec) bool {
+	return proxied(spec.Network) || spec.Network.Mode == NetworkAllowlist && spec.OnRefused != nil && launcherInstalled.Load()
 }
 
 // noLauncher is the refusal for a stage with an allowlist or a deny list

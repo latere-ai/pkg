@@ -42,6 +42,54 @@ under **Removed** or **Changed** with what to do about it.
   `ErrUnenforceableNetwork`, as they do a `Blocked` list on a stage of
   another mode and a deny-list entry they cannot read. An allowlist decides
   exactly as before.
+- **`StageSpec.OnRefused` tells the launching program when a stage's network
+  refuses a host.** It is called with the host and port alone, never the
+  request line, headers, path or body, once per host and port a minute and
+  for at most 256 a minute, for a stage under Seatbelt whose network goes
+  through the egress proxy. With `OnRefused` set, an empty allowlist runs
+  the proxy too, in a program that calls `Main`, so the first host a stage
+  asks for is reported. The host is the one the stage asked for, an ASCII
+  name or an address in the canonical form of the address it reaches; any
+  other host is refused unreported. So are a localhost name, an address the
+  network refuses whatever an Allow says, and an address spelled another
+  way, though an allowlist entry of that exact spelling would admit it. A
+  slow reader loses refusals instead of holding up the stage's network, and
+  the line in the stage's output stays. A detached stage reports for as long
+  as the process that launched it runs. A running stage's network does not
+  change: to let the person allow a refused host, widen your own record of
+  the session's network and start the next stage with it. `Command` passes
+  the refusals in the command's `ExtraFiles`; leave them as they are, and
+  call the cleanup, which now waits up to two seconds for the refusals still
+  on their way.
+
+### Fixed
+
+- **`hostsandbox` pins a bare repository's folder inside a writable grant
+  under Seatbelt.** A bare repository is a folder whose name ends in `.git`,
+  holding its config and hooks at the top level. Those were already denied, so
+  a stage could not edit them in place, but the folder itself could be removed,
+  renamed or created, which let a stage replace a whole bare repository while a
+  session ran. Inside a writable grant, at any depth, a name ending in `.git`
+  now cannot be removed, renamed away or created, so a repository the
+  operator later pushes to by its `.git` path cannot be swapped for one
+  carrying hooks of the stage's choosing. Moving the ordinary folder that holds
+  one still works and carries it along, still protected, and nothing named
+  `*.git` can be created at the path it left. Branches and tags whose names
+  end in `.git` are unaffected: git stores them under its refs and logs, where
+  such names may still be created and removed.
+  The cost: a stage can no longer create a file or folder whose name ends in
+  `.git` anywhere else in a grant. `git init --bare`, `git clone --bare`,
+  `git clone --mirror` and `git bundle create` under such a name fail there,
+  as `git init` and `git clone` already do,
+  and a checkout of a branch that tracks such a path cannot write it: git
+  reports the error but may still exit 0, leaving the path missing from the
+  working tree. A non-bare repository's `.git`, denied whole already, is
+  unaffected; a grant whose own name ends in `.git` is pinned only when it lies
+  inside another writable grant. A local remote named without its `.git`
+  suffix may reach a folder of that shorter name, which is not protected, so
+  name a local remote in a grant by its full `.git` path. Everyday git,
+  including a push or a fetch into a bare repository that already exists,
+  still works.
 
 ## v0.108.0 - 2026-10-21
 

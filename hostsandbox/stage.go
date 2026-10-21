@@ -149,6 +149,56 @@ type StageSpec struct {
 	// which macOS's seatbelt checks against the file's path even on an
 	// open descriptor, and grants nothing beside it.
 	LogPath string
+	// OnRefused, when set, is called with the host and port of each
+	// connection the stage's network refuses by name or port: a host the
+	// allowlist does not admit or the deny list blocks, or a port neither
+	// admits. The host is the one the stage asked for, lower case and
+	// without a trailing dot: a host name of ASCII letters, digits, hyphens
+	// and underscores whose last label is not a number, an IDN in its xn--
+	// form, or an address in the canonical form of the address it reaches,
+	// which a prompt says is an address; a request for anything else is
+	// refused without a call. So an address spelled otherwise, in its
+	// IPv4-mapped or NAT64 form among them, is refused unreported, though an
+	// allowlist entry of that exact spelling would admit it. The call
+	// carries nothing else of the request: no request line, header, path or
+	// body. Refusals no Allow could lift are not reported when the
+	// proxy can tell without looking a name up: one by the address a name
+	// resolves to, one of a localhost name, and one of an address the
+	// network refuses whatever its names say. A name refused for its port is
+	// reported whatever it resolves to, so an Allow of a name whose
+	// addresses the network refuses still reaches nothing.
+	//
+	// The host is chosen by whatever runs in the stage, so a prompt that
+	// offers to allow it shows it exactly, and allowing it is the person's
+	// decision. Allowing it applies to the next stage: a running stage's
+	// network does not change. The call does not say why the host was
+	// refused; under a deny list, it was blocked when an entry of Blocked
+	// matches it, by the rule above, and its port was refused otherwise. A
+	// host a wildcard entry blocks is allowed only by narrowing or removing
+	// that entry, since a blocked host stays refused whatever Domains says.
+	//
+	// A refusal repeated within a minute on the same host and port is
+	// reported once, and at most 256 hosts and ports are reported a minute.
+	// The reports are the stage's to shape: one that asks for host after
+	// host can use that bound up, and the refusals after it in the minute
+	// are not reported, though they stay refused; a prompt coalesces what
+	// arrives together. Delivery never holds up the stage's network: past a
+	// small buffer, refusals are dropped. Calls for one stage come one at a
+	// time, from a goroutine of the driver's in the process that called
+	// Launch or Command; a function shared by several stages is called
+	// concurrently. For a detached stage, refusals are reported for as long
+	// as that process runs: after it exits, the stage's log still notes each.
+	// For an attached command, the cleanup waits up to two seconds for the
+	// refusals still on their way; once it returns, no call begins, while one
+	// that began before may still be running. OnRefused may call the
+	// cleanup.
+	//
+	// It is called only under Seatbelt, for a stage whose network goes
+	// through the egress proxy: an allowlist, which with OnRefused set runs
+	// the proxy even when it names no host, in a program that calls Main, so
+	// its refusals are reported, or a deny list. srt and a stage with
+	// NetworkNone never call it.
+	OnRefused func(host string, port int) `json:"-"`
 }
 
 // StageHandle is a driver's durable reference to one launched stage. It is

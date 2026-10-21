@@ -31,8 +31,28 @@ func TestTheDenylistIsDeclaredOnlyWhereItIsEnforced(t *testing.T) {
 		t.Fatalf("Seatbelt without a launcher declares %v", modes)
 	}
 	var zero StageSpec
-	if proxied(zero.Network) || zero.Network.Mode == NetworkDenylist {
+	if proxiedStage(zero) || zero.Network.Mode == NetworkDenylist {
 		t.Fatal("a stage's zero network reaches the network")
+	}
+	report := func(string, int) {}
+	// withoutLauncher above restores this program's state when the test ends.
+	launcherInstalled.Store(true)
+	for spec, want := range map[*StageSpec]bool{
+		{Network: Network{Mode: NetworkAllowlist}}:                                   false,
+		{Network: Network{Mode: NetworkAllowlist}, OnRefused: report}:                true,
+		{Network: Network{Mode: NetworkNone}, OnRefused: report}:                     false,
+		{Network: Network{Mode: NetworkOpen}, OnRefused: report}:                     false,
+		{Network: Network{Mode: NetworkAllowlist, Domains: []string{"example.com"}}}: true,
+		{Network: Network{Mode: NetworkDenylist}}:                                    true,
+	} {
+		if got := proxiedStage(*spec); got != want {
+			t.Errorf("proxiedStage(%+v) = %v, want %v", spec.Network, got, want)
+		}
+	}
+	// Without Main, an empty allowlist is no network, reported or not.
+	launcherInstalled.Store(false)
+	if proxiedStage(StageSpec{Network: Network{Mode: NetworkAllowlist}, OnRefused: report}) {
+		t.Error("an empty allowlist needs a launcher a program without Main cannot start")
 	}
 }
 
@@ -58,8 +78,8 @@ func TestADenylistStageRunsBesideItsProxy(t *testing.T) {
 		if err != nil || json.Unmarshal(body, &file) != nil {
 			t.Fatalf("the stage file = %q, %v", body, err)
 		}
-		if file.Profile.Network.Mode != NetworkDenylist || strings.Join(file.Profile.Network.Blocked, ",") != strings.Join(network.Blocked, ",") {
-			t.Fatalf("the stage file's network = %+v", file.Profile.Network)
+		if file.Profile.Network.Mode != NetworkDenylist || strings.Join(file.Profile.Network.Blocked, ",") != strings.Join(network.Blocked, ",") || file.Refusals {
+			t.Fatalf("the stage file's network = %+v, refusals %v", file.Profile.Network, file.Refusals)
 		}
 	}
 	withoutLauncher(t)
@@ -110,6 +130,47 @@ func TestALauncherRefusesANetworkItCannotEnforce(t *testing.T) {
 	path, _ := writeStage(t, stageFile{Profile: Profile{Network: Network{Mode: NetworkDenylist, Blocked: []string{"evil.test:abc"}}}, Argv: []string{"/bin/echo", "ran"}, SandboxExec: sandboxExec})
 	if code := runLauncher(path, strings.NewReader(""), stderr, stderr); code != launcherExit || strings.Contains(stderr.String(), "ran") {
 		t.Fatalf("the launcher exited %d: %q", code, stderr.String())
+	}
+}
+
+// TestALaunchThatFailsReleasesItsRefusals checks that a stage whose
+// refusals' pipe cannot be opened is refused, and that a launch that fails
+// after the pipe is open closes it.
+func TestALaunchThatFailsReleasesItsRefusals(t *testing.T) {
+	driver := seatbelt(t)
+	spec := stage(t, t.TempDir(), "/bin/true")
+	spec.Network = Network{Mode: NetworkAllowlist, Domains: []string{"example.com"}}
+	spec.OnRefused = func(string, int) {}
+	saved := newRefusalPipe
+	t.Cleanup(func() { newRefusalPipe = saved })
+	newRefusalPipe = func() (*refusalPipe, error) { return nil, errors.New("no pipes left") }
+	if _, err := driver.Launch(context.Background(), spec); err == nil || !strings.Contains(err.Error(), "no pipes left") {
+		t.Fatalf("Launch = %v, want the pipe's failure", err)
+	}
+	if _, _, err := driver.Command(context.Background(), spec); err == nil || !strings.Contains(err.Error(), "no pipes left") {
+		t.Fatalf("Command = %v, want the pipe's failure", err)
+	}
+	var opened *refusalPipe
+	newRefusalPipe = func() (*refusalPipe, error) {
+		pipe, err := saved()
+		opened = pipe
+		return pipe, err
+	}
+	// A log that cannot be opened fails the launch after the pipe is open.
+	if err := os.MkdirAll(spec.LogPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := driver.Launch(context.Background(), spec); err == nil {
+		t.Fatal("Launch with a log that is a directory succeeded")
+	}
+	if opened == nil {
+		t.Fatal("the pipe was never opened")
+	}
+	if _, err := opened.read.Write(nil); err == nil || !errors.Is(err, os.ErrClosed) {
+		t.Fatalf("the pipe's read end is still open: %v", err)
+	}
+	if _, err := opened.write.Write([]byte("x")); !errors.Is(err, os.ErrClosed) {
+		t.Fatalf("the pipe's write end is still open: %v", err)
 	}
 }
 

@@ -69,6 +69,10 @@ type egress struct {
 	blockedByPort    map[string]hostmatch.Matcher
 	blockedAddrs     map[netip.Addr]bool
 	blockedAddrPorts map[netip.AddrPort]bool
+	// check is the network's check of an address, refuseLocal or
+	// refuseNonPublic, whether or not the dialer makes it; a refusal of an
+	// address it refuses is not reported, since no Allow admits it.
+	check func(network, address string, conn syscall.RawConn) error
 	// dial reaches a destination; forward carries a plain request.
 	dial    func(ctx context.Context, network, address string) (net.Conn, error)
 	forward http.RoundTripper
@@ -76,6 +80,9 @@ type egress struct {
 	// stage's own log, so whoever reads the stage's output sees why a
 	// connection failed.
 	notice io.Writer
+	// reporter, when set, sends each refusal's host and port to the process
+	// that launched the stage.
+	reporter *reporter
 }
 
 // egressFor builds the proxy for a stage's network: an allowlist, as
@@ -102,7 +109,7 @@ func egressFor(network Network, notice io.Writer, localOK bool) (*egress, error)
 			return e.refuseBlockedAddress(address)
 		}
 		e = buildEgress(network.Domains, notice, control)
-		e.anyHost = true
+		e.anyHost, e.check = true, refuseNonPublic
 		e.blockedAddrs, e.blockedAddrPorts = map[netip.Addr]bool{}, map[netip.AddrPort]bool{}
 		blocked := make([]string, 0, len(network.Blocked))
 		for _, entry := range network.Blocked {
@@ -197,7 +204,9 @@ func newEgress(domains []string, notice io.Writer, localOK bool) *egress {
 	if !localOK {
 		control = refuseLocal
 	}
-	return buildEgress(domains, notice, control)
+	e := buildEgress(domains, notice, control)
+	e.check = refuseLocal
+	return e
 }
 
 // buildEgress builds the proxy that admits domains as an allowlist does,
@@ -327,8 +336,12 @@ func (e *egress) blocks(host, port string) bool {
 }
 
 // refuse answers a request for a host and port the network does not admit,
-// and says so in the stage's log.
+// says so in the stage's log, and reports it to whoever launched the stage
+// unless no Allow could admit it.
 func (e *egress) refuse(w http.ResponseWriter, host, port string) {
+	if e.reporter != nil && !e.refusedWherever(host) {
+		e.reporter.report(host, port)
+	}
 	target := net.JoinHostPort(host, port)
 	if e.anyHost {
 		if e.notice != nil {
@@ -341,6 +354,20 @@ func (e *egress) refuse(w http.ResponseWriter, host, port string) {
 		_, _ = fmt.Fprintf(e.notice, "hostsandbox: refused a connection to %s, which is not on this stage's network allowlist\n", target)
 	}
 	http.Error(w, "hostsandbox: "+target+" is not on this stage's network allowlist", http.StatusForbidden)
+}
+
+// refusedWherever reports whether the network refuses a host by address
+// whatever its names admit: a localhost name, which is always this machine,
+// or an address the network's check refuses.
+func (e *egress) refusedWherever(host string) bool {
+	host = normalizeHost(host)
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	if _, err := netip.ParseAddr(host); err != nil {
+		return false
+	}
+	return e.check != nil && e.check("tcp", net.JoinHostPort(host, tunnelPort), nil) != nil
 }
 
 // unreachable answers a request whose destination could not be reached.

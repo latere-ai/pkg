@@ -250,6 +250,19 @@ func numeric(label string) bool {
 	return strings.Trim(digits, base) == ""
 }
 
+// reportable reports whether a normalized host may be reported as refused:
+// a well-formed name, or an address in the canonical form of the address it
+// reaches, so a prompt shows the address a connection would reach, and the
+// spellings of one address are not refusals of their own. Another spelling
+// is not reported, even under an allowlist, whose entries match spellings,
+// that would admit it.
+func reportable(host string) bool {
+	if ip, ok := reachedAddress(host); ok {
+		return ip.String() == host
+	}
+	return validHost(host)
+}
+
 // reachedAddress is an address host as the address a connection to it
 // reaches, in its canonical form, or false when the host is not an address
 // without a zone. A deny list matches addresses in this form, so neither a

@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"syscall"
+	"time"
 )
 
 // stageFileVariable names the stage file a launcher process runs. The driver
@@ -74,6 +75,9 @@ type stageFile struct {
 	SandboxExec string   `json:"sandbox_exec"`
 	Policy      string   `json:"policy"`
 	Local       bool     `json:"local,omitempty"`
+	// Refusals says the launcher holds the write end of the refusals' pipe
+	// on refusalDescriptor.
+	Refusals bool `json:"refusals,omitempty"`
 }
 
 // runLauncher serves the stage's egress proxy, runs the stage under
@@ -99,6 +103,34 @@ func runLauncher(path string, stdin io.Reader, stdout, stderr io.Writer) int {
 	proxy, err := egressFor(stage.Profile.Network, stderr, stage.Local)
 	if err != nil {
 		return fail("%v", err)
+	}
+	if stage.Refusals {
+		// The pipe is taken before the stage starts, so it is closed in the
+		// stage whether or not it serves; a pipe that cannot be taken costs
+		// the reports, not the stage.
+		events, err := openRefusals()
+		if err != nil {
+			_, _ = fmt.Fprintf(stderr, "hostsandbox: this stage's refusals are not reported: %v\n", err)
+		} else {
+			defer func() { _ = events.Close() }()
+			proxy.reporter = newReporter()
+			done, sent := make(chan struct{}), make(chan struct{})
+			go func() {
+				defer close(sent)
+				proxy.reporter.send(events, done)
+			}()
+			// Runs after the proxy has closed, so the refusals of a stage
+			// that exits as soon as it is refused are sent.
+			defer func() {
+				close(done)
+				timer := time.NewTimer(refusalFlush)
+				defer timer.Stop()
+				select {
+				case <-sent:
+				case <-timer.C:
+				}
+			}()
+		}
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0") //nolint:noctx // the launcher has no context; it lives as long as its stage
 	if err != nil {

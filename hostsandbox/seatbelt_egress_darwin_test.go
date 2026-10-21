@@ -9,6 +9,7 @@ package hostsandbox
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -38,8 +39,9 @@ func seatbeltHere(t *testing.T) (*Driver, string) {
 // TestSeatbeltDenylistGoesOnlyThroughTheProxy runs deny-list stages under the
 // real Seatbelt, with this test binary as their launcher: a host the deny
 // list does not block is reached through the proxy, a blocked one is
-// refused with its line in the stage's output, and a connection around the
-// proxy is refused by the sandbox.
+// refused with its line in the stage's output and reported to OnRefused, a
+// connection around the proxy is refused by the sandbox, and a refusal the
+// stage forges on the descriptor its launcher reads reaches nobody.
 func TestSeatbeltDenylistGoesOnlyThroughTheProxy(t *testing.T) {
 	driver, home := seatbeltHere(t)
 	localDestinations = true
@@ -50,12 +52,14 @@ func TestSeatbeltDenylistGoesOnlyThroughTheProxy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	got := newEvents()
 	spec := func(argv ...string) StageSpec {
 		return StageSpec{
 			Name: "denylist", Argv: argv, Workdir: home,
-			Paths:   []Path{{Host: home, Access: ReadWrite}},
-			Network: Network{Mode: NetworkDenylist, Domains: []string{"localhost:" + address.Port()}, Blocked: []string{"denied.test"}},
-			Env:     coverage(t),
+			Paths:     []Path{{Host: home, Access: ReadWrite}},
+			Network:   Network{Mode: NetworkDenylist, Domains: []string{"localhost:" + address.Port()}, Blocked: []string{"denied.test"}},
+			Env:       coverage(t),
+			OnRefused: got.add,
 		}
 	}
 	if output, err := attached(t, driver, spec("/usr/bin/curl", "-q", "-sS", "--max-time", "10", "http://localhost:"+address.Port()+"/")); err != nil || output != "reached through the proxy" {
@@ -67,6 +71,13 @@ func TestSeatbeltDenylistGoesOnlyThroughTheProxy(t *testing.T) {
 	}
 	if output, err := attached(t, driver, spec("/usr/bin/curl", "-q", "-sS", "--max-time", "5", "--noproxy", "*", server.URL)); err == nil || strings.Contains(output, "reached") {
 		t.Fatalf("a connection around the proxy succeeded: %q, %v", output, err)
+	}
+	forge := `for fd in 3 4 5 6 7 8 9; do printf '{"host":"forged.test","port":443}\n' >&$fd && echo "wrote $fd"; done 2>/dev/null; exit 0`
+	if output, err := attached(t, driver, spec("/bin/sh", "-c", forge)); err != nil || strings.Contains(output, "wrote") {
+		t.Fatalf("the stage wrote to a descriptor it holds: %q, %v", output, err)
+	}
+	if want := "[{denied.test 80}]"; fmt.Sprint(got.list()) != want {
+		t.Fatalf("OnRefused was called with %v, want %s", got.list(), want)
 	}
 }
 

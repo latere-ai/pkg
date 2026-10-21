@@ -50,7 +50,8 @@
 // is Stop: the driver creates nothing else.
 //
 // Command is the attached form: the same rendering as Launch, returned as an
-// exec.Cmd whose pipes the caller sets, with a cleanup for its settings file.
+// exec.Cmd whose pipes the caller sets, with a cleanup for its settings file
+// and, when StageSpec.OnRefused is set, the delivery of its refusals.
 // It is for a stage that reads stdin from its caller, and it ends with the
 // caller: its pipes close when the calling process exits, and its context
 // ending kills its whole process group. It records no status and no handle.
@@ -223,6 +224,15 @@
 // no longer show what a stage may reach. A consumer that lets the person
 // allow a refused host widens its own record of the session's network, and
 // the next stage it starts gets it.
+//
+// StageSpec.OnRefused hears of each refusal the proxy makes by name or
+// port that an Allow could lift: the host and the port, sent from the
+// launcher through a pipe the driver opens beside the stage, which the
+// launcher keeps from the stage it starts, so a stage cannot report a
+// refusal of its own making. Repeats within a minute are reported once, at
+// most 256 a minute are reported, and a reader that falls behind loses
+// refusals rather than holding up the proxy. The stage's log keeps its line
+// for every refusal, for whatever runs in the stage.
 //
 // A detached stage outlives the process that launched it, so its proxy
 // cannot live there. The driver starts the consumer's own program again as
