@@ -114,6 +114,8 @@ var (
 // consumer's denial wins over every allowance. A denial inside a writable
 // grant also pins the grant and every directory between them, which a stage
 // may not rename or remove, so the denial stays on the path it names.
+// Cloning a directory is denied everywhere, so no stage copies a tree of
+// files it may not read into a grant it may.
 //
 // proxyPort is the loopback port of the stage's egress proxy, the one
 // network destination the stage may reach. Zero renders no network at all:
@@ -206,6 +208,12 @@ func RenderSeatbelt(profile Profile, proxyPort int) (string, error) {
 	rule(&b, "deny", "file-write*", "regex", gitDenied)
 	rule(&b, "deny", "file-write*", "subpath", denyWrites)
 	rule(&b, "deny", "file-write-unlink", "literal", pinned(writes, denyWrites))
+	// A directory clone copies every file below it, the ones a stage may not
+	// read among them, into the clone, which it may. Cloning a directory is
+	// denied everywhere, so the read denials hold; cloning a file and an
+	// ordinary recursive copy, which falls back to copying when a clone is
+	// refused, still work.
+	b.WriteString("(deny file-clone (vnode-type DIRECTORY))\n")
 	rule(&b, "allow", "file-write*", "literal", seatbeltDevices)
 	rule(&b, "allow", "file-ioctl", "literal", seatbeltDevices)
 

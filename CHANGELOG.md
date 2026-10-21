@@ -16,6 +16,12 @@ under **Removed** or **Changed** with what to do about it.
 
 - **Built with Go 1.27.3,** which fixes GO-2026-6809, a flaw in the
   standard library's certificate verification that this code can reach.
+- **`hostsandbox` denies cloning a directory under Seatbelt.** A directory
+  clone copies every file below it, the ones a stage may not read among them,
+  into the clone, which the stage may read. Cloning a directory is now denied
+  everywhere, so a read denial holds against it. Cloning a single file and an
+  ordinary recursive copy, which falls back to copying when a clone is
+  refused, still work.
 - **`hostsandbox` runs a stage whose writable folder has a long path under
   Seatbelt.** macOS's sandbox-exec reads at most 1023 bytes in one string of
   a profile and refuses the whole profile over that, so every command exited

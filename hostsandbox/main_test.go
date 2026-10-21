@@ -28,6 +28,17 @@ const verifyVariable = "HOSTSANDBOX_TEST_VERIFY"
 // verification holds after the leaf expires.
 var verifiedAt = time.Date(2026, time.October, 20, 12, 0, 0, 0, time.UTC)
 
+// cloneSourceVariable and cloneDestVariable name the paths this test binary,
+// running as a stage, clones one onto the other, to check that cloning a
+// directory is refused under the profile. cloneStage does the clone; only
+// darwin, which has the call, sets it.
+const (
+	cloneSourceVariable = "HOSTSANDBOX_TEST_CLONE_SRC"
+	cloneDestVariable   = "HOSTSANDBOX_TEST_CLONE_DST"
+)
+
+var cloneStage func(source, dest string) int
+
 // launchRequest is what a test asks the launch-only process to start.
 type launchRequest struct {
 	Home   string    `json:"home"`
@@ -45,6 +56,9 @@ func TestMain(m *testing.M) {
 	}
 	if path, ok := os.LookupEnv(verifyVariable); ok {
 		os.Exit(verifyChain(path))
+	}
+	if source, ok := os.LookupEnv(cloneSourceVariable); ok && cloneStage != nil {
+		os.Exit(cloneStage(source, os.Getenv(cloneDestVariable)))
 	}
 	os.Exit(m.Run())
 }
