@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.108.0 - 2026-10-21
+
 ### Fixed
 
 - **`hostsandbox` denies cloning a directory under Seatbelt.** A directory
