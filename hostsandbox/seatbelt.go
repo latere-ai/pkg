@@ -95,6 +95,10 @@ var (
 	// which hold tracked content, never a command.
 	gitWritablePrefixes = []string{"BISECT_", "index", "sharedindex"}
 	gitDeniedInWritable = []string{"objects/info/alternates", "objects/info/http-alternates"}
+	// gitRefDirs are the writable directories that hold a branch or tag by
+	// its name, a file of that name below them, so one named *.git is
+	// allowed back there against bareRepoPins.
+	gitRefDirs = []string{"refs", "logs"}
 )
 
 // RenderSeatbelt turns a profile into the Seatbelt profile sandbox-exec runs
@@ -109,14 +113,16 @@ var (
 // examined but not listed, so a program can resolve the grant's path. Writes
 // are allowed only in the profile's writes; then what protectedPatterns
 // names at any depth is denied inside them, every gitdir among it; then what
-// everyday git writes in a gitdir is allowed back and its exceptions denied
-// again; then DenyWrites and every denied read are denied, last, so a
-// consumer's denial wins over every allowance. A denial inside a writable
-// grant also pins the grant and every directory between them, which a stage
-// may not rename or remove, and, where one does not exist yet, may not
-// create, so the denial stays on the path it names. Cloning a directory is
-// denied everywhere, so no stage copies a tree of files it may not read into
-// a grant it may.
+// everyday git writes in a gitdir is allowed back; then a name ending in .git,
+// a bare repository's folder, may not be removed, renamed away or created,
+// except as a branch or tag in git's refs and logs; then git's
+// exceptions are denied again; then DenyWrites and every denied read are
+// denied, last, so a consumer's denial wins over every allowance. A denial
+// inside a writable grant also pins the grant and every directory between
+// them, which a stage may not rename or remove, and, where one does not exist
+// yet, may not create, so the denial stays on the path it names. Cloning a
+// directory is denied everywhere, so no stage copies a tree of files it may
+// not read into a grant it may.
 //
 // proxyPort is the loopback port of the stage's egress proxy, the one
 // network destination the stage may reach. Zero renders no network at all:
@@ -163,9 +169,12 @@ func RenderSeatbelt(profile Profile, proxyPort int) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("render seatbelt profile: %w", err)
 	}
-	var protected, gitAllowed, gitDenied []string
+	var protected, bareNodes, bareAllowed, gitAllowed, gitDenied []string
 	for _, write := range writes {
 		protected = append(protected, protectedPatterns(write)...)
+		pinned, allowedBack := bareRepoPins(write)
+		bareNodes = append(bareNodes, pinned...)
+		bareAllowed = append(bareAllowed, allowedBack...)
 		allowed, denied := gitPatterns(write)
 		gitAllowed = append(gitAllowed, allowed...)
 		gitDenied = append(gitDenied, denied...)
@@ -212,6 +221,17 @@ func RenderSeatbelt(profile Profile, proxyPort int) (string, error) {
 	rule(&b, "allow", "file-write*", "subpath", writes)
 	rule(&b, "deny", "file-write*", "regex", protected)
 	rule(&b, "allow", "file-write*", "regex", gitAllowed)
+	// A node named *.git inside a writable grant is a bare repository's
+	// folder. Its contents are denied above; pinning the node too, against
+	// unlinking and creation, keeps it from being removed, renamed away or
+	// created, so one cannot be swapped out while a session runs. The same
+	// names inside git's refs and logs, a branch or tag ending in .git, are
+	// allowed back, before git's exceptions and the denials, which still win
+	// there.
+	rule(&b, "deny", "file-write-unlink", "regex", bareNodes)
+	rule(&b, "deny", "file-write-create", "regex", bareNodes)
+	rule(&b, "allow", "file-write-unlink", "regex", bareAllowed)
+	rule(&b, "allow", "file-write-create", "regex", bareAllowed)
 	rule(&b, "deny", "file-write*", "regex", gitDenied)
 	rule(&b, "deny", "file-write*", "subpath", denyWrites)
 	rule(&b, "deny", "file-write-unlink", "literal", pins)
@@ -373,9 +393,39 @@ func protectedPatterns(write string) []string {
 	out = append(out, base+anyCase(".git")+"(/.*)?$")
 	// A bare repository is a directory whose name ends in .git, its gitdir at
 	// the top level. Its contents are denied here (its config and hooks among
-	// them), and gitPatterns allows back the same everyday-git paths. The
-	// node itself is not pinned, so a file simply named *.git stays writable.
+	// them), and gitPatterns allows back the same everyday-git paths. The node
+	// itself is pinned by bareRepoPins, not here, so a file named *.git may
+	// still be written while it may not be created or removed.
 	return append(out, base+"[^/]+"+anyCase(".git")+"/.*$")
+}
+
+// bareRepoPins are the regular expressions, for file-write-unlink and
+// file-write-create, of a node named *.git at any depth inside the writable
+// grant write, a bare repository's folder, which is pinned, and of the same
+// names inside a gitdir's refs and logs, which are allowed back. A bare
+// repository's contents are already denied, so a stage cannot write its
+// config or hooks; the pin keeps the node itself from being removed, renamed
+// away or created, so one cannot be swapped out while a session runs and a
+// repository the operator later pushes to cannot be stood up with hooks of
+// the stage's choosing. The stem is not empty (`[^/]+`), so a non-bare
+// repository's .git, denied whole as a node by protectedPatterns, is not
+// matched here, and nor is the grant's own name when it ends in .git.
+//
+// The pin is on every kind of node, not folders alone: git also opens a file
+// or a symbolic link at a repository's path, so a folder that a stage moves
+// away must not be replaced by either. The allowance is for git's refs and
+// logs, where a branch or tag whose name ends in .git is a file of that name;
+// it opens only such names, and gitPatterns' exceptions and the consumer's
+// denials, rendered after it, still win there. The cost is that a stage can
+// create no file or folder named *.git elsewhere in a grant: git init --bare,
+// git clone --bare, git clone --mirror and git bundle create under such a
+// name fail there, as git init and git clone already do, and so does a
+// checkout writing a tracked path of that name.
+func bareRepoPins(write string) (pinned, allowed []string) {
+	node := "[^/]+" + anyCase(".git") + "$"
+	pinned = []string{"^" + regexLiteral(write) + "(/.*)?/" + node}
+	allowed = []string{gitdirAnchor(write) + anyCaseNames(gitRefDirs) + "/(.*/)?" + node}
+	return pinned, allowed
 }
 
 // pinned lists, for every denial inside a writable grant, the grant and the
@@ -443,22 +493,7 @@ func absentPins(pins []string) ([]string, error) {
 // config.worktree, hooks, commondir, gitdir, info, alternates and any name
 // git adds later) stays denied.
 func gitPatterns(write string) (allowed, denied []string) {
-	names := func(list []string) string {
-		out := make([]string, len(list))
-		for i, name := range list {
-			out[i] = anyCase(name)
-		}
-		return "(" + strings.Join(out, "|") + ")"
-	}
-	// A gitdir is .git, a bare repository (a directory whose name ends in
-	// .git), or a submodule's or worktree's gitdir within either. git stores
-	// a submodule at a/b under .git/modules/a/b, so a submodule name carries
-	// any depth of segments; a worktree name is one segment. The anchor is a
-	// component ending in .git and, optionally, that layout down to the inner
-	// gitdir, so the allowance applies in each without opening the layout's
-	// own config or hooks.
-	gitdir := "^" + regexLiteral(write) + "(/.*)?/[^/]*" + anyCase(".git") +
-		"(/" + anyCase("modules") + "(/[^/]+)+)?(/" + anyCase("worktrees") + "/[^/]+)?/"
+	gitdir, names := gitdirAnchor(write), anyCaseNames
 	allowed = []string{
 		gitdir + names(gitWritableDirs) + "(/.*)?$",
 		gitdir + names(gitWritableFiles) + "(" + anyCase(".lock") + ")?$",
@@ -484,6 +519,29 @@ func gitPatterns(write string) (allowed, denied []string) {
 		denied = append(denied, below+"[^/]*"+anyCase(suffix)+"$")
 	}
 	return allowed, denied
+}
+
+// gitdirAnchor is the regular expression of a gitdir below the writable grant
+// write, up to the slash that starts a path inside it. A gitdir is .git, a
+// bare repository (a directory whose name ends in .git), or a submodule's or
+// worktree's gitdir within either. git stores a submodule at a/b under
+// .git/modules/a/b, so a submodule name carries any depth of segments; a
+// worktree name is one segment. The anchor is a component ending in .git and,
+// optionally, that layout down to the inner gitdir, so an allowance applies in
+// each without opening the layout's own config or hooks.
+func gitdirAnchor(write string) string {
+	return "^" + regexLiteral(write) + "(/.*)?/[^/]*" + anyCase(".git") +
+		"(/" + anyCase("modules") + "(/[^/]+)+)?(/" + anyCase("worktrees") + "/[^/]+)?/"
+}
+
+// anyCaseNames is a regular expression group matching any one of names, each
+// in any case.
+func anyCaseNames(names []string) string {
+	out := make([]string, len(names))
+	for i, name := range names {
+		out[i] = anyCase(name)
+	}
+	return "(" + strings.Join(out, "|") + ")"
 }
 
 // regexLiteral escapes every character a regular expression gives meaning.

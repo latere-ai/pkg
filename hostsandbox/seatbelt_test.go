@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"testing"
@@ -239,7 +240,10 @@ func TestSeatbeltProfileKeepsTheFoldersAboveTheDefaultDenials(t *testing.T) {
 	if text, err = RenderSeatbelt(profile, 0); err != nil {
 		t.Fatalf("RenderSeatbelt: %v", err)
 	}
-	if strings.Contains(text, "file-write-create") {
+	// Only the absent-folder pins, which take the literal form, go away once
+	// the folders exist; the writable grant's *.git node pin, in the regex
+	// form, stays.
+	if strings.Contains(text, "(deny file-write-create\n  (literal") {
 		t.Fatalf("with the folders in place a folder is still kept from being created:\n%s", text)
 	}
 }
@@ -356,7 +360,10 @@ func TestSeatbeltProfilePinsTheDirectoriesAboveADenial(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderSeatbelt: %v", err)
 	}
-	if strings.Contains(text, "file-write-unlink") {
+	// The directory pins take the literal form; a writable grant's *.git node
+	// pin, which every writable grant carries, takes the regex form and is not
+	// one of them.
+	if strings.Contains(text, "(deny file-write-unlink\n  (literal") {
 		t.Fatalf("a profile with no denial inside a writable grant pins a directory:\n%s", text)
 	}
 	text, err = RenderSeatbelt(Profile{
@@ -390,6 +397,117 @@ func TestSeatbeltProfilePinsTheDirectoriesAboveADenial(t *testing.T) {
 		if got := pinned(c.writes, c.denials); strings.Join(got, ",") != strings.Join(c.want, ",") {
 			t.Errorf("pinned(%q, %q) = %q, want %q", c.writes, c.denials, got, c.want)
 		}
+	}
+}
+
+// createAllowedIn reports whether a stage may create or remove the node at
+// path inside the writable grant, deciding as Seatbelt does from the rules
+// RenderSeatbelt writes for those operations, in that order, the last that
+// matches deciding: the grant allows, the protection denies, git's
+// allow-backs allow, the *.git pin denies, its allowance in git's writable
+// directories allows, and git's exceptions deny.
+func createAllowedIn(grant, path string) bool {
+	allowed, denied := gitPatterns(grant)
+	pinned, allowedBack := bareRepoPins(grant)
+	decision := path == grant || strings.HasPrefix(path, grant+"/")
+	for _, step := range []struct {
+		patterns []string
+		allow    bool
+	}{{protectedPatterns(grant), false}, {allowed, true}, {pinned, false}, {allowedBack, true}, {denied, false}} {
+		for _, pattern := range step.patterns {
+			if regexp.MustCompile(pattern).MatchString(path) {
+				decision = step.allow
+			}
+		}
+	}
+	return decision
+}
+
+// TestSeatbeltProfilePinsBareRepositoryNodes checks that every writable grant
+// pins each node named *.git inside it against unlinking and creation, after
+// every file-write* allowance, with the same names allowed back inside git's
+// refs and logs, before git's exceptions and the consumer's denials,
+// which still win there; what that decides for creating or removing a node;
+// that a grant's own name ending in .git is not pinned by its own rule while
+// one nested in another writable grant is pinned by that grant's; and that a
+// profile with no writable grant carries no such rule.
+func TestSeatbeltProfilePinsBareRepositoryNodes(t *testing.T) {
+	literalPaths(t)
+	readOnly, err := RenderSeatbelt(Profile{Home: "/Users/op", Reads: []string{"/Users/op/project"}}, 0)
+	if err != nil {
+		t.Fatalf("RenderSeatbelt: %v", err)
+	}
+	for _, rule := range []string{"file-write-unlink", "file-write-create"} {
+		if strings.Contains(readOnly, rule) {
+			t.Fatalf("a read-only profile carries %q:\n%s", rule, readOnly)
+		}
+	}
+
+	// A grant whose own name ends in .git, a second grant nested in it, and a
+	// consumer's write denial inside the first.
+	grants := []string{"/Users/op/work.git", "/Users/op/work.git/vendor"}
+	text, err := RenderSeatbelt(Profile{
+		Home: "/Users/op", Reads: grants[:1], Writes: grants, DenyWrites: []string{"/Users/op/work.git/keep"},
+	}, 0)
+	if err != nil {
+		t.Fatalf("RenderSeatbelt: %v", err)
+	}
+	denial := position(text, "deny", "file-write*", "subpath", "/Users/op/work.git/keep")
+	for _, grant := range grants {
+		allowed, denied := gitPatterns(grant)
+		pinned, allowedBack := bareRepoPins(grant)
+		at := map[string]int{
+			"the grant":            position(text, "allow", "file-write*", "subpath", grant),
+			"git's allow-backs":    position(text, "allow", "file-write*", "regex", allowed[0]),
+			"the unlink pin":       position(text, "deny", "file-write-unlink", "regex", pinned[0]),
+			"the create pin":       position(text, "deny", "file-write-create", "regex", pinned[0]),
+			"the unlink allowance": position(text, "allow", "file-write-unlink", "regex", allowedBack[0]),
+			"the create allowance": position(text, "allow", "file-write-create", "regex", allowedBack[0]),
+			"git's exceptions":     position(text, "deny", "file-write*", "regex", denied[0]),
+			"the write denial":     denial,
+		}
+		for name, position := range at {
+			if position < 0 {
+				t.Fatalf("%s of %s is missing:\n%s", name, grant, text)
+			}
+		}
+		for _, order := range [][2]string{
+			{"the grant", "the unlink pin"}, {"git's allow-backs", "the unlink pin"}, {"git's allow-backs", "the create pin"},
+			{"the unlink pin", "the unlink allowance"}, {"the create pin", "the create allowance"},
+			{"the unlink allowance", "git's exceptions"}, {"the create allowance", "git's exceptions"},
+			{"the create allowance", "the write denial"},
+		} {
+			if at[order[0]] >= at[order[1]] {
+				t.Errorf("for %s, %s (at %d) does not come before %s (at %d)", grant, order[0], at[order[0]], order[1], at[order[1]])
+			}
+		}
+	}
+
+	// What the rules decide for creating or removing a node.
+	const grant = "/g"
+	for relative, want := range map[string]bool{
+		"notes.txt": true, "x.gitx": true, "agit": true,
+		".git/refs/heads/topic.git": true, ".git/logs/refs/heads/topic.git": true, ".git/refs/tags/v1.GIT": true,
+		"origin.git/refs/heads/feature.git": true, ".git/modules/a/b/refs/heads/x.git": true,
+		".git/worktrees/wt/logs/HEAD.git": true, ".git/refs/heads/team.git/topic": true,
+		"origin.git": false, "sub/origin.git": false, "x.GIT": false, "..git": false, ".git.git": false,
+		".git": false, "sub/.git": false, "origin.git/config": false, "origin.git/hooks/post-receive": false,
+		".git/refs/heads/.git": false, ".git/refs/heads/.claude": false, ".git/objects/info/alternates": false,
+		".git/hooks/x.git": false, ".git/x.git": false, "refs/heads/x.git": false,
+		".git/objects/x.git": false, ".git/rebase-merge/x.git": false, "origin.git/objects/pack/x.git": false,
+	} {
+		if got := createAllowedIn(grant, grant+"/"+relative); got != want {
+			t.Errorf("creating or removing %s is allowed = %v, want %v", relative, got, want)
+		}
+	}
+
+	// A grant's own name is not pinned by its own rule; one nested in a
+	// writable grant is pinned by that grant's.
+	if pinned, _ := bareRepoPins("/g/inner.git"); regexp.MustCompile(pinned[0]).MatchString("/g/inner.git") {
+		t.Error("a grant whose name ends in .git is pinned by its own rule")
+	}
+	if createAllowedIn("/g", "/g/inner.git") {
+		t.Error("a grant nested in a writable grant, its name ending in .git, is not pinned by the outer grant")
 	}
 }
 
@@ -564,7 +682,8 @@ func TestSeatbeltProfileSplitsALongPattern(t *testing.T) {
 		}
 	}
 	allowed, denied := gitPatterns(grant)
-	for _, pattern := range concat(protectedPatterns(grant), allowed, denied) {
+	pinned, allowedBack := bareRepoPins(grant)
+	for _, pattern := range concat(protectedPatterns(grant), pinned, allowedBack, allowed, denied) {
 		if !read[pattern] {
 			t.Errorf("the pattern %q does not read back whole", pattern)
 		}

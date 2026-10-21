@@ -127,7 +127,8 @@ func longGrant(t *testing.T, parent string) (grant, sibling string) {
 		t.Fatalf("the grant is %d bytes, too long for macOS to open the files a test writes in it", len(grant))
 	}
 	allowed, denied := gitPatterns(grant)
-	for _, pattern := range concat(protectedPatterns(grant), allowed, denied) {
+	pinned, allowedBack := bareRepoPins(grant)
+	for _, pattern := range concat(protectedPatterns(grant), pinned, allowedBack, allowed, denied) {
 		values, err := readProfileStrings(sbString(pattern))
 		if err != nil || len(values) != 1 || len(values[0]) < 2 ||
 			!strings.HasSuffix(values[0][0], `\`) || !strings.HasPrefix(values[0][1], ".cut") {

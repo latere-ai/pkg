@@ -284,6 +284,12 @@ func TestEverydayGitStillWorks(t *testing.T) {
 	if _, err := gitIn(t, driver, grant, grant, "init", "-q", "fresh"); err == nil {
 		t.Error("git init made a .git directory inside a grant")
 	}
+	if _, err := gitIn(t, driver, grant, grant, "clone", "-q", repo, "cloned"); err == nil {
+		t.Error("git clone made a .git directory inside a grant")
+	}
+	if _, err := gitIn(t, driver, grant, repo, "worktree", "add", "-q", filepath.Join(grant, "wt")); err == nil {
+		t.Error("git worktree add made a gitdir inside a grant")
+	}
 }
 
 // TestABareRepositoryIsProtected treats a directory whose name ends in .git

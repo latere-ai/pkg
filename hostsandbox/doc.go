@@ -143,23 +143,33 @@
 // directory of its own. A bare repository, a directory whose name ends in
 // .git with its gitdir at the top level, is protected the same way: its config
 // and hooks are denied and a push into it, which writes its objects and refs,
-// works.
+// works. Its folder is pinned too: no name ending in .git may be removed,
+// renamed away or created inside a grant, except a branch or tag of that name
+// in git's refs and logs, so a stage cannot swap a repository the
+// operator later pushes to for one carrying hooks of its own. Moving the
+// ordinary folder that holds one carries it along, still pinned.
 //
-// Each path is named by its path, so a rename is refused at its source and
-// at its destination, and a directory holding a repository may still be
-// moved, since the protection follows the name .git. What it costs, as srt's
-// default costs it: git init, git clone, git config, git remote, git
-// submodule and git worktree add inside a grant fail, since each writes what
-// is protected. Its limits: a .git file the operator already pointed at a
-// gitdir outside git's layout leaves that gitdir's control files unprotected,
-// unless they lie in another protected place; a bare repository whose name
-// does not end in .git is not recognized as a gitdir, so its config and
-// hooks are writable; and a stage may write .git/rebase-merge,
-// .git/rebase-apply and .git/sequencer, so it can fake an in-progress rebase,
-// cherry-pick or revert whose todo or sequencer/opts holds an exec line,
-// which runs only if the operator later continues it outside the sandbox (git
-// rebase, cherry-pick or revert --continue). srt protects the same kinds of
-// path at its working directory.
+// Each path is named by its path, so a rename is refused at its source and at
+// its destination, and a directory holding a repository may still be moved,
+// since the protection follows the name .git. What it costs, as srt's default
+// costs it: git init, git clone, git config, git remote, git submodule and
+// git worktree add inside a grant fail, since each writes what is protected;
+// and, because no file or folder whose name ends in .git can be created
+// outside git's refs and logs, a stage can neither make a bare repository
+// with git init --bare, git clone --bare or git clone --mirror nor write a
+// bundle under such a name, and a checkout cannot write a tracked path of
+// that name (git reports it but may still exit 0). Its limits: a .git file
+// the operator already pointed at a gitdir outside git's layout leaves that
+// gitdir's control files unprotected, unless they lie in another protected
+// place; a bare repository whose name does not end in .git is not recognized
+// as a gitdir, so its config and hooks are writable, and a local remote that
+// names a bare repository without its .git suffix may reach a folder of that
+// shorter name, so name a local remote in a grant by its full .git path; and
+// a stage may write .git/rebase-merge, .git/rebase-apply and .git/sequencer,
+// so it can fake an in-progress rebase, cherry-pick or revert whose todo or
+// sequencer/opts holds an exec line, which runs only if the operator later
+// continues it outside the sandbox (git rebase, cherry-pick or revert
+// --continue). srt protects the same kinds of path at its working directory.
 //
 // A stage with no network runs straight under sandbox-exec and may connect
 // to nothing: no address, no name lookup, no local socket. A stage with a
