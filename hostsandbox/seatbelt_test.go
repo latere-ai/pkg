@@ -13,14 +13,23 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 	"unicode/utf8"
 )
 
-// dirInfo is an os.FileInfo for a directory, what lstat returns for a path a
-// rendering test treats as an existing directory.
-type dirInfo struct{ os.FileInfo }
+// dirInfo is what lstat returns, in a rendering test, for a path the test
+// treats as an existing directory: named after the path's last element, of
+// size zero, a directory, with no modification time and no system data.
+type dirInfo struct{ name string }
 
-func (dirInfo) Mode() os.FileMode { return os.ModeDir | 0o700 }
+var _ os.FileInfo = dirInfo{}
+
+func (d dirInfo) Name() string     { return d.name }
+func (dirInfo) Size() int64        { return 0 }
+func (dirInfo) Mode() os.FileMode  { return os.ModeDir | 0o700 }
+func (dirInfo) ModTime() time.Time { return time.Time{} }
+func (dirInfo) IsDir() bool        { return true }
+func (dirInfo) Sys() any           { return nil }
 
 // literalPaths makes canonical return every path as written and every path an
 // existing directory, so a rendering test reads the same on every machine and
@@ -29,7 +38,7 @@ func literalPaths(t *testing.T) {
 	t.Helper()
 	savedEval, savedLstat := evalSymlinks, lstat
 	evalSymlinks = func(path string) (string, error) { return path, nil }
-	lstat = func(string) (os.FileInfo, error) { return dirInfo{}, nil }
+	lstat = func(path string) (os.FileInfo, error) { return dirInfo{name: filepath.Base(path)}, nil }
 	t.Cleanup(func() { evalSymlinks, lstat = savedEval, savedLstat })
 }
 
