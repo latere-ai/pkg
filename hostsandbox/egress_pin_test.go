@@ -4,11 +4,14 @@
 package hostsandbox
 
 import (
+	"bufio"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
+	"time"
 )
 
 // The allowlist's decisions, pinned. A change to any row below changes what
@@ -19,6 +22,38 @@ var pinnedAllowlist = []string{
 	"Exact.TEST", "trailing.test.", "  spaced.test  ", "*.wild.test", "ssh.test:22", "*.ports.test:8443",
 	"alt.test:0080", "bad.test:99999", "zero.test:0", "worse.test:abc", "2001:db8::1", "[2001:db8::2]:8443",
 	"192.0.2.10", "",
+}
+
+// answer sends a CONNECT for target through the proxy at address and
+// returns the proxy's answer: its status line and its body, read by its
+// length, since the proxy keeps the connection open after a refusal.
+func answer(t *testing.T, address, target string) (string, string) {
+	t.Helper()
+	conn, err := net.DialTimeout("tcp", address, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	if err := conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fmt.Fprintf(conn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", target, target); err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: http.MethodConnect})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode/100 == 2 {
+		// An established tunnel has no body.
+		return response.Proto + " " + response.Status, ""
+	}
+	body, err := io.ReadAll(response.Body)
+	_ = response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return response.Proto + " " + response.Status, string(body)
 }
 
 // TestAllowlistDecisionsArePinned checks admits, the allowlist's decision, for
@@ -127,12 +162,11 @@ func TestAllowlistAnswersArePinned(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "ok") }))
 	t.Cleanup(upstream.Close)
 	address, notice := proxyTo(t, pinnedAllowlist, upstream.Listener.Addr().String())
-	_, reader, status := connect(t, address, "other.test:443")
+	status, body := answer(t, address, "other.test:443")
 	if status != "HTTP/1.1 403 Forbidden" {
 		t.Fatalf("a refused CONNECT = %q", status)
 	}
-	body, _ := io.ReadAll(reader)
-	if !strings.HasSuffix(string(body), "\r\n\r\nhostsandbox: other.test:443 is not on this stage's network allowlist\n") {
+	if body != "hostsandbox: other.test:443 is not on this stage's network allowlist\n" {
 		t.Fatalf("a refused CONNECT's body = %q", body)
 	}
 	const line = "hostsandbox: refused a connection to other.test:443, which is not on this stage's network allowlist\n"

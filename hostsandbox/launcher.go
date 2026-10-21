@@ -96,12 +96,16 @@ func runLauncher(path string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(stage.Argv) == 0 || stage.SandboxExec == "" || stage.Policy == "" {
 		return fail("the stage file %s names no argv, sandbox-exec or profile path", path)
 	}
+	proxy, err := egressFor(stage.Profile.Network, stderr, stage.Local)
+	if err != nil {
+		return fail("%v", err)
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0") //nolint:noctx // the launcher has no context; it lives as long as its stage
 	if err != nil {
 		return fail("opening the egress proxy: %v", err)
 	}
 	server := &http.Server{
-		Handler:           newEgress(stage.Profile.Network.Domains, stderr, stage.Local),
+		Handler:           proxy,
 		ReadHeaderTimeout: egressHeaderTimeout,
 	}
 	served := make(chan error, 1)

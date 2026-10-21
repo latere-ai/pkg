@@ -155,16 +155,33 @@ func (d *Driver) missing(names []string) error {
 // Capabilities declares the egress policies the driver enforces. There is no
 // open mode under either isolation: srt is allow-only and refuses a
 // wildcard, and the Seatbelt profile allows no destination but the egress
-// proxy, which admits only named hosts. Under Seatbelt the allowlist is
-// declared only once this program's main has called Main, because without
-// it no proxy can run beside a stage and an allowlisted stage is refused.
+// proxy. Under Seatbelt the allowlist and the deny list are declared only
+// once this program's main has called Main, because without it no proxy can
+// run beside a stage and a stage with either is refused; srt declares no
+// deny list, since it cannot admit a host it is not given.
 // PackageManagers and MaxAttachmentBytes are left to the consumer.
 func (d *Driver) Capabilities() Capabilities {
 	modes := map[string]bool{NetworkNone: true, NetworkAllowlist: true}
-	if d.Isolation() == IsolationSeatbelt && !launcherInstalled.Load() {
-		delete(modes, NetworkAllowlist)
+	if d.Isolation() == IsolationSeatbelt {
+		if launcherInstalled.Load() {
+			modes[NetworkDenylist] = true
+		} else {
+			delete(modes, NetworkAllowlist)
+		}
 	}
 	return Capabilities{NetworkModes: modes}
+}
+
+// checkNetwork refuses a stage network this driver would not enforce as
+// written: a deny list under srt, and what egressFor refuses.
+func (d *Driver) checkNetwork(spec StageSpec) error {
+	if err := checkNetwork(spec.Network); err != nil {
+		return fmt.Errorf("stage %s: %w", spec.Name, err)
+	}
+	if spec.Network.Mode == NetworkDenylist && d.Isolation() != IsolationSeatbelt {
+		return fmt.Errorf("stage %s: %w: a deny list is enforced only under Seatbelt; srt admits only the hosts it is given", spec.Name, ErrUnenforceableNetwork)
+	}
+	return nil
 }
 
 // Profile is the access policy Launch renders for a stage. Inside the home
@@ -233,6 +250,9 @@ func (d *Driver) Launch(ctx context.Context, spec StageSpec) (StageHandle, error
 	}
 	if strings.TrimSpace(spec.LogPath) == "" {
 		return StageHandle{}, errors.New("launch stage: log path is empty")
+	}
+	if err := d.checkNetwork(spec); err != nil {
+		return StageHandle{}, err
 	}
 	// A stage with no PATH resolves nothing, not even srt, whose shebang
 	// needs node. It fails with exit code 127 and an empty log, which is the
@@ -312,6 +332,9 @@ func (d *Driver) Command(ctx context.Context, spec StageSpec) (*exec.Cmd, func()
 	if len(spec.Argv) == 0 {
 		return nil, nil, errors.New("command stage: argv is empty")
 	}
+	if err := d.checkNetwork(spec); err != nil {
+		return nil, nil, err
+	}
 	base := Environment(d.config.Lookup)
 	if !hasPath(base) {
 		return nil, nil, fmt.Errorf("%w: the driver was composed with no PATH, so a stage could run nothing", ErrNotReady)
@@ -381,9 +404,9 @@ func (d *Driver) prepare(spec StageSpec, profile Profile, policy func(ext string
 }
 
 // prepareSeatbelt runs a stage with no network straight under sandbox-exec.
-// A stage with an allowlist runs under this program started again as its
-// launcher (Main), which serves the egress proxy and renders the profile
-// once it knows the proxy's port.
+// A stage with an allowlist or a deny list runs under this program started
+// again as its launcher (Main), which serves the egress proxy and renders
+// the profile once it knows the proxy's port.
 func (d *Driver) prepareSeatbelt(spec StageSpec, profile Profile, policy func(ext string) string) (prepared, error) {
 	path := policy(".sb")
 	if !proxied(profile.Network) {
@@ -417,18 +440,19 @@ func (d *Driver) prepareSeatbelt(spec StageSpec, profile Profile, policy func(ex
 }
 
 // proxied reports whether a stage's network needs the egress proxy: an
-// allowlist that names a host. An empty allowlist is no network.
+// allowlist that names a host, or a deny list. An empty allowlist is no
+// network.
 func proxied(network Network) bool {
-	return network.Mode == NetworkAllowlist && len(sorted(network.Domains)) > 0
+	return network.Mode == NetworkAllowlist && len(sorted(network.Domains)) > 0 || network.Mode == NetworkDenylist
 }
 
-// noLauncher is the refusal for an allowlisted stage under Seatbelt in a
-// program whose main did not call Main.
+// noLauncher is the refusal for a stage with an allowlist or a deny list
+// under Seatbelt in a program whose main did not call Main.
 func (d *Driver) noLauncher() *NotReadyError {
 	err := d.notReady(ConditionNoLauncher)
-	err.Remediation = "This program does not call hostsandbox.Main at the start of main, so a stage under Seatbelt cannot get its network allowlist: " +
-		"the allowlist's proxy runs in a launcher the driver starts from this program. Call hostsandbox.Main() as the first statement of main, " +
-		"or compose the driver with Isolation: IsolationSRT."
+	err.Remediation = "This program does not call hostsandbox.Main at the start of main, so a stage under Seatbelt cannot get its network allowlist or deny list: " +
+		"the network's proxy runs in a launcher the driver starts from this program. Call hostsandbox.Main() as the first statement of main, " +
+		"or, for an allowlist, compose the driver with Isolation: IsolationSRT."
 	return err
 }
 

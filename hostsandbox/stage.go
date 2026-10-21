@@ -54,18 +54,56 @@ func (p Path) Destination() string {
 // Capabilities which of them it enforces; the host sandbox does not express
 // NetworkOpen, because srt refuses a wildcard and Seatbelt allows a stage no
 // destination but its egress proxy.
+//
+// NetworkDenylist admits any host except those Network.Blocked names. It is
+// never a default: a stage gets it only when its Mode says so. With it, any
+// server on the internet is reachable, so everything the stage can read, the
+// whole of every folder it is granted, can be sent there; a consumer
+// offering it says so to the person before turning it on. The host sandbox
+// enforces it only under Seatbelt, through the egress proxy, which refuses
+// this machine, its local networks and every address that is not public
+// whatever the name. On a Mac whose proxy or VPN app answers names with
+// fake addresses (198.18.0.0/15) to carry the connection itself, a deny-list
+// stage reaches nothing until that mode is turned off, since where such a
+// connection goes cannot be checked.
 const (
 	NetworkNone      = "none"
 	NetworkAllowlist = "allowlist"
+	NetworkDenylist  = "denylist"
 	NetworkOpen      = "open"
 )
 
-// Network is a stage's egress policy.
+// Network is a stage's egress policy. It is fixed when the stage starts: no
+// driver call changes the network of a running stage. To admit a host a
+// stage was refused, start the next stage with it.
 type Network struct {
-	// Mode is NetworkNone, NetworkAllowlist or NetworkOpen.
+	// Mode is NetworkNone, NetworkAllowlist, NetworkDenylist or NetworkOpen.
 	Mode string
-	// Domains is the allowlist. It is meaningful only in allowlist mode.
+	// Domains is the allowlist. In allowlist mode it is every host the stage
+	// may reach. In deny-list mode it adds the ports an entry names as
+	// host:port to the standard ones every host is admitted on, and an entry
+	// Blocked matches stays refused.
 	Domains []string
+	// Blocked is the deny list, meaningful only in deny-list mode; a stage of
+	// another mode that names one is refused. An entry matches the host a
+	// stage asks for as an allowlist entry does: exact, or every name below
+	// it for "*.example.com", which does not match example.com itself, so
+	// blocking a domain and its subdomains takes both entries. A host named
+	// alone is blocked on every port, and host:port on that port alone. An
+	// entry that is neither a host name, an address nor a wildcard over one,
+	// or names a port that is not a number from 1 to 65535, is refused
+	// rather than blocking nothing.
+	//
+	// The deny list is about the names a stage asks for, not the servers
+	// behind them: another name for the same server, or its address, is not
+	// blocked by a name. An entry that is an address is blocked in every
+	// spelling of it, its form under the well-known NAT64 prefix
+	// (64:ff9b::/96) among them, and also whatever name the stage reaches it
+	// through, since the address each connection dials is checked against
+	// it. Under a NAT64 prefix of a network's own, an IPv4 entry is not
+	// recognized. This machine, its local networks and the addresses that
+	// are not public are refused by address, whatever name reaches them.
+	Blocked []string
 	// Passthrough lists domains reached without the sandbox terminating TLS.
 	// They remain subject to the allowlist; only the inspection is skipped,
 	// for clients that do not trust an injected certificate authority.
@@ -213,6 +251,11 @@ var (
 	ErrInvalidHandle = errors.New("invalid stage handle")
 	// ErrGone reports a stage the driver no longer holds.
 	ErrGone = errors.New("stage is gone")
+	// ErrUnenforceableNetwork reports a stage network the driver will not
+	// run, since it cannot enforce it as written: a deny list under srt,
+	// which is allow-only, a deny-list entry it cannot read, or a deny list
+	// on a stage of another mode.
+	ErrUnenforceableNetwork = errors.New("stage network cannot be enforced")
 )
 
 // MismatchError names both drivers of a misrouted handle.

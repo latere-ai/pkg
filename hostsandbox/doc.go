@@ -186,6 +186,44 @@
 // The stage's proxy variables name the proxy; a client that ignores them
 // cannot connect at all.
 //
+// A stage with a deny list, NetworkDenylist, goes through the same proxy,
+// which admits any host on the standard ports, and a host Domains names as
+// host:port on that port, unless Network.Blocked matches it; a blocked name
+// is refused before it is looked up. The deny list matches the names a
+// stage asks for, as an allowlist does. A host that is not a well-formed
+// name or address is refused, as is a name whose last label is a number,
+// which a resolver reads as an address, and an address is matched in its
+// canonical form, so no spelling of a blocked name or address gets past it.
+// An address the deny list names is also refused when a name resolves to
+// it. What a deny list cannot block by name is refused by address: before
+// each connection is opened, the address a name resolved to is checked, so
+// a name that resolves elsewhere on its next lookup is checked again, and
+// this machine, the networks of its Wi-Fi and Ethernet (for IPv6, the /48
+// holding each address it has there), its own addresses, the private,
+// carrier-grade NAT, link-local, unique local, multicast, reserved,
+// benchmarking and documentation ranges and every IPv6 address outside
+// global unicast are refused, an IPv4 address carried in IPv6 (mapped,
+// NAT64 under its well-known prefix, or 6to4) by the address it carries.
+// Every failure to reach a host is answered alike, so the answer says
+// neither what a name resolved to nor whether a local name exists. What an
+// address cannot show is not refused: a server inside the person's network
+// reached at a public address, such as the router's own through its port
+// forwarding, or a local or blocked address behind a NAT64 prefix of the
+// network's own.
+// The mode is a choice the person makes, never a default: any server on the
+// internet can then receive whatever the stage can read.
+//
+// A stage's network is fixed when it starts. The proxy runs in the stage's
+// launcher, a process of its own that outlives a detached stage's caller,
+// and reads the network once, from the stage file the driver wrote, before
+// the stage runs; there is no channel through which a running stage's
+// network widens. Such a channel would have to reach the launcher from
+// outside the sandbox while the stage runs, and would be one more thing a
+// stage must never write; srt could not honor it at all; and Profile would
+// no longer show what a stage may reach. A consumer that lets the person
+// allow a refused host widens its own record of the session's network, and
+// the next stage it starts gets it.
+//
 // A detached stage outlives the process that launched it, so its proxy
 // cannot live there. The driver starts the consumer's own program again as
 // the stage's launcher, which serves the proxy, renders the profile once the
@@ -194,15 +232,17 @@
 // statement, which is also what makes IsolationAuto pick Seatbelt: a program
 // that has not called it keeps srt. Under an explicit IsolationSeatbelt
 // without Main, an allowlisted stage is refused with a NotReadyError of
-// ConditionNoLauncher, Capabilities declares no allowlist, and stages with
-// no network run as before. The cost is one launcher
-// process per allowlisted stage, the consumer's binary, which holds the
-// stage's environment and runs outside the sandbox.
+// ConditionNoLauncher, as is a stage with a deny list, Capabilities declares
+// neither, and stages with no network run as before. The cost is one
+// launcher process per stage with a network, the consumer's binary, which
+// holds the stage's environment and runs outside the sandbox.
 //
 // # The network policy
 //
 // srt is allow-only and refuses a wildcard, so the driver declares
-// NetworkNone and NetworkAllowlist and no open mode. TLS termination is
+// NetworkNone and NetworkAllowlist and no open mode, and under Seatbelt with
+// a launcher NetworkDenylist as well; a deny list under srt is refused with
+// ErrUnenforceableNetwork. TLS termination is
 // declared whenever a domain is allowed, because srt publishes its certificate
 // authority to the per-tool trust variables only then, and without them every
 // HTTPS client in the sandbox rejects the proxy. Network.Passthrough names the

@@ -10,34 +10,38 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
-### Fixed
+### Added
 
-- **`hostsandbox` pins a bare repository's folder inside a writable grant
-  under Seatbelt.** A bare repository is a folder whose name ends in `.git`,
-  holding its config and hooks at the top level. Those were already denied, so
-  a stage could not edit them in place, but the folder itself could be removed,
-  renamed or created, which let a stage replace a whole bare repository while a
-  session ran. Inside a writable grant, at any depth, a name ending in `.git`
-  now cannot be removed, renamed away or created, so a repository the
-  operator later pushes to by its `.git` path cannot be swapped for one
-  carrying hooks of the stage's choosing. Moving the ordinary folder that holds
-  one still works and carries it along, still protected, and nothing named
-  `*.git` can be created at the path it left. Branches and tags whose names
-  end in `.git` are unaffected: git stores them under its refs and logs, where
-  such names may still be created and removed.
-  The cost: a stage can no longer create a file or folder whose name ends in
-  `.git` anywhere else in a grant. `git init --bare`, `git clone --bare`,
-  `git clone --mirror` and `git bundle create` under such a name fail there,
-  as `git init` and `git clone` already do,
-  and a checkout of a branch that tracks such a path cannot write it: git
-  reports the error but may still exit 0, leaving the path missing from the
-  working tree. A non-bare repository's `.git`, denied whole already, is
-  unaffected; a grant whose own name ends in `.git` is pinned only when it lies
-  inside another writable grant. A local remote named without its `.git`
-  suffix may reach a folder of that shorter name, which is not protected, so
-  name a local remote in a grant by its full `.git` path. Everyday git,
-  including a push or a fetch into a bare repository that already exists,
-  still works.
+- **`hostsandbox` has an opt-in deny-list network under Seatbelt.** A stage
+  whose `Network.Mode` is `NetworkDenylist` may reach any host except those
+  `Network.Blocked` names, through the same egress proxy as an allowlist and
+  on the same port rules: any host on 443 for a CONNECT and 80 for a plain
+  request, and a host `Domains` names as `host:port` on that port. A blocked
+  entry matches as an allowlist entry does (`*.example.com` does not cover
+  `example.com`, so block both), a host alone on every port and `host:port`
+  on that port. A name whose last label is a number (`2130706433`,
+  `0x7f.0.0.1`) is refused, since a resolver reads it as an address. An
+  address entry blocks every spelling of that address, its form under the
+  well-known NAT64 prefix (`64:ff9b::/96`) among them, and also any name
+  that resolves to it; a network's own NAT64 prefix is not recognized.
+  Otherwise the deny list is about names: the proxy refuses this machine,
+  its Wi-Fi and Ethernet networks (for IPv6 the /48 around each of its
+  addresses there), its own addresses, private, carrier-grade NAT,
+  link-local (the cloud metadata endpoint among them), unique local,
+  multicast, reserved, benchmarking and documentation addresses, and every
+  IPv6 address outside global unicast, by the address each connection dials,
+  so rebinding a name reaches none of them. The benchmarking range,
+  198.18.0.0/15, is where a proxy or VPN app's fake-IP mode answers every
+  name from, so on a Mac running one a deny-list stage reaches nothing until
+  that mode is off. Every failure to reach a host gets the same answer, so a
+  stage learns neither what a name resolved to nor whether a local name
+  exists. It is never a default. With it, everything a stage can read could
+  be sent to any server, so tell the person that before turning it on.
+  `Capabilities` declares it only under Seatbelt in a program that calls
+  `Main`; under srt, `Launch` and `Command` refuse it with
+  `ErrUnenforceableNetwork`, as they do a `Blocked` list on a stage of
+  another mode and a deny-list entry they cannot read. An allowlist decides
+  exactly as before.
 
 ## v0.108.0 - 2026-10-21
 

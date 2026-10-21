@@ -99,10 +99,12 @@ type Profile struct {
 // allowWrite is narrow and denyWrite makes exceptions to it, so only the
 // profile's writes are listed and DenyWrites are denied inside them.
 //
-// Only NetworkAllowlist yields allowed domains. NetworkOpen renders as no
-// egress: srt refuses a wildcard ("Overly broad patterns like *.com or * are
-// not allowed"), so a consumer that needs open egress must not select this
-// driver, and the Driver's Capabilities say so.
+// Only NetworkAllowlist yields allowed domains. NetworkOpen and
+// NetworkDenylist render as no egress: srt refuses a wildcard ("Overly
+// broad patterns like *.com or * are not allowed"), so a consumer that
+// needs open egress or a deny list must not select this driver under srt,
+// the Driver's Capabilities say so, and its Launch and Command refuse a deny
+// list before rendering it.
 func Render(profile Profile) Settings {
 	denyRead := append(append([]string{"~"}, AlwaysDenyRead...), profile.Denies...)
 	settings := Settings{
