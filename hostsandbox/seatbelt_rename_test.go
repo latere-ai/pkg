@@ -214,3 +214,50 @@ func TestADenialInsideAWritableGrantHoldsItsPlace(t *testing.T) {
 		unchanged(t, root)
 	})
 }
+
+// TestADenialWhoseParentIsAbsentCannotBePreFilled runs, under the real
+// Seatbelt, a write denial inside a grant whose directory does not exist at
+// render time, and checks that the stage cannot create that directory by any
+// route, so the denied file cannot be planted under a name the stage
+// controls; while a directory and a file created elsewhere in the grant, and
+// a file created inside a directory that does exist above another denial,
+// all succeed.
+func TestADenialWhoseParentIsAbsentCannotBePreFilled(t *testing.T) {
+	driver, home := realSeatbelt(t)
+	grant := filepath.Join(home, "grant")
+	absent := filepath.Join(grant, ".secrets", "config")   // .secrets does not exist at render
+	present := filepath.Join(grant, "present", "withheld") // present does exist at render
+	if err := os.MkdirAll(filepath.Join(grant, "present"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	spec := func(argv ...string) StageSpec {
+		return StageSpec{
+			Name: "prefill", Argv: argv, Workdir: grant, Network: Network{Mode: NetworkNone},
+			Paths: []Path{{Host: grant, Access: ReadWrite}}, DeniedWrites: []string{absent, present},
+		}
+	}
+	elsewhere := filepath.Join(home, "elsewhere")
+	if err := os.MkdirAll(elsewhere, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, script := range map[string]string{
+		"link the absent parent elsewhere":    "ln -s " + ShellQuote(elsewhere) + " " + ShellQuote(filepath.Join(grant, ".secrets")) + " && echo planted > " + ShellQuote(absent),
+		"rename a prepared directory into it": "mkdir " + ShellQuote(filepath.Join(grant, "prep")) + " && echo planted > " + ShellQuote(filepath.Join(grant, "prep", "config")) + " && mv " + ShellQuote(filepath.Join(grant, "prep")) + " " + ShellQuote(filepath.Join(grant, ".secrets")),
+		"make the absent parent directly":     "mkdir " + ShellQuote(filepath.Join(grant, ".secrets")) + " && echo planted > " + ShellQuote(absent),
+		"make the absent parent a file":       "echo x > " + ShellQuote(filepath.Join(grant, ".secrets")),
+	} {
+		if output, err := attached(t, driver, spec("/bin/sh", "-c", script)); err == nil {
+			t.Errorf("%s succeeded: %q", name, output)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(grant, ".secrets")); err == nil {
+		t.Error(".secrets was created")
+	}
+	// Ordinary creation elsewhere in the grant, and inside a directory that
+	// exists above another denial, still work.
+	if output, err := attached(t, driver, spec("/bin/sh", "-c",
+		"mkdir "+ShellQuote(filepath.Join(grant, "work"))+" && echo ok > "+ShellQuote(filepath.Join(grant, "work", "file"))+
+			" && echo ok > "+ShellQuote(filepath.Join(grant, "present", "other"))+" && cat "+ShellQuote(filepath.Join(grant, "present", "other")))); err != nil || !strings.Contains(output, "ok") {
+		t.Errorf("ordinary creation in the grant failed: %q, %v", output, err)
+	}
+}

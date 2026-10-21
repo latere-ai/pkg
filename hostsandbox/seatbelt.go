@@ -113,9 +113,10 @@ var (
 // again; then DenyWrites and every denied read are denied, last, so a
 // consumer's denial wins over every allowance. A denial inside a writable
 // grant also pins the grant and every directory between them, which a stage
-// may not rename or remove, so the denial stays on the path it names.
-// Cloning a directory is denied everywhere, so no stage copies a tree of
-// files it may not read into a grant it may.
+// may not rename or remove, and, where one does not exist yet, may not
+// create, so the denial stays on the path it names. Cloning a directory is
+// denied everywhere, so no stage copies a tree of files it may not read into
+// a grant it may.
 //
 // proxyPort is the loopback port of the stage's egress proxy, the one
 // network destination the stage may reach. Zero renders no network at all:
@@ -130,8 +131,9 @@ var (
 // its own spelling. A writable grant that is itself a symbolic link is
 // refused, as is a path holding a control character, which the profile
 // language has no safe way to write, a path, as given or resolved, longer
-// than seatbeltStringMax, and a path whose links cannot be resolved for any
-// reason but that it does not exist yet.
+// than seatbeltStringMax, a path whose links cannot be resolved for any
+// reason but that it does not exist yet, and a denial whose path runs
+// through a symbolic link that leads nowhere.
 func RenderSeatbelt(profile Profile, proxyPort int) (string, error) {
 	for _, path := range profile.Writes {
 		if info, err := lstat(filepath.Clean(path)); err == nil && info.Mode()&os.ModeSymlink != 0 {
@@ -183,6 +185,11 @@ func RenderSeatbelt(profile Profile, proxyPort int) (string, error) {
 			return "", fmt.Errorf("render seatbelt profile: the path %q is %d bytes, longer than the %d a path on macOS may have", path, len(path), seatbeltStringMax)
 		}
 	}
+	pins := pinned(writes, denyWrites)
+	absent, err := absentPins(pins)
+	if err != nil {
+		return "", fmt.Errorf("render seatbelt profile: %w", err)
+	}
 
 	var b strings.Builder
 	b.WriteString(";; A stage's Seatbelt profile, rendered by latere.ai/x/pkg/hostsandbox.\n")
@@ -207,7 +214,8 @@ func RenderSeatbelt(profile Profile, proxyPort int) (string, error) {
 	rule(&b, "allow", "file-write*", "regex", gitAllowed)
 	rule(&b, "deny", "file-write*", "regex", gitDenied)
 	rule(&b, "deny", "file-write*", "subpath", denyWrites)
-	rule(&b, "deny", "file-write-unlink", "literal", pinned(writes, denyWrites))
+	rule(&b, "deny", "file-write-unlink", "literal", pins)
+	rule(&b, "deny", "file-write-create", "literal", absent)
 	// A directory clone copies every file below it, the ones a stage may not
 	// read among them, into the clone, which it may. Cloning a directory is
 	// denied everywhere, so the read denials hold; cloning a file and an
@@ -396,6 +404,35 @@ func pinned(writes, denials []string) []string {
 		}
 	}
 	return sorted(out)
+}
+
+// absentPins splits the pinned directories, reporting those that do not
+// exist at render time, which a stage must be stopped from creating. A pin
+// is held in place against renaming and removal only once it exists; a name
+// on the path to a denial that does not exist yet could otherwise be created
+// as a link, or have a prepared directory renamed into it, to move the
+// denial off the path it names, so file-write-create is denied on each. A
+// pin that is a symbolic link leading nowhere is refused instead: a write
+// through it lands on the name it points at, which the stage may create, so
+// no rule on the link's own name would hold.
+func absentPins(pins []string) ([]string, error) {
+	var absent []string
+	for _, dir := range pins {
+		info, err := lstat(dir)
+		if err != nil {
+			// No name here yet; deny creating one.
+			absent = append(absent, dir)
+			continue
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			// A directory that exists, held by its unlink pin.
+			continue
+		}
+		if _, err := evalSymlinks(dir); err != nil {
+			return nil, fmt.Errorf("the denied path runs through %q, a symbolic link that leads nowhere; create the directory it points at, or point it at one that exists", dir)
+		}
+	}
+	return absent, nil
 }
 
 // gitPatterns are the regular expressions of what everyday git writes in

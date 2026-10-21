@@ -22,6 +22,15 @@ under **Removed** or **Changed** with what to do about it.
   everywhere, so a read denial holds against it. Cloning a single file and an
   ordinary recursive copy, which falls back to copying when a clone is
   refused, still work.
+- **`hostsandbox` keeps a write denial on the path it names even when the
+  path does not yet exist.** When a denied path lies inside a writable folder
+  and a directory on the way to it does not exist at render time, that
+  directory now cannot be created: not as a symbolic link, not by renaming a
+  prepared directory into its place, not directly. So a stage cannot plant
+  the denied file under a name it controls. A denial whose path already runs
+  through a symbolic link that leads nowhere is refused, with an error naming
+  the link. Creating ordinary files and directories elsewhere in the folder
+  is unchanged.
 - **`hostsandbox` runs a stage whose writable folder has a long path under
   Seatbelt.** macOS's sandbox-exec reads at most 1023 bytes in one string of
   a profile and refuses the whole profile over that, so every command exited

@@ -93,12 +93,15 @@
 // may be examined but not listed. Read denials are also denied writing. A
 // denial inside a writable grant, of reading or of writing, also keeps the
 // grant and every directory between them in place: a stage may not rename,
-// swap or remove them, while it still creates, writes and removes files
-// inside them, so the denial stays on the path it names. Cloning a directory
-// is denied everywhere, so a stage cannot copy a tree holding files it may
-// not read into a grant it may; cloning a file and an ordinary recursive
-// copy still work. Writes are also allowed to the null and zero devices and
-// the controlling terminal.
+// swap or remove them, and may not create one that does not exist yet, while
+// it still creates, writes and removes files inside the ones that do, so the
+// denial stays on the path it names. A denial whose path runs through a
+// symbolic link that leads nowhere is refused, since a write through it would
+// land on a name the stage can create. Cloning a directory is denied
+// everywhere, so a stage cannot copy a tree holding files it may not read
+// into a grant it may; cloning a file and an ordinary recursive copy still
+// work. Writes are also allowed to the null and zero devices and the
+// controlling terminal.
 //
 // Inside every writable grant, at any depth and in any case, a stage may not
 // write, move, create or replace what a shell, direnv, git, an editor or an

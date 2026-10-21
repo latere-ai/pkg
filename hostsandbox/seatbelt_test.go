@@ -16,13 +16,21 @@ import (
 	"unicode/utf8"
 )
 
-// literalPaths makes canonical return every path as written, so a rendering
-// test reads the same on every machine.
+// dirInfo is an os.FileInfo for a directory, what lstat returns for a path a
+// rendering test treats as an existing directory.
+type dirInfo struct{ os.FileInfo }
+
+func (dirInfo) Mode() os.FileMode { return os.ModeDir | 0o700 }
+
+// literalPaths makes canonical return every path as written and every path an
+// existing directory, so a rendering test reads the same on every machine and
+// no path it names looks absent or linked.
 func literalPaths(t *testing.T) {
 	t.Helper()
-	saved := evalSymlinks
+	savedEval, savedLstat := evalSymlinks, lstat
 	evalSymlinks = func(path string) (string, error) { return path, nil }
-	t.Cleanup(func() { evalSymlinks = saved })
+	lstat = func(string) (os.FileInfo, error) { return dirInfo{}, nil }
+	t.Cleanup(func() { evalSymlinks, lstat = savedEval, savedLstat })
 }
 
 // position is where a rule naming value as a filter of kind appears in
@@ -190,6 +198,34 @@ func TestSeatbeltProfileWritesResolvedPaths(t *testing.T) {
 		if !walks && err == nil {
 			t.Errorf("canonical of a path that %s = %q, want an error", name, got)
 		}
+	}
+}
+
+// TestSeatbeltProfileRefusesADenialThroughADanglingLink renders, on the
+// real file system, a write denial inside a writable grant whose path runs
+// through a directory that is a symbolic link leading nowhere, and checks it
+// is refused; and that once the link points at a directory that exists, the
+// same profile renders, so the refusal is specific to a link that leads
+// nowhere.
+func TestSeatbeltProfileRefusesADenialThroughADanglingLink(t *testing.T) {
+	grant, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(grant, "real")
+	link := filepath.Join(grant, ".secrets")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	profile := Profile{Home: filepath.Dir(grant), Writes: []string{grant}, DenyWrites: []string{filepath.Join(link, "config")}}
+	if _, err := RenderSeatbelt(profile, 0); err == nil || !strings.Contains(err.Error(), "leads nowhere") {
+		t.Fatalf("a denial through a dangling link was not refused: %v", err)
+	}
+	if err := os.Mkdir(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RenderSeatbelt(profile, 0); err != nil {
+		t.Fatalf("with the link's target in place the profile was refused: %v", err)
 	}
 }
 
