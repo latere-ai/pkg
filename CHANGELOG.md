@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.107.0 - 2026-10-21
+
 ### Fixed
 
 - **Built with Go 1.27.3,** which fixes GO-2026-6809, a flaw in the
