@@ -87,8 +87,12 @@ under **Removed** or **Changed** with what to do about it.
   starts from its launcher, which closes every descriptor above stderr when
   the stage starts; a stage with no network has no proxy, and its launcher
   becomes `sandbox-exec` in the same process, so its pid, exit status and
-  process group are as before. Under srt, what a stage inherits is still
-  srt's to decide.
+  process group are as before. The launcher, which runs outside the sandbox,
+  also starts without the dynamic loader's variables (`DYLD_*`) of a stage's
+  environment, which would load a library a stage left in its workspace into
+  it; the stage never received them through `sandbox-exec`, so nothing a
+  stage sees changes. Under srt, what a stage inherits is still srt's to
+  decide.
 - **`hostsandbox` pins a bare repository's folder inside a writable grant
   under Seatbelt.** A bare repository is a folder whose name ends in `.git`,
   holding its config and hooks at the top level. Those were already denied, so

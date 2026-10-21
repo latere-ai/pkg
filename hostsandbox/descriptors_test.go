@@ -210,3 +210,36 @@ func TestALauncherBecomesAStageWithNoNetwork(t *testing.T) {
 		t.Fatalf("a launcher that cannot keep its descriptors exited %d, became %q: %q", code, gotPath, stderr.String())
 	}
 }
+
+// TestALauncherStartsWithoutTheLoadersVariables checks that a stage's
+// DYLD_* variables never reach its launcher, which runs outside the sandbox
+// and would load a library they name, attached or detached and whatever its
+// network, while its other variables reach the stage.
+func TestALauncherStartsWithoutTheLoadersVariables(t *testing.T) {
+	driver := seatbelt(t)
+	for _, network := range []Network{{Mode: NetworkNone}, {Mode: NetworkAllowlist, Domains: []string{"example.com"}}, {Mode: NetworkDenylist}} {
+		spec := stage(t, t.TempDir(), "/usr/bin/env")
+		spec.Network = network
+		spec.Env = map[string]string{"DYLD_INSERT_LIBRARIES": "/a/stage/left.dylib", "DYLD_LIBRARY_PATH": "/a/stage", "STAGE_VALUE": "kept", "GOCOVERDIR": t.TempDir()}
+		command, cleanup, err := driver.Command(context.Background(), spec)
+		if err != nil {
+			t.Fatalf("Command: %v", err)
+		}
+		if slices.ContainsFunc(command.Env, func(entry string) bool { return strings.HasPrefix(entry, "DYLD_") }) {
+			t.Fatalf("%s: the launcher starts with the loader's variables: %v", network.Mode, command.Env)
+		}
+		output, err := command.Output()
+		cleanup()
+		if err != nil || !strings.Contains(string(output), "STAGE_VALUE=kept") || strings.Contains(string(output), "DYLD_") {
+			t.Fatalf("%s: the attached stage's environment = %q, %v", network.Mode, output, err)
+		}
+		handle, err := driver.Launch(context.Background(), spec)
+		if err != nil {
+			t.Fatalf("Launch: %v", err)
+		}
+		waitFor(t, driver, handle)
+		if log := readLog(t, driver, handle); !strings.Contains(log, "STAGE_VALUE=kept") || strings.Contains(log, "DYLD_") {
+			t.Fatalf("%s: the launched stage's environment = %q", network.Mode, log)
+		}
+	}
+}

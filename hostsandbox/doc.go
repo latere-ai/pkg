@@ -244,6 +244,11 @@
 // starts inherits them; in a stage, an inherited file stays writable and an
 // inherited socket stays connected whatever the profile says, since
 // Seatbelt checks a file when it is opened and a socket when it connects.
+// The launcher also starts without the dynamic loader's variables (DYLD_*)
+// of the stage's environment: it runs outside the sandbox and, unlike
+// /bin/sh and sandbox-exec, is no system binary the loader ignores them for,
+// so they would load a library a stage left in its workspace into it, and
+// the stage never received them through sandbox-exec anyway.
 // For a stage with no network, the launcher then becomes sandbox-exec, in
 // the same process. For a stage with a network, a detached stage outlives
 // the process that launched it, so its proxy cannot live there: the

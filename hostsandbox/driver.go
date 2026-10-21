@@ -284,7 +284,7 @@ func (d *Driver) Launch(ctx context.Context, spec StageSpec) (StageHandle, error
 
 	launcher := exec.Command("/bin/sh", "-c", wrapperScript(run.argv, statusPath)) //nolint:gosec,noctx // a quoted argv; the stage outlives this context by design
 	launcher.Dir = spec.Workdir
-	launcher.Env = append(d.environment(base, spec), run.env...)
+	launcher.Env = run.environment(d.environment(base, spec))
 	log, err := os.OpenFile(spec.LogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // the consumer's own log path
 	if err != nil {
 		return StageHandle{}, fmt.Errorf("launch stage %s: open log: %w", spec.Name, err)
@@ -374,7 +374,7 @@ func (d *Driver) Command(ctx context.Context, spec StageSpec) (*exec.Cmd, func()
 	}
 	command := exec.CommandContext(ctx, run.argv[0], run.argv[1:]...) //nolint:gosec // the consumer's argv, never a shell fragment
 	command.Dir = spec.Workdir
-	command.Env = append(d.environment(base, spec), run.env...)
+	command.Env = run.environment(d.environment(base, spec))
 	command.ExtraFiles = run.refusals.files()
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	command.Cancel = func() error { return killGroup(command.Process.Pid) }
@@ -405,6 +405,24 @@ type prepared struct {
 	argv     []string
 	env      []string
 	refusals *refusalPipe
+	// launcher says argv starts this program again as the stage's launcher,
+	// which runs outside the sandbox.
+	launcher bool
+}
+
+// environment is the environment the stage's first process starts with: the
+// stage's own, then what the driver adds. A launcher starts without the
+// dynamic loader's variables (DYLD_*), which would load a library a stage
+// left in its workspace into the launcher, outside the sandbox: this
+// program, unlike /bin/sh and sandbox-exec, is not a system binary the
+// loader ignores them for, and the stage never received them through
+// sandbox-exec before.
+func (p prepared) environment(stage []string) []string {
+	env := append(stage, p.env...)
+	if p.launcher {
+		env = slices.DeleteFunc(env, func(entry string) bool { return strings.HasPrefix(entry, "DYLD_") })
+	}
+	return env
 }
 
 // prepare writes the policy a stage runs under into the files policy names
@@ -461,7 +479,7 @@ func (d *Driver) prepareSeatbelt(spec StageSpec, profile Profile, policy func(ex
 	if err := os.WriteFile(stage, body, 0o600); err != nil {
 		return prepared{}, fmt.Errorf("stage %s: %w", spec.Name, err)
 	}
-	run := prepared{argv: []string{self}, env: []string{stageFileVariable + "=" + stage}}
+	run := prepared{argv: []string{self}, env: []string{stageFileVariable + "=" + stage}, launcher: true}
 	if proxy && spec.OnRefused != nil {
 		if run.refusals, err = newRefusalPipe(); err != nil {
 			return prepared{}, fmt.Errorf("stage %s: %w", spec.Name, err)
