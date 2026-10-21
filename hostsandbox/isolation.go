@@ -17,9 +17,10 @@ const (
 	IsolationAuto Isolation = ""
 	// IsolationSeatbelt runs a stage under macOS's Seatbelt through
 	// /usr/bin/sandbox-exec, with a profile this package renders. It needs
-	// nothing installed. A stage with a network allowlist reaches the
-	// network through a proxy that runs beside it in a launcher process,
-	// which needs the consumer's main to call Main first.
+	// nothing installed, and the consumer's main to call Main first: every
+	// stage starts from a launcher process, which keeps the consumer's
+	// descriptors from it and, for a stage with a network, serves the proxy
+	// it reaches the network through.
 	IsolationSeatbelt Isolation = "seatbelt"
 	// IsolationSRT runs a stage under srt, Anthropic's sandbox runtime:
 	// Seatbelt on macOS, bubblewrap with seccomp on Linux.

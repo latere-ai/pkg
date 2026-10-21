@@ -110,7 +110,8 @@ func (d *Driver) notReady(condition Condition, components ...string) *NotReadyEr
 
 // Preflight reports whether this machine can run the driver, and names what to
 // install when it cannot. Under Seatbelt it needs sandbox-exec, which is part
-// of macOS, and Seatbelt on any other platform is refused. Under srt,
+// of macOS, and a program whose main called Main, since every stage starts
+// from its launcher; Seatbelt on any other platform is refused. Under srt,
 // Windows is refused because srt marks its Windows support as alpha, which
 // is not an isolation boundary.
 func (d *Driver) Preflight(context.Context) error {
@@ -122,6 +123,9 @@ func (d *Driver) Preflight(context.Context) error {
 		}
 		if _, err := os.Stat(sandboxExec); err != nil {
 			return d.notReady(ConditionMissing, "sandbox-exec")
+		}
+		if !launcherInstalled.Load() {
+			return d.noLauncher()
 		}
 		return d.missing(d.config.Requires)
 	}
@@ -155,19 +159,18 @@ func (d *Driver) missing(names []string) error {
 // Capabilities declares the egress policies the driver enforces. There is no
 // open mode under either isolation: srt is allow-only and refuses a
 // wildcard, and the Seatbelt profile allows no destination but the egress
-// proxy. Under Seatbelt the allowlist and the deny list are declared only
-// once this program's main has called Main, because without it no proxy can
-// run beside a stage and a stage with either is refused; srt declares no
-// deny list, since it cannot admit a host it is not given.
+// proxy. Under Seatbelt nothing is declared until this program's main has
+// called Main, because without it no launcher can run a stage and every
+// stage is refused; srt declares no deny list, since it cannot admit a host
+// it is not given.
 // PackageManagers and MaxAttachmentBytes are left to the consumer.
 func (d *Driver) Capabilities() Capabilities {
 	modes := map[string]bool{NetworkNone: true, NetworkAllowlist: true}
 	if d.Isolation() == IsolationSeatbelt {
-		if launcherInstalled.Load() {
-			modes[NetworkDenylist] = true
-		} else {
-			delete(modes, NetworkAllowlist)
+		if !launcherInstalled.Load() {
+			return Capabilities{NetworkModes: map[string]bool{}}
 		}
+		modes[NetworkDenylist] = true
 	}
 	return Capabilities{NetworkModes: modes}
 }
@@ -428,13 +431,16 @@ func (d *Driver) prepare(spec StageSpec, profile Profile, policy func(ext string
 	return prepared{argv: append([]string{srt, "--settings", path, "--"}, spec.Argv...)}, nil
 }
 
-// prepareSeatbelt runs a stage with no network straight under sandbox-exec.
-// A stage with an allowlist or a deny list runs under this program started
-// again as its launcher (Main), which serves the egress proxy and renders
-// the profile once it knows the proxy's port.
+// prepareSeatbelt runs a stage under this program started again as its
+// launcher (Main), which keeps this program's descriptors from it. For a
+// stage with no network the profile is rendered here and the launcher
+// becomes sandbox-exec; for one with an allowlist or a deny list, the
+// launcher serves the egress proxy and renders the profile once it knows the
+// proxy's port.
 func (d *Driver) prepareSeatbelt(spec StageSpec, profile Profile, policy func(ext string) string) (prepared, error) {
 	path := policy(".sb")
-	if !proxiedStage(spec) {
+	proxy := proxiedStage(spec)
+	if !proxy {
 		text, err := RenderSeatbelt(profile, 0)
 		if err != nil {
 			return prepared{}, err
@@ -442,18 +448,12 @@ func (d *Driver) prepareSeatbelt(spec StageSpec, profile Profile, policy func(ex
 		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 			return prepared{}, fmt.Errorf("stage %s: %w", spec.Name, err)
 		}
-		// The "--" ends sandbox-exec's own options, so an argv that begins
-		// with a dash is the stage's.
-		return prepared{argv: append([]string{sandboxExec, "-f", path, "--"}, spec.Argv...)}, nil
-	}
-	if !launcherInstalled.Load() {
-		return prepared{}, d.noLauncher()
 	}
 	self, err := executable()
 	if err != nil {
 		return prepared{}, fmt.Errorf("stage %s: finding this program to launch the stage with: %w", spec.Name, err)
 	}
-	body, err := json.Marshal(stageFile{Profile: profile, Argv: spec.Argv, SandboxExec: sandboxExec, Policy: path, Local: localDestinations, Refusals: spec.OnRefused != nil})
+	body, err := json.Marshal(stageFile{Profile: profile, Argv: spec.Argv, SandboxExec: sandboxExec, Policy: path, Local: localDestinations, Refusals: proxy && spec.OnRefused != nil, NoProxy: !proxy})
 	if err != nil {
 		return prepared{}, fmt.Errorf("stage %s: %w", spec.Name, err)
 	}
@@ -462,7 +462,7 @@ func (d *Driver) prepareSeatbelt(spec StageSpec, profile Profile, policy func(ex
 		return prepared{}, fmt.Errorf("stage %s: %w", spec.Name, err)
 	}
 	run := prepared{argv: []string{self}, env: []string{stageFileVariable + "=" + stage}}
-	if spec.OnRefused != nil {
+	if proxy && spec.OnRefused != nil {
 		if run.refusals, err = newRefusalPipe(); err != nil {
 			return prepared{}, fmt.Errorf("stage %s: %w", spec.Name, err)
 		}
@@ -486,13 +486,13 @@ func proxiedStage(spec StageSpec) bool {
 	return proxied(spec.Network) || spec.Network.Mode == NetworkAllowlist && spec.OnRefused != nil && launcherInstalled.Load()
 }
 
-// noLauncher is the refusal for a stage with an allowlist or a deny list
-// under Seatbelt in a program whose main did not call Main.
+// noLauncher is the refusal of Seatbelt in a program whose main did not call
+// Main.
 func (d *Driver) noLauncher() *NotReadyError {
 	err := d.notReady(ConditionNoLauncher)
-	err.Remediation = "This program does not call hostsandbox.Main at the start of main, so a stage under Seatbelt cannot get its network allowlist or deny list: " +
-		"the network's proxy runs in a launcher the driver starts from this program. Call hostsandbox.Main() as the first statement of main, " +
-		"or, for an allowlist, compose the driver with Isolation: IsolationSRT."
+	err.Remediation = "This program does not call hostsandbox.Main at the start of main, so no stage can run under Seatbelt: " +
+		"every stage runs under a launcher the driver starts from this program, which keeps this program's descriptors from the stage and serves its network's proxy. " +
+		"Call hostsandbox.Main() as the first statement of main, or compose the driver with Isolation: IsolationSRT."
 	return err
 }
 

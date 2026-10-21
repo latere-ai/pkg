@@ -172,8 +172,9 @@
 // continues it outside the sandbox (git rebase, cherry-pick or revert
 // --continue). srt protects the same kinds of path at its working directory.
 //
-// A stage with no network runs straight under sandbox-exec and may connect
-// to nothing: no address, no name lookup, no local socket. A stage with a
+// A stage with no network runs under sandbox-exec with a profile that lets
+// it connect to nothing: no address, no name lookup, no local socket. A
+// stage with a
 // network allowlist reaches the network only through an egress proxy on a
 // loopback port, the one destination its profile allows. The proxy admits a
 // CONNECT by its target host and port and a plain request by its absolute
@@ -234,25 +235,29 @@
 // refusals rather than holding up the proxy. The stage's log keeps its line
 // for every refusal, for whatever runs in the stage.
 //
-// A detached stage outlives the process that launched it, so its proxy
-// cannot live there. The driver starts the consumer's own program again as
-// the stage's launcher, which serves the proxy, renders the profile once the
-// proxy's port is known, runs the stage under sandbox-exec and exits with
-// its exit code. That needs the consumer's main to call Main as its first
-// statement, which is also what makes IsolationAuto pick Seatbelt: a program
-// that has not called it keeps srt. Under an explicit IsolationSeatbelt
-// without Main, an allowlisted stage is refused with a NotReadyError of
-// ConditionNoLauncher, as is a stage with a deny list, Capabilities declares
-// neither, and stages with no network run as before. The cost is one
+// Every stage starts from the consumer's own program started again as the
+// stage's launcher. The launcher passes the stage its stdin, stdout and
+// stderr and no other descriptor: every one it holds above stderr, inherited
+// or its own, is closed when the stage starts. The consumer's program may
+// hold descriptors open without close-on-exec, ones it was started with or
+// made through syscall.Pipe, Dup2, cgo or a C library, and every process it
+// starts inherits them; in a stage, an inherited file stays writable and an
+// inherited socket stays connected whatever the profile says, since
+// Seatbelt checks a file when it is opened and a socket when it connects.
+// For a stage with no network, the launcher then becomes sandbox-exec, in
+// the same process. For a stage with a network, a detached stage outlives
+// the process that launched it, so its proxy cannot live there: the
+// launcher serves the proxy, renders the profile once the proxy's port is
+// known, runs the stage under sandbox-exec and exits with its exit code.
+// That needs the consumer's main to call Main as its first statement, which
+// is also what makes IsolationAuto pick Seatbelt: a program that has not
+// called it keeps srt. Under an explicit IsolationSeatbelt without Main,
+// Preflight, Launch and Command refuse with a NotReadyError of
+// ConditionNoLauncher, and Capabilities declares nothing. The cost is one
 // launcher process per stage with a network, the consumer's binary, which
-// holds the stage's environment and runs outside the sandbox. The launcher
-// passes the stage its stdin, stdout and stderr and no other descriptor:
-// every one it holds above stderr, inherited or its own, is closed when the
-// stage starts, since a descriptor open in the stage is writable whatever
-// its profile says. A stage with no network has no launcher: sandbox-exec
-// starts from the consumer's program, and so inherits every descriptor that
-// program holds open without close-on-exec, whether it was started with it
-// or made it through syscall.Pipe, Dup2, cgo or a C library.
+// holds the stage's environment and runs outside the sandbox. Under srt,
+// the driver starts srt itself, so what a stage inherits is srt's to
+// decide.
 //
 // # The network policy
 //
@@ -279,7 +284,8 @@
 // # Readiness
 //
 // Under Seatbelt, Preflight needs /usr/bin/sandbox-exec, which is part of
-// macOS, and Config.Requires; nothing is installed. Under srt, Preflight
+// macOS, a program whose main called Main, and Config.Requires; nothing is
+// installed. Under srt, Preflight
 // resolves srt, the executables srt needs on the platform (bwrap,
 // which the bubblewrap package installs, socat and ripgrep on Linux, ripgrep
 // on macOS), and

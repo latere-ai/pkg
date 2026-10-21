@@ -62,18 +62,33 @@ under **Removed** or **Changed** with what to do about it.
   call the cleanup, which now waits up to two seconds for the refusals still
   on their way.
 
+### Changed
+
+- **Seatbelt needs `hostsandbox.Main` for every stage.** A stage with no
+  network now starts from its launcher too, so under an explicit
+  `IsolationSeatbelt` in a program whose `main` does not call `Main`,
+  `Preflight`, `Launch` and `Command` refuse with a `NotReadyError` of
+  `ConditionNoLauncher`, and `Capabilities` declares no network mode.
+  Before, such a program could still run stages with no network. Call
+  `hostsandbox.Main()` as the first statement of `main`, or compose the
+  driver with `Isolation: IsolationSRT`. `IsolationAuto` is unaffected: it
+  picks Seatbelt only in a program that calls `Main`.
+
 ### Fixed
 
-- **`hostsandbox` keeps the descriptors its launcher inherited from the
-  stage it starts under Seatbelt.** A stage with a network allowlist or a
-  deny list now holds its stdin, stdout and stderr and nothing else. Before,
-  a descriptor the program calling the driver held open without
-  close-on-exec passed through the launcher to the stage, and was writable
-  there whatever the stage's profile said, since Seatbelt checks a file when
-  it is opened. A stage with no network has no launcher and still inherits
-  every such descriptor from that program, whether the program was started
-  with it or made it through `syscall.Pipe`, `Dup2`, cgo or a C library, so
-  hold none open while starting one.
+- **A stage under Seatbelt holds its stdin, stdout and stderr and no other
+  descriptor of the program calling the driver.** Before, a descriptor that
+  program held open without close-on-exec, one it was started with or made
+  through `syscall.Pipe`, `Dup2`, cgo or a C library, passed to the stage.
+  There an inherited file stayed writable and an inherited socket stayed
+  connected whatever the stage's profile said, since Seatbelt checks a file
+  when it is opened and a socket when it connects, so a stage with no
+  network could reach the network through a leaked socket. Every stage now
+  starts from its launcher, which closes every descriptor above stderr when
+  the stage starts; a stage with no network has no proxy, and its launcher
+  becomes `sandbox-exec` in the same process, so its pid, exit status and
+  process group are as before. Under srt, what a stage inherits is still
+  srt's to decide.
 - **`hostsandbox` pins a bare repository's folder inside a writable grant
   under Seatbelt.** A bare repository is a folder whose name ends in `.git`,
   holding its config and hooks at the top level. Those were already denied, so

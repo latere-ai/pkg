@@ -46,16 +46,20 @@ var executable = os.Executable
 // Main runs this process as a stage's launcher when the driver started it as
 // one, and otherwise returns at once.
 //
-// A program whose stages run under Seatbelt with a network allowlist calls
-// Main as the first statement of its main function. The allowlist is
-// enforced by a proxy, and a detached stage outlives the process that
-// launched it, so the proxy cannot live in that process: the driver starts
-// this program again as the stage's launcher, which serves the proxy on a
-// loopback port, renders the stage's profile to allow that port alone, runs
-// the stage under sandbox-exec and exits with its exit code. A program that
-// does not call Main keeps srt under IsolationAuto; under an explicit
-// IsolationSeatbelt its allowlisted stages are refused with a NotReadyError
-// and its stages with no network run as before.
+// A program whose stages run under Seatbelt calls Main as the first
+// statement of its main function, since the driver starts every such stage
+// from this program started again as the stage's launcher. The launcher
+// keeps from the stage every descriptor above stderr this program holds,
+// which a stage would otherwise inherit and could write whatever its profile
+// says. For a stage with a network, it also serves the proxy that enforces
+// the network: a detached stage outlives the process that launched it, so
+// the proxy cannot live there. It serves the proxy on a loopback port,
+// renders the stage's profile to allow that port alone, runs the stage under
+// sandbox-exec and exits with its exit code. For a stage with no network,
+// it becomes sandbox-exec, the stage under its rendered profile, in the same
+// process. A program that does not call Main keeps srt under IsolationAuto;
+// under an explicit IsolationSeatbelt, Preflight, Launch and Command refuse
+// with a NotReadyError of ConditionNoLauncher.
 func Main() {
 	path, ok := os.LookupEnv(stageFileVariable)
 	if !ok {
@@ -78,6 +82,10 @@ type stageFile struct {
 	// Refusals says the launcher holds the write end of the refusals' pipe
 	// on refusalDescriptor.
 	Refusals bool `json:"refusals,omitempty"`
+	// NoProxy says the stage has no network: its profile, already at
+	// Policy, allows none, and the launcher serves no proxy and becomes the
+	// stage.
+	NoProxy bool `json:"no_proxy,omitempty"`
 }
 
 // runLauncher serves the stage's egress proxy, runs the stage under
@@ -99,6 +107,17 @@ func runLauncher(path string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	if len(stage.Argv) == 0 || stage.SandboxExec == "" || stage.Policy == "" {
 		return fail("the stage file %s names no argv, sandbox-exec or profile path", path)
+	}
+	if stage.NoProxy {
+		if err := keepDescriptorsFromStage(); err != nil {
+			return fail("keeping this launcher's descriptors from the stage: %v", err)
+		}
+		// The "--" ends sandbox-exec's own options, so an argv that begins
+		// with a dash is the stage's. On success the stage replaces this
+		// process, keeping its pid, its stdin, stdout and stderr, and its
+		// place in the stage's process group.
+		argv := append([]string{stage.SandboxExec, "-f", stage.Policy, "--"}, stage.Argv...)
+		return fail("running the stage: %v", execStage(stage.SandboxExec, argv, without(os.Environ(), stageFileVariable)))
 	}
 	proxy, err := egressFor(stage.Profile.Network, stderr, stage.Local)
 	if err != nil {
@@ -177,6 +196,20 @@ func runLauncher(path string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return exitCode(command.Run(), stderr)
 }
 
+// execStage replaces this process with the stage. A test replaces it.
+var execStage = syscall.Exec
+
+// without is environ less the variables names.
+func without(environ []string, names ...string) []string {
+	out := make([]string, 0, len(environ))
+	for _, entry := range environ {
+		if name, _, _ := strings.Cut(entry, "="); !slices.Contains(names, name) {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
 // openDescriptors lists the directory naming this process's open
 // descriptors, /dev/fd on macOS and Linux alike. A test replaces it.
 var openDescriptors = func() ([]os.DirEntry, error) { return os.ReadDir("/dev/fd") }
@@ -211,14 +244,7 @@ var proxyVariables = []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_pr
 // stage file and any proxy settings, with every proxy variable naming the
 // egress proxy.
 func proxyEnvironment(environ []string, port int) []string {
-	drop := append([]string{stageFileVariable, "NO_PROXY", "no_proxy"}, proxyVariables...)
-	out := make([]string, 0, len(environ)+len(proxyVariables))
-	for _, entry := range environ {
-		name, _, _ := strings.Cut(entry, "=")
-		if !slices.Contains(drop, name) {
-			out = append(out, entry)
-		}
-	}
+	out := without(environ, append([]string{stageFileVariable, "NO_PROXY", "no_proxy"}, proxyVariables...)...)
 	address := "http://127.0.0.1:" + strconv.Itoa(port)
 	for _, name := range proxyVariables {
 		out = append(out, name+"="+address)

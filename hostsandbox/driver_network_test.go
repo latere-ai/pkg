@@ -85,7 +85,7 @@ func TestADenylistStageRunsBesideItsProxy(t *testing.T) {
 	withoutLauncher(t)
 	spec.Network = Network{Mode: NetworkDenylist}
 	var notReady *NotReadyError
-	if _, err := driver.Launch(context.Background(), spec); !errors.As(err, &notReady) || notReady.Condition != ConditionNoLauncher || !strings.Contains(notReady.Remediation, "deny list") {
+	if _, err := driver.Launch(context.Background(), spec); !errors.As(err, &notReady) || notReady.Condition != ConditionNoLauncher || !strings.Contains(notReady.Remediation, "hostsandbox.Main") {
 		t.Fatalf("Launch without a launcher = %v", err)
 	}
 }

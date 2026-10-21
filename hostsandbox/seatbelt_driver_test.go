@@ -104,15 +104,15 @@ func TestSeatbeltPreflight(t *testing.T) {
 }
 
 // TestSeatbeltDeclaresTheAllowlistOnlyWithALauncher checks the declaration:
-// without Main no proxy can run beside a stage, so the allowlist is not
-// declared, and srt declares it either way.
+// without Main no launcher can run a stage, so nothing is declared, and srt
+// declares the allowlist either way.
 func TestSeatbeltDeclaresTheAllowlistOnlyWithALauncher(t *testing.T) {
 	driver := New(Config{Isolation: IsolationSeatbelt, Platform: Darwin})
 	if modes := driver.Capabilities().NetworkModes; !modes[NetworkNone] || !modes[NetworkAllowlist] || modes[NetworkOpen] {
 		t.Fatalf("with a launcher, modes = %v", modes)
 	}
 	withoutLauncher(t)
-	if modes := driver.Capabilities().NetworkModes; !modes[NetworkNone] || modes[NetworkAllowlist] {
+	if modes := driver.Capabilities().NetworkModes; len(modes) != 0 {
 		t.Fatalf("without a launcher, modes = %v", modes)
 	}
 	if modes := New(Config{Isolation: IsolationSRT}).Capabilities().NetworkModes; !modes[NetworkAllowlist] {
@@ -121,9 +121,10 @@ func TestSeatbeltDeclaresTheAllowlistOnlyWithALauncher(t *testing.T) {
 }
 
 // TestSeatbeltLaunchRunsAStageWithNoNetworkUnderSandboxExec checks the
-// bookkeeping of a stage with no network: its profile beside the log, the
-// stage run under sandbox-exec with the argv after "--", its status and
-// output recovered as under srt.
+// bookkeeping of a stage with no network: its profile rendered beside the
+// log, a stage file that has its launcher serve no proxy, the stage run
+// under sandbox-exec with the argv after "--", its status and output
+// recovered as under srt.
 func TestSeatbeltLaunchRunsAStageWithNoNetworkUnderSandboxExec(t *testing.T) {
 	driver := seatbelt(t)
 	spec := stage(t, t.TempDir(), "/bin/sh", "-c", "printf 'under seatbelt'; exit 5")
@@ -139,8 +140,10 @@ func TestSeatbeltLaunchRunsAStageWithNoNetworkUnderSandboxExec(t *testing.T) {
 	if err != nil || !strings.Contains(string(profile), "(deny default)") || strings.Contains(string(profile), "network") {
 		t.Fatalf("the profile beside the log = %q, %v", profile, err)
 	}
-	if _, err := os.Stat(sidecar(spec.LogPath, ".stage.json")); err == nil {
-		t.Fatal("a stage with no network was given a launcher")
+	var file stageFile
+	body, err := os.ReadFile(sidecar(spec.LogPath, ".stage.json"))
+	if err != nil || json.Unmarshal(body, &file) != nil || !file.NoProxy || file.Refusals || file.Policy != sidecar(spec.LogPath, ".sb") {
+		t.Fatalf("the stage file of a stage with no network = %q, %v", body, err)
 	}
 }
 
@@ -178,26 +181,29 @@ func TestSeatbeltLaunchRunsAnAllowlistedStageUnderItsLauncher(t *testing.T) {
 
 // TestSeatbeltRefusesAnAllowlistWithoutALauncher checks that an allowlisted
 // stage in a program that did not call Main is refused with the remedy,
-// before anything runs, while a stage with no network still launches.
+// before anything runs, and so is a stage with no network, since without
+// its launcher it would inherit every descriptor this program leaks.
 func TestSeatbeltRefusesAnAllowlistWithoutALauncher(t *testing.T) {
 	driver := seatbelt(t)
 	withoutLauncher(t)
-	spec := stage(t, t.TempDir(), "/bin/true")
-	spec.Network = Network{Mode: NetworkAllowlist, Domains: []string{"example.com"}}
-	_, err := driver.Launch(context.Background(), spec)
 	var notReady *NotReadyError
-	if !errors.As(err, &notReady) || notReady.Condition != ConditionNoLauncher || !strings.Contains(notReady.Remediation, "hostsandbox.Main") {
-		t.Fatalf("Launch = %v, want the launcher's remedy", err)
+	if err := driver.Preflight(context.Background()); !errors.As(err, &notReady) || notReady.Condition != ConditionNoLauncher {
+		t.Fatalf("Preflight = %v, want the launcher's remedy", err)
 	}
-	if _, _, err := driver.Command(context.Background(), spec); !errors.As(err, &notReady) {
-		t.Fatalf("Command = %v, want the launcher's remedy", err)
+	for _, network := range []Network{{Mode: NetworkAllowlist, Domains: []string{"example.com"}}, {Mode: NetworkAllowlist}, {Mode: NetworkNone}} {
+		spec := stage(t, t.TempDir(), "/bin/true")
+		spec.Network = network
+		_, err := driver.Launch(context.Background(), spec)
+		if !errors.As(err, &notReady) || notReady.Condition != ConditionNoLauncher || !strings.Contains(notReady.Remediation, "hostsandbox.Main") {
+			t.Fatalf("Launch(%+v) = %v, want the launcher's remedy", network, err)
+		}
+		if _, _, err := driver.Command(context.Background(), spec); !errors.As(err, &notReady) {
+			t.Fatalf("Command(%+v) = %v, want the launcher's remedy", network, err)
+		}
+		if entries, err := os.ReadDir(filepath.Dir(spec.LogPath)); err != nil || len(entries) != 0 {
+			t.Fatalf("a refused stage left %v, %v", entries, err)
+		}
 	}
-	spec.Network = Network{Mode: NetworkAllowlist}
-	handle, err := driver.Launch(context.Background(), spec)
-	if err != nil {
-		t.Fatalf("an empty allowlist, which is no network, was refused: %v", err)
-	}
-	waitFor(t, driver, handle)
 }
 
 // TestSeatbeltCommandRunsAttached checks the attached form under Seatbelt,
@@ -225,16 +231,19 @@ func TestSeatbeltCommandRunsAttached(t *testing.T) {
 		if !strings.HasPrefix(string(output), want) {
 			t.Fatalf("%s: output = %q, want %q", network.Mode, output, want)
 		}
-		// The profile follows sandbox-exec's -f, or the stage file names it.
+		// The stage file names the profile's directory.
 		dir := ""
-		if network.Mode == NetworkNone {
-			dir = filepath.Dir(command.Args[2])
+		for _, entry := range command.Env {
+			if path, ok := strings.CutPrefix(entry, stageFileVariable+"="); ok {
+				dir = filepath.Dir(path)
+			}
+		}
+		if dir == "" {
+			t.Fatalf("%s: the command names no stage file: %v", network.Mode, command.Env)
 		}
 		cleanup()
-		if dir != "" {
-			if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
-				t.Fatalf("the profile's directory %s outlived the cleanup: %v", dir, err)
-			}
+		if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("the profile's directory %s outlived the cleanup: %v", dir, err)
 		}
 	}
 }
