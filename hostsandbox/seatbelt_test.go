@@ -309,35 +309,47 @@ func readProfileStrings(text string) ([][]string, error) {
 // FuzzSeatbeltString checks that any value without a control character is
 // written as one string of the profile language that reads back as itself:
 // one literal when it fits in one, and otherwise literals that each fit,
-// none ending inside a character of a value that is valid UTF-8.
+// none ending inside a character of a value that is valid UTF-8. The fuzzed
+// input is checked alone and behind fillers that end shift bytes short of
+// the first and of the second cut, so a cut falls inside the input at any
+// offset while the input stays short, at most 64 bytes: the fuzzer then
+// explores instead of spending its time shrinking inputs a kilobyte long.
 func FuzzSeatbeltString(f *testing.F) {
-	for _, seed := range []string{
-		"", "/a", `a"b`, `a\b`, `\"`, "/Users/op/My Files",
-		strings.Repeat("a", seatbeltStringMax), strings.Repeat("a", 2*seatbeltStringMax+5),
-		strings.Repeat("a", seatbeltStringMax-1) + "项目", strings.Repeat(`\`, seatbeltStringMax+1),
-		strings.Repeat("a", seatbeltStringMax-1) + `"b`, strings.Repeat("\x80", 2*seatbeltStringMax),
+	for _, seed := range []struct {
+		input string
+		shift uint8
+	}{
+		{"", 0}, {"/a", 1}, {`a"b`, 1}, {`a\b`, 1}, {`\"`, 0}, {`\"`, 1}, {`a\\`, 2}, {"/Users/op/My Files", 4},
+		{"项目", 0}, {"项目", 1}, {"项目", 2}, {"项目", 3}, {"\x80\x80\x80\x80\x80", 2},
 	} {
-		f.Add(seed)
+		f.Add(seed.input, seed.shift)
 	}
-	f.Fuzz(func(t *testing.T, value string) {
-		if strings.ContainsFunc(value, isControl) {
+	f.Fuzz(func(t *testing.T, input string, shift uint8) {
+		// A cut falls in the input's first 32 bytes, so a longer input adds
+		// nothing but bytes for the fuzzer to shrink.
+		if strings.ContainsFunc(input, isControl) || len(input) > 64 {
 			return
 		}
-		quoted := sbString(value)
-		values, err := readProfileStrings(quoted)
-		if err != nil {
-			t.Fatalf("sbString(%.80q) = %.80q does not read: %v", value, quoted, err)
+		behind := func(cuts int) string {
+			return strings.Repeat("a", cuts*seatbeltStringMax-int(shift%32)) + input
 		}
-		if len(values) != 1 || strings.Join(values[0], "") != value {
-			t.Fatalf("sbString(%.80q) = %.80q reads back as %.80q", value, quoted, values)
-		}
-		if fits := len(value) <= seatbeltStringMax; fits != strings.HasPrefix(quoted, `"`) || fits != (len(values[0]) == 1) {
-			t.Fatalf("sbString(%.80q) = %.80q: a value of %d bytes is written in %d literals", value, quoted, len(value), len(values[0]))
-		}
-		if utf8.ValidString(value) {
-			for _, piece := range values[0] {
-				if !utf8.ValidString(piece) {
-					t.Fatalf("sbString(%.80q) splits a character: %.80q", value, piece)
+		for _, value := range []string{input, behind(1), behind(2)} {
+			quoted := sbString(value)
+			values, err := readProfileStrings(quoted)
+			if err != nil {
+				t.Fatalf("sbString(%.80q) = %.80q does not read: %v", value, quoted, err)
+			}
+			if len(values) != 1 || strings.Join(values[0], "") != value {
+				t.Fatalf("sbString(%.80q) = %.80q reads back as %.80q", value, quoted, values)
+			}
+			if fits := len(value) <= seatbeltStringMax; fits != strings.HasPrefix(quoted, `"`) || fits != (len(values[0]) == 1) {
+				t.Fatalf("sbString(%.80q) = %.80q: a value of %d bytes is written in %d literals", value, quoted, len(value), len(values[0]))
+			}
+			if utf8.ValidString(value) {
+				for _, piece := range values[0] {
+					if !utf8.ValidString(piece) {
+						t.Fatalf("sbString(%.80q) splits a character: %.80q", value, piece)
+					}
 				}
 			}
 		}
