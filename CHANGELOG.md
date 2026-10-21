@@ -10,12 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
-## v0.107.0 - 2026-10-21
-
 ### Fixed
 
-- **Built with Go 1.27.3,** which fixes GO-2026-6809, a flaw in the
-  standard library's certificate verification that this code can reach.
 - **`hostsandbox` denies cloning a directory under Seatbelt.** A directory
   clone copies every file below it, the ones a stage may not read among them,
   into the clone, which the stage may read. Cloning a directory is now denied
@@ -31,6 +27,13 @@ under **Removed** or **Changed** with what to do about it.
   through a symbolic link that leads nowhere is refused, with an error naming
   the link. Creating ordinary files and directories elsewhere in the folder
   is unchanged.
+
+## v0.107.0 - 2026-10-21
+
+### Fixed
+
+- **Built with Go 1.27.3,** which fixes GO-2026-6809, a flaw in the
+  standard library's certificate verification that this code can reach.
 - **`hostsandbox` runs a stage whose writable folder has a long path under
   Seatbelt.** macOS's sandbox-exec reads at most 1023 bytes in one string of
   a profile and refuses the whole profile over that, so every command exited
