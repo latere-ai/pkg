@@ -584,12 +584,21 @@ func connectStage(targets string) int {
 	return 0
 }
 
-// forgeStage writes a forged refusal into every descriptor from 3 to 255
-// that it holds, as a stage would to have its own host offered to the
-// person, and prints how many accepted the write.
+// forgeStage writes a forged refusal into every descriptor above stderr
+// that it holds, as listed in /dev/fd, as a stage would to have its own host
+// offered to the person, and prints how many accepted the write.
 func forgeStage() int {
+	entries, err := os.ReadDir("/dev/fd")
+	if err != nil {
+		fmt.Println(err)
+		return 1
+	}
 	written := 0
-	for fd := 3; fd < 256; fd++ {
+	for _, entry := range entries {
+		fd, err := strconv.Atoi(entry.Name())
+		if err != nil || fd <= 2 {
+			continue
+		}
 		if _, err := syscall.Write(fd, []byte(`{"host":"forged.test","port":443}`+"\n")); err == nil {
 			written++
 		}
@@ -659,6 +668,49 @@ func fcntl(fd, cmd int) (int, error) {
 }
 
 func (nopCloser) Close() error { return nil }
+
+// TestTheLauncherKeepsWhatItInheritedFromTheStage runs the launcher in this
+// process, which holds a pipe open without close-on-exec as a program that
+// launches stages may, with a stage that writes a forged refusal into every
+// descriptor above stderr it holds, and checks that the stage holds none.
+func TestTheLauncherKeepsWhatItInheritedFromTheStage(t *testing.T) {
+	fakeSandboxExec(t)
+	var leaked [2]int
+	if err := syscall.Pipe(leaked[:]); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = syscall.Close(leaked[0]); _ = syscall.Close(leaked[1]) })
+	// A descriptor far above the first few is kept from the stage as well;
+	// F_DUPFD makes one at 900 or above that a child inherits.
+	moved, _, errno := syscall.Syscall(syscall.SYS_FCNTL, uintptr(leaked[1]), syscall.F_DUPFD, 900)
+	if errno != 0 {
+		t.Fatal(errno)
+	}
+	high := int(moved)
+	t.Cleanup(func() { _ = syscall.Close(high) })
+	if flags, err := fcntl(leaked[1], syscall.F_GETFD); err != nil || flags&syscall.FD_CLOEXEC != 0 {
+		t.Fatalf("the pipe is not one a child inherits: flags %d, %v", flags, err)
+	}
+	t.Setenv(forgeVariable, "1")
+	t.Setenv("GOCOVERDIR", t.TempDir())
+	path, _ := writeStage(t, stageFile{Profile: Profile{Network: Network{Mode: NetworkAllowlist, Domains: []string{"allowed.test"}}}, Argv: []string{os.Args[0]}, SandboxExec: sandboxExec})
+	stdout := &lockedBuffer{}
+	if code := runLauncher(path, strings.NewReader(""), stdout, io.Discard); code != 0 || !strings.Contains(stdout.String(), "forged into 0") {
+		t.Fatalf("the launcher exited %d and the stage said %q", code, stdout.String())
+	}
+	for _, fd := range []int{leaked[1], high} {
+		if flags, err := fcntl(fd, syscall.F_GETFD); err != nil || flags&syscall.FD_CLOEXEC == 0 {
+			t.Fatalf("the inherited descriptor %d stays open across exec: flags %d, %v", fd, flags, err)
+		}
+	}
+	saved := openDescriptors
+	t.Cleanup(func() { openDescriptors = saved })
+	openDescriptors = func() ([]os.DirEntry, error) { return nil, errors.New("no descriptor list") }
+	stderr := &lockedBuffer{}
+	if code := runLauncher(path, strings.NewReader(""), io.Discard, stderr); code != launcherExit || !strings.Contains(stderr.String(), "no descriptor list") {
+		t.Fatalf("a launcher that cannot keep its descriptors exited %d: %q", code, stderr.String())
+	}
+}
 
 // TestOpenRefusalsTakesOnlyAPipe checks the launcher's side of the pipe: it
 // takes descriptor 3 only when it is a pipe, and keeps it from the stage it

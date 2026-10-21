@@ -64,6 +64,16 @@ under **Removed** or **Changed** with what to do about it.
 
 ### Fixed
 
+- **`hostsandbox` keeps the descriptors its launcher inherited from the
+  stage it starts under Seatbelt.** A stage with a network allowlist or a
+  deny list now holds its stdin, stdout and stderr and nothing else. Before,
+  a descriptor the program calling the driver held open without
+  close-on-exec passed through the launcher to the stage, and was writable
+  there whatever the stage's profile said, since Seatbelt checks a file when
+  it is opened. A stage with no network has no launcher and still inherits
+  every such descriptor from that program, whether the program was started
+  with it or made it through `syscall.Pipe`, `Dup2`, cgo or a C library, so
+  hold none open while starting one.
 - **`hostsandbox` pins a bare repository's folder inside a writable grant
   under Seatbelt.** A bare repository is a folder whose name ends in `.git`,
   holding its config and hooks at the top level. Those were already denied, so

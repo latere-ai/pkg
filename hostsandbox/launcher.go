@@ -166,12 +166,39 @@ func runLauncher(path string, stdin io.Reader, stdout, stderr io.Writer) int {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
 	defer signal.Stop(signals)
+	if err := keepDescriptorsFromStage(); err != nil {
+		return fail("keeping this launcher's descriptors from the stage: %v", err)
+	}
 	// The "--" ends sandbox-exec's own options, so an argv that begins with
 	// a dash is the stage's.
 	command := exec.Command(stage.SandboxExec, append([]string{"-f", stage.Policy, "--"}, stage.Argv...)...) //nolint:gosec,noctx // the driver's stage; it ends with its process group
 	command.Stdin, command.Stdout, command.Stderr = stdin, stdout, stderr
 	command.Env = proxyEnvironment(os.Environ(), port)
 	return exitCode(command.Run(), stderr)
+}
+
+// openDescriptors lists the directory naming this process's open
+// descriptors, /dev/fd on macOS and Linux alike. A test replaces it.
+var openDescriptors = func() ([]os.DirEntry, error) { return os.ReadDir("/dev/fd") }
+
+// keepDescriptorsFromStage marks every descriptor above stderr to close when
+// the launcher starts the stage, so the stage inherits its stdin, stdout and
+// stderr and nothing else: not the refusals' pipe, and not a descriptor the
+// program that launched the stage held open without close-on-exec, which
+// passes to every process it starts and would reach the stage writable
+// whatever its profile says, since Seatbelt checks a file when it is
+// opened.
+func keepDescriptorsFromStage() error {
+	entries, err := openDescriptors()
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if fd, err := strconv.Atoi(entry.Name()); err == nil && fd > 2 {
+			syscall.CloseOnExec(fd)
+		}
+	}
+	return nil
 }
 
 // proxyVariables are the variables HTTP clients read their proxy from. The

@@ -245,7 +245,14 @@
 // ConditionNoLauncher, as is a stage with a deny list, Capabilities declares
 // neither, and stages with no network run as before. The cost is one
 // launcher process per stage with a network, the consumer's binary, which
-// holds the stage's environment and runs outside the sandbox.
+// holds the stage's environment and runs outside the sandbox. The launcher
+// passes the stage its stdin, stdout and stderr and no other descriptor:
+// every one it holds above stderr, inherited or its own, is closed when the
+// stage starts, since a descriptor open in the stage is writable whatever
+// its profile says. A stage with no network has no launcher: sandbox-exec
+// starts from the consumer's program, and so inherits every descriptor that
+// program holds open without close-on-exec, whether it was started with it
+// or made it through syscall.Pipe, Dup2, cgo or a C library.
 //
 // # The network policy
 //
