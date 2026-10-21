@@ -103,15 +103,26 @@ under **Removed** or **Changed** with what to do about it.
   operator later pushes to by its `.git` path cannot be swapped for one
   carrying hooks of the stage's choosing. Moving the ordinary folder that holds
   one still works and carries it along, still protected, and nothing named
-  `*.git` can be created at the path it left. Branches and tags whose names
-  end in `.git` are unaffected: git stores them under its refs and logs, where
-  such names may still be created and removed.
+  `*.git` can be created at the path it left. A bare repository moved into a
+  gitdir's `refs`, `logs` or `objects`, where everyday git writes freely, keeps
+  its config, hooks, server-info exclude and attributes, and the files that
+  point git at another repository denied, so it cannot be edited there and moved
+  back. The rule that makes this hold: a stage can create no directory (or
+  symbolic link) whose name ends in `.git` anywhere in a grant, so there is no
+  bare repository it can build and then move to a path the operator pushes to,
+  whether by renaming the folder or by moving an ordinary ancestor that carries
+  it. A branch or tag whose last name ends in `.git` is unaffected: git stores
+  it as a file, and a file of that name may still be created and removed under
+  refs or logs.
   The cost: a stage can no longer create a file or folder whose name ends in
-  `.git` anywhere else in a grant. `git init --bare`, `git clone --bare`,
-  `git clone --mirror` and `git bundle create` under such a name fail there,
-  as `git init` and `git clone` already do,
-  and a checkout of a branch that tracks such a path cannot write it: git
-  reports the error but may still exit 0, leaving the path missing from the
+  `.git` outside git's refs and logs, nor any `.git`-named directory at all.
+  `git init --bare`, `git clone --bare`, `git clone --mirror` and `git bundle
+  create` under such a name fail, as `git init` and `git clone` already do; a
+  branch or tag whose name has a `.git` component mid-path, such as
+  `foo.git/bar`, cannot be created, since it needs a `.git`-named directory
+  (one whose whole name is the last component, such as `foo.git`, still works);
+  and a checkout of a branch that tracks a `.git`-named path cannot write it:
+  git reports the error but may still exit 0, leaving the path missing from the
   working tree. A non-bare repository's `.git`, denied whole already, is
   unaffected; a grant whose own name ends in `.git` is pinned only when it lies
   inside another writable grant. A local remote named without its `.git`
@@ -119,6 +130,21 @@ under **Removed** or **Changed** with what to do about it.
   name a local remote in a grant by its full `.git` path. Everyday git,
   including a push or a fetch into a bare repository that already exists,
   still works.
+- **`hostsandbox` lets `git gc` finish in a granted repository under
+  Seatbelt.** Packing the refs writes `packed-refs.new`, and refreshing the
+  server-info ref advertisement writes `info/refs` through a temporary of its
+  own, in the `info` directory git makes when a repository has none; all of
+  these were denied, so gc reported errors (it still exited 0, so the failure
+  was easy to miss). They are now allowed, as data git writes; the pack
+  advertisement git also refreshes, `objects/info/packs`, was allowed already.
+  `info/exclude` and `info/attributes`, which name ignore patterns and filter
+  commands, stay denied, inside a moved bare repository too.
+- **`hostsandbox` refuses a writable grant of the file system root under
+  Seatbelt.** The per-grant protections are regular expressions anchored on
+  the grant, and at the root the anchor matched no path, so a writable grant
+  of `/` would have silently dropped every one of them, besides handing a
+  stage the whole machine. `RenderSeatbelt` now returns an error naming it. A
+  read-only grant of the root is unaffected.
 
 ## v0.108.0 - 2026-10-21
 

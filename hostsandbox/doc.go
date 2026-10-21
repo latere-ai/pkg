@@ -86,9 +86,11 @@
 // /var and /etc are the same trees under /private): a link that leads out of
 // a grant, which a stage can leave in place of a directory it may write,
 // grants nothing beyond its own spelling, and a writable grant that is itself
-// a link is refused. Only a path that does not exist yet is resolved through
-// its deepest existing ancestor; a path whose links cannot be resolved for
-// another reason, a loop of links, a path longer than macOS opens or a
+// a link, or the file system root, is refused: the per-grant protections are
+// anchored on the grant and would match nothing at the root. Only a path that
+// does not exist yet is resolved through its deepest existing ancestor; a
+// path whose links cannot be resolved for another reason, a loop of links, a
+// path longer than macOS opens or a
 // directory that may not be searched, is refused rather than written only as
 // given. The directories above a grant inside the home directory
 // may be examined but not listed. Read denials are also denied writing. A
@@ -125,52 +127,66 @@
 // objects/info/http-alternates, which make git read another repository),
 // refs, logs, rebase-merge, rebase-apply and sequencer with everything in
 // them; the index with its .lock and temporary companions; HEAD, ORIG_HEAD,
-// FETCH_HEAD, MERGE_HEAD, MERGE_MSG, MERGE_MODE, AUTO_MERGE, CHERRY_PICK_HEAD,
-// REVERT_HEAD, REBASE_HEAD, COMMIT_EDITMSG, SQUASH_MSG, TAG_EDITMSG,
-// packed-refs, gc.pid, gc.log and shallow, each with its .lock companion; the
-// index with its split-index sharedindex.<hash>; and the BISECT_ files. A
-// submodule's gitdir is under .git/modules at any depth, since git stores a
-// submodule at a/b under .git/modules/a/b, and a worktree's under
-// .git/worktrees; everything in each is allowed back the same way, except
-// that a protected name nested below a writable subdir (a .git, a .claude,
-// .cursor, .vscode or .idea, or a protected file) is denied again, so the
+// FETCH_HEAD, MERGE_HEAD, MERGE_MSG, MERGE_MODE, AUTO_MERGE,
+// CHERRY_PICK_HEAD, REVERT_HEAD, REBASE_HEAD, COMMIT_EDITMSG, SQUASH_MSG,
+// TAG_EDITMSG, packed-refs, gc.pid, gc.log and shallow, each with its .lock
+// companion; the index with its split-index sharedindex.<hash>; the BISECT_
+// files; and the server-info ref advertisement git gc refreshes, info/refs,
+// with its .lock and temporary companions, in the info directory git makes to
+// hold it (the pack advertisement is objects/info/packs, already allowed
+// under objects). A submodule's gitdir is under .git/modules at any depth,
+// since git stores a submodule at a/b under .git/modules/a/b, and a
+// worktree's under .git/worktrees; everything in each is allowed back the
+// same way, except that a protected name nested below a writable subdir (a
+// .git, a .claude, .cursor, .vscode or .idea, or a protected file) is denied
+// again, and so, below a writable subdir, is a bare repository's control file
+// nested in a *.git component (its config, config.worktree, hooks, commondir,
+// gitdir, info/exclude, info/attributes or an alternates file), so the
 // allowance opens no repository or settings hidden inside objects, refs or
 // logs. Because the allowance lists what everyday git writes rather than what
-// is dangerous, a control file the list does not name, config, config.worktree,
-// hooks, commondir, gitdir, info, an alternates file or a name git adds later,
-// stays denied by default. So add, commit, branch, checkout, merge, rebase,
-// cherry-pick, revert, stash, tag, bisect, gc, fetch and work in a submodule
-// work, while a stage cannot point git at a hook, object store or common
-// directory of its own. A bare repository, a directory whose name ends in
-// .git with its gitdir at the top level, is protected the same way: its config
-// and hooks are denied and a push into it, which writes its objects and refs,
-// works. Its folder is pinned too: no name ending in .git may be removed,
-// renamed away or created inside a grant, except a branch or tag of that name
-// in git's refs and logs, so a stage cannot swap a repository the
-// operator later pushes to for one carrying hooks of its own. Moving the
-// ordinary folder that holds one carries it along, still pinned.
+// is dangerous, a control file the list does not name, config,
+// config.worktree, hooks, commondir, gitdir, info/exclude, info/attributes,
+// an alternates file or a name git adds later, stays denied by default. So
+// add, commit, branch, checkout, merge, rebase, cherry-pick, revert, stash,
+// tag, bisect, gc, fetch and work in a submodule work, while a stage cannot
+// point git at a hook, object store or common directory of its own. A bare
+// repository, a directory whose name ends in .git with its gitdir at the top
+// level, is protected the same way: its config and hooks are denied and a
+// push into it, which writes its objects and refs, works. Its folder is
+// pinned too, and a stage can create no .git-named directory anywhere in a
+// grant: a branch or tag whose last name ends in .git, a file under refs or
+// logs, is created and removed as before, but no .git-named directory is, so
+// a stage has no bare repository it can build and then move to a path the
+// operator pushes to, whether by renaming the folder or by moving an ordinary
+// ancestor that carries it. So a stage cannot swap a repository the operator
+// later pushes to for one carrying hooks of its own, nor edit one moved under
+// a writable subdir of a gitdir. Moving the ordinary folder that holds one
+// carries it along, still pinned.
 //
 // Each path is named by its path, so a rename is refused at its source and at
 // its destination, and a directory holding a repository may still be moved,
 // since the protection follows the name .git. What it costs, as srt's default
 // costs it: git init, git clone, git config, git remote, git submodule and
 // git worktree add inside a grant fail, since each writes what is protected;
-// and, because no file or folder whose name ends in .git can be created
-// outside git's refs and logs, a stage can neither make a bare repository
-// with git init --bare, git clone --bare or git clone --mirror nor write a
-// bundle under such a name, and a checkout cannot write a tracked path of
-// that name (git reports it but may still exit 0). Its limits: a .git file
-// the operator already pointed at a gitdir outside git's layout leaves that
-// gitdir's control files unprotected, unless they lie in another protected
-// place; a bare repository whose name does not end in .git is not recognized
-// as a gitdir, so its config and hooks are writable, and a local remote that
-// names a bare repository without its .git suffix may reach a folder of that
-// shorter name, so name a local remote in a grant by its full .git path; and
-// a stage may write .git/rebase-merge, .git/rebase-apply and .git/sequencer,
-// so it can fake an in-progress rebase, cherry-pick or revert whose todo or
-// sequencer/opts holds an exec line, which runs only if the operator later
-// continues it outside the sandbox (git rebase, cherry-pick or revert
-// --continue). srt protects the same kinds of path at its working directory.
+// and, because a stage can create no .git-named directory anywhere and no
+// .git-named file outside git's refs and logs, it can neither make a bare
+// repository with git init --bare, git clone --bare or git clone --mirror,
+// nor write a bundle under such a name, nor create a branch or tag whose name
+// has a .git component mid-path such as foo.git/bar (one whose last name is
+// .git-suffixed, such as foo.git, still works), and a checkout cannot write a
+// tracked path of that name (git reports it but may still exit 0). Its
+// limits: a .git file the operator already pointed at a gitdir outside git's
+// layout leaves that gitdir's control files unprotected, unless they lie in
+// another protected place; a bare repository whose name does not end in .git
+// is not recognized as a gitdir, so its config and hooks are writable, and a
+// local remote that names a bare repository without its .git suffix may reach
+// a folder of that shorter name, so name a local remote in a grant by its
+// full .git path; and a stage may write .git/rebase-merge, .git/rebase-apply
+// and .git/sequencer, so it can fake an in-progress rebase, cherry-pick or
+// revert whose todo or sequencer/opts holds an exec line, which runs only if
+// the operator later continues it outside the sandbox (git rebase,
+// cherry-pick or revert --continue). srt protects the same kinds of path at
+// its working directory.
 //
 // A stage with no network runs under sandbox-exec with a profile that lets
 // it connect to nothing: no address, no name lookup, no local socket. A

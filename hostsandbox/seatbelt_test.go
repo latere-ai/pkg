@@ -305,6 +305,24 @@ func TestSeatbeltProfileRefusesAPathItCannotResolve(t *testing.T) {
 	}
 }
 
+// TestSeatbeltProfileRefusesARootWritableGrant checks that a writable grant of
+// the file system root is refused, since the per-grant protections are regexes
+// anchored on the grant and would match nothing at the root, so granting it
+// would silently drop every one of them. A read of the root is unaffected.
+func TestSeatbeltProfileRefusesARootWritableGrant(t *testing.T) {
+	literalPaths(t)
+	// Each of these cleans to the root, including the whitespace spellings that
+	// the grant rendering trims before it anchors a rule on them.
+	for _, path := range []string{"/", "//", "/.", "/..", "///", " /", "/ ", "\t/\n"} {
+		if _, err := RenderSeatbelt(Profile{Home: "/Users/op", Writes: []string{path}}, 0); err == nil || !strings.Contains(err.Error(), "file system root") {
+			t.Errorf("a writable grant of %q was not refused: %v", path, err)
+		}
+	}
+	if _, err := RenderSeatbelt(Profile{Home: "/Users/op", Reads: []string{"/"}}, 0); err != nil {
+		t.Errorf("a read-only grant of the root was refused: %v", err)
+	}
+}
+
 // TestSeatbeltProfileRefusesAControlCharacter checks that a path the profile
 // language cannot write safely is refused rather than written.
 func TestSeatbeltProfileRefusesAControlCharacter(t *testing.T) {
@@ -400,12 +418,15 @@ func TestSeatbeltProfilePinsTheDirectoriesAboveADenial(t *testing.T) {
 	}
 }
 
-// createAllowedIn reports whether a stage may create or remove the node at
-// path inside the writable grant, deciding as Seatbelt does from the rules
+// createAllowedIn reports whether a stage may create or remove a regular file
+// at path inside the writable grant, deciding as Seatbelt does from the rules
 // RenderSeatbelt writes for those operations, in that order, the last that
 // matches deciding: the grant allows, the protection denies, git's
 // allow-backs allow, the *.git pin denies, its allowance in git's writable
-// directories allows, and git's exceptions deny.
+// directories allows, and git's exceptions deny. The *.git allowance is held
+// to a regular file by a vnode-type filter this does not model, so the
+// directory-versus-file distinction is checked by the real-Seatbelt tests, not
+// here; this reads the path rules alone, as for a regular file.
 func createAllowedIn(grant, path string) bool {
 	allowed, denied := gitPatterns(grant)
 	pinned, allowedBack := bareRepoPins(grant)
@@ -456,13 +477,35 @@ func TestSeatbeltProfilePinsBareRepositoryNodes(t *testing.T) {
 	for _, grant := range grants {
 		allowed, denied := gitPatterns(grant)
 		pinned, allowedBack := bareRepoPins(grant)
+		// Both allowances are held to a regular file, so each is written under
+		// its own operation's head as a require-all of the regex and the node
+		// type rather than a bare regex. The search is bound to the operation's
+		// rule, which runs from its head to the next top-level form, so a clause
+		// rendered under the wrong operation would not satisfy it.
+		allowanceUnder := func(operation string) int {
+			start := strings.Index(text, "(allow "+operation+"\n")
+			if start < 0 {
+				return -1
+			}
+			end := strings.Index(text[start+1:], "\n(")
+			if end < 0 {
+				end = len(text)
+			} else {
+				end += start + 1
+			}
+			clause := "(require-all (regex " + sbString(allowedBack[0]) + ") (vnode-type REGULAR-FILE))"
+			if rel := strings.Index(text[start:end], clause); rel >= 0 {
+				return start + rel
+			}
+			return -1
+		}
 		at := map[string]int{
 			"the grant":            position(text, "allow", "file-write*", "subpath", grant),
 			"git's allow-backs":    position(text, "allow", "file-write*", "regex", allowed[0]),
 			"the unlink pin":       position(text, "deny", "file-write-unlink", "regex", pinned[0]),
 			"the create pin":       position(text, "deny", "file-write-create", "regex", pinned[0]),
-			"the unlink allowance": position(text, "allow", "file-write-unlink", "regex", allowedBack[0]),
-			"the create allowance": position(text, "allow", "file-write-create", "regex", allowedBack[0]),
+			"the unlink allowance": allowanceUnder("file-write-unlink"),
+			"the create allowance": allowanceUnder("file-write-create"),
 			"git's exceptions":     position(text, "deny", "file-write*", "regex", denied[0]),
 			"the write denial":     denial,
 		}

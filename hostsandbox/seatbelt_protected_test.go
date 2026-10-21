@@ -18,7 +18,9 @@ import (
 // writableIn reports whether a stage may write path inside the writable
 // grant, deciding as Seatbelt does from the rules RenderSeatbelt writes in
 // that order, the last that matches deciding: the grant allows, the
-// protection denies, git's allow-backs allow, their exceptions deny.
+// protection denies, git's allow-backs allow, their exceptions deny. It models
+// the file-write* rules, not the *.git node pins or their regular-file
+// allowance, so the pin behavior is checked by the real-Seatbelt tests.
 func writableIn(grant, path string) bool {
 	compile := func(patterns []string) []*regexp.Regexp {
 		out := make([]*regexp.Regexp, len(patterns))
@@ -64,6 +66,15 @@ func TestTheProtectionDecidesAsSeatbeltDoes(t *testing.T) {
 		".git/refs/heads/.git/config", ".git/refs/heads/.git/hooks/pre-commit", ".git/objects/.git/hooks/pre-commit",
 		".git/refs/heads/.gitconfig", ".git/logs/.claude/settings.json", "origin.git/refs/.claude/settings.json",
 		".git/refs/heads/sub/.vscode/settings.json", ".git/modules/a/b/config", ".git/modules/a/b/hooks/pre-commit",
+		// A bare repository moved under a writable directory keeps its control
+		// files denied, at any depth and in any of the writable directories.
+		".git/refs/heads/held/origin.git/config", ".git/refs/heads/held/origin.git/config.worktree",
+		".git/refs/heads/held/origin.git/hooks/post-receive", ".git/refs/heads/held/origin.git/commondir",
+		".git/refs/heads/held/origin.git/gitdir", ".git/refs/heads/held/origin.git/objects/info/alternates",
+		".git/refs/heads/held/origin.git/objects/info/http-alternates", ".git/objects/held/bare.GIT/hooks/update",
+		".git/logs/held/origin.git/config", ".git/refs/heads/held/origin.git/modules/sub/hooks/pre-commit",
+		".git/refs/heads/held/origin.git/info/attributes", ".git/refs/heads/held/origin.git/info/exclude",
+		".git/info/attributes",
 	} {
 		if writableIn(grant, grant+"/"+relative) {
 			t.Errorf("%s is writable", relative)
@@ -82,6 +93,16 @@ func TestTheProtectionDecidesAsSeatbeltDoes(t *testing.T) {
 		"x.git", ".gitx", "my.github/workflows/ci.yml",
 		".git/sharedindex.0e2f", ".git/modules/a/b/refs/heads/main", ".git/modules/a/b/objects/ab/cd", ".git/modules/a/b/HEAD",
 		".git/refs/heads/feature/my.git.work", ".git/refs/tags/v1.2.3",
+		// A branch whose name holds a *.git component is a ref, not a bare
+		// repository: only its control-named leaves are denied, not the rest.
+		".git/refs/heads/foo.git/bar", ".git/logs/refs/heads/foo.git/bar", ".git/refs/heads/held/origin.git/HEAD",
+		".git/refs/heads/held/origin.git/objects/ab/cd", ".git/refs/heads/held/origin.git/refs/heads/main",
+		// The server-info ref advertisement git gc refreshes, and the
+		// temporaries it writes it through, plus the info directory git makes to
+		// hold it and the packed-refs temporary. The pack advertisement lives
+		// under objects, allowed already.
+		".git/info", ".git/info/refs", ".git/info/refs.lock", ".git/info/refs_ABC123",
+		"origin.git/info/refs", ".git/packed-refs.new", ".git/objects/info/packs",
 	} {
 		if !writableIn(grant, grant+"/"+relative) {
 			t.Errorf("%s, which everyday work writes, is not writable", relative)

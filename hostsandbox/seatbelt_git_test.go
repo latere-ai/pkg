@@ -290,6 +290,14 @@ func TestEverydayGitStillWorks(t *testing.T) {
 	if _, err := gitIn(t, driver, grant, repo, "worktree", "add", "-q", filepath.Join(grant, "wt")); err == nil {
 		t.Error("git worktree add made a gitdir inside a grant")
 	}
+	// A branch whose last name ends in .git is a file and works; one with a
+	// .git component mid-path needs a *.git directory, which cannot be made.
+	if _, err := gitIn(t, driver, grant, repo, "branch", "ok.git"); err != nil {
+		t.Error("a branch named ok.git was refused")
+	}
+	if _, err := gitIn(t, driver, grant, repo, "branch", "ns.git/child"); err == nil {
+		t.Error("a branch namespace ns.git/child made a *.git directory inside a grant")
+	}
 }
 
 // TestABareRepositoryIsProtected treats a directory whose name ends in .git

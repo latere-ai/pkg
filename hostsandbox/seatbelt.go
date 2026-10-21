@@ -89,12 +89,31 @@ var (
 		"AUTO_MERGE", "CHERRY_PICK_HEAD", "REVERT_HEAD", "REBASE_HEAD", "COMMIT_EDITMSG",
 		"SQUASH_MSG", "TAG_EDITMSG", "packed-refs", "gc.pid", "gc.log", "shallow",
 	}
+	// gitWritableInfo is the file git writes under a gitdir's info directory
+	// that holds data, not configuration: the ref advertisement git gc
+	// refreshes through update-server-info (the pack advertisement it writes is
+	// objects/info/packs, allowed already as part of objects). info/exclude and
+	// info/attributes stay denied, since an attributes filter names a command
+	// git runs. gitInfoControl are the two that stay denied under a bare
+	// repository moved into a writable directory, where the allowance would
+	// otherwise re-open them.
+	gitWritableInfo = []string{"info/refs"}
+	gitInfoControl  = []string{"info/exclude", "info/attributes"}
 	// Prefixes cover a family of files git writes under one name: BISECT_*,
 	// git's index and the temporary indexes it writes beside it (index.lock,
 	// index.stash.<pid>), and the split index's sharedindex.<hash>, all of
 	// which hold tracked content, never a command.
 	gitWritablePrefixes = []string{"BISECT_", "index", "sharedindex"}
 	gitDeniedInWritable = []string{"objects/info/alternates", "objects/info/http-alternates"}
+	// gitControlNames name a gitdir's entries at its top that run a command or
+	// point git at another repository: its hooks, its config, and the files
+	// that redirect its common directory or gitdir. A gitdir at a grant's top
+	// keeps them denied by default, since the allowance lists only what
+	// everyday git writes; inside a writable directory, where the allowance
+	// opens everything, a bare repository moved in (a *.git component) carries
+	// them, so they are denied again there.
+	gitControlDirs  = []string{"hooks"}
+	gitControlFiles = []string{"config", "config.worktree", "commondir", "gitdir"}
 	// gitRefDirs are the writable directories that hold a branch or tag by
 	// its name, a file of that name below them, so one named *.git is
 	// allowed back there against bareRepoPins.
@@ -142,7 +161,19 @@ var (
 // through a symbolic link that leads nowhere.
 func RenderSeatbelt(profile Profile, proxyPort int) (string, error) {
 	for _, path := range profile.Writes {
-		if info, err := lstat(filepath.Clean(path)); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		// allowAll trims a grant before it renders the write rules, so these
+		// checks read the same trimmed path; otherwise " /" would pass them yet
+		// render as a grant of "/".
+		clean := filepath.Clean(strings.TrimSpace(path))
+		// The per-grant protections are regexes anchored on the grant, written
+		// as the grant's path then a slash. At the file system root that anchor
+		// matches no path, so a writable grant of the root would silently drop
+		// every one of them, besides handing a stage the whole machine. It is
+		// refused instead.
+		if clean == string(filepath.Separator) {
+			return "", fmt.Errorf("render seatbelt profile: the writable grant %s is the file system root; grant a directory within it", path)
+		}
+		if info, err := lstat(clean); err == nil && info.Mode()&os.ModeSymlink != 0 {
 			return "", fmt.Errorf("render seatbelt profile: the writable grant %s is a symbolic link; grant the directory it names", path)
 		}
 	}
@@ -225,13 +256,22 @@ func RenderSeatbelt(profile Profile, proxyPort int) (string, error) {
 	// folder. Its contents are denied above; pinning the node too, against
 	// unlinking and creation, keeps it from being removed, renamed away or
 	// created, so one cannot be swapped out while a session runs. The same
-	// names inside git's refs and logs, a branch or tag ending in .git, are
-	// allowed back, before git's exceptions and the denials, which still win
-	// there.
+	// names inside git's refs and logs, where a branch or tag may end in .git,
+	// are allowed back, before git's exceptions and the denials, which still
+	// win there. A branch or tag is a regular file, so both allowances are held
+	// to a regular file: a bare repository is a directory, and a stage must
+	// never be able to make a *.git directory anywhere in a grant. If it could,
+	// it could build one under a name without .git, where its hooks are
+	// writable, rename it into a *.git name here, and carry it to a path the
+	// operator pushes to by moving an ancestor, which renames no *.git node and
+	// so passes every pin. Holding creation to a regular file leaves no *.git
+	// directory a stage can make, so the only ones are the operator's own,
+	// whose control files stay denied; the cost is that a branch namespace
+	// whose name holds a .git component, like foo.git/bar, cannot be made.
 	rule(&b, "deny", "file-write-unlink", "regex", bareNodes)
 	rule(&b, "deny", "file-write-create", "regex", bareNodes)
-	rule(&b, "allow", "file-write-unlink", "regex", bareAllowed)
-	rule(&b, "allow", "file-write-create", "regex", bareAllowed)
+	ruleVnode(&b, "allow", "file-write-unlink", bareAllowed, "REGULAR-FILE")
+	ruleVnode(&b, "allow", "file-write-create", bareAllowed, "REGULAR-FILE")
 	rule(&b, "deny", "file-write*", "regex", gitDenied)
 	rule(&b, "deny", "file-write*", "subpath", denyWrites)
 	rule(&b, "deny", "file-write-unlink", "literal", pins)
@@ -261,6 +301,21 @@ func rule(b *strings.Builder, action, operation, filter string, values []string)
 	fmt.Fprintf(b, "(%s %s", action, operation)
 	for _, value := range values {
 		fmt.Fprintf(b, "\n  (%s %s)", filter, sbString(value))
+	}
+	b.WriteString(")\n")
+}
+
+// ruleVnode writes one rule each of whose values matches a regex and the node
+// type vnodeType together. The two filters of each value are joined with
+// require-all, since two filters named side by side in the profile language
+// are a match of either, not of both.
+func ruleVnode(b *strings.Builder, action, operation string, values []string, vnodeType string) {
+	if len(values) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "(%s %s", action, operation)
+	for _, value := range values {
+		fmt.Fprintf(b, "\n  (require-all (regex %s) (vnode-type %s))", sbString(value), vnodeType)
 	}
 	b.WriteString(")\n")
 }
@@ -490,14 +545,21 @@ func absentPins(pins []string) ([]string, error) {
 // protection of .git, and of the exceptions denied again inside those. A
 // gitdir is .git, a submodule's under .git/modules at any depth, or a
 // worktree's under .git/worktrees; what the list leaves out (config,
-// config.worktree, hooks, commondir, gitdir, info, alternates and any name
-// git adds later) stays denied.
+// config.worktree, hooks, commondir, gitdir, info/exclude, info/attributes,
+// alternates and any name git adds later) stays denied. The exceptions also
+// deny, below a writable directory, a bare repository's control files nested
+// in a *.git component, so one moved there cannot be edited and moved back.
 func gitPatterns(write string) (allowed, denied []string) {
 	gitdir, names := gitdirAnchor(write), anyCaseNames
 	allowed = []string{
 		gitdir + names(gitWritableDirs) + "(/.*)?$",
-		gitdir + names(gitWritableFiles) + "(" + anyCase(".lock") + ")?$",
+		gitdir + names(gitWritableFiles) + "(" + anyCase(".lock") + "|" + anyCase(".new") + ")?$",
 		gitdir + names(gitWritablePrefixes) + "[^/]*$",
+		gitdir + names(gitWritableInfo) + "(" + anyCase(".lock") + "|_[^/]*)?$",
+		// The info directory itself, so update-server-info can make it when a
+		// repository has none; its control files, info/exclude and
+		// info/attributes, stay denied below.
+		gitdir + anyCase("info") + "$",
 	}
 	for _, path := range gitDeniedInWritable {
 		denied = append(denied, gitdir+anyCase(path)+"$")
@@ -517,6 +579,25 @@ func gitPatterns(write string) (allowed, denied []string) {
 	}
 	for _, suffix := range writeProtectedSuffixes {
 		denied = append(denied, below+"[^/]*"+anyCase(suffix)+"$")
+	}
+	// A bare repository (a *.git component) moved into a writable directory
+	// carries its own control entries, which the allowance would re-open; each
+	// is denied again below the writable directory, by the control name alone,
+	// not the whole *.git tree, so the repository's own refs, logs and objects
+	// stay writable. This is a second line behind the regular-file hold on
+	// creating a *.git node: it denies editing the control files of the
+	// operator's own bare repository while it is moved under a writable
+	// directory, which the hold does not cover since that repository was made
+	// outside the sandbox.
+	bare := below + "[^/]+" + anyCase(".git") + "/(.*/)?"
+	for _, name := range gitControlDirs {
+		denied = append(denied, bare+anyCase(name)+"(/.*)?$")
+	}
+	for _, name := range gitControlFiles {
+		denied = append(denied, bare+anyCase(name)+"$")
+	}
+	for _, path := range concat(gitDeniedInWritable, gitInfoControl) {
+		denied = append(denied, bare+anyCase(path)+"$")
 	}
 	return allowed, denied
 }
