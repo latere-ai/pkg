@@ -4,11 +4,14 @@
 package hostsandbox
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"unicode/utf8"
 )
 
@@ -124,8 +127,9 @@ var (
 // stage can put in place of a directory it may write, grants nothing beyond
 // its own spelling. A writable grant that is itself a symbolic link is
 // refused, as is a path holding a control character, which the profile
-// language has no safe way to write, and a path, as given or resolved,
-// longer than seatbeltStringMax, whose links cannot be resolved.
+// language has no safe way to write, a path, as given or resolved, longer
+// than seatbeltStringMax, and a path whose links cannot be resolved for any
+// reason but that it does not exist yet.
 func RenderSeatbelt(profile Profile, proxyPort int) (string, error) {
 	for _, path := range profile.Writes {
 		if info, err := lstat(filepath.Clean(path)); err == nil && info.Mode()&os.ModeSymlink != 0 {
@@ -133,13 +137,28 @@ func RenderSeatbelt(profile Profile, proxyPort int) (string, error) {
 		}
 	}
 	var homes []string
+	var err error
 	if profile.Home != "" {
-		homes = canonicalAll([]string{profile.Home})
+		if homes, err = canonicalAll([]string{profile.Home}); err != nil {
+			return "", fmt.Errorf("render seatbelt profile: %w", err)
+		}
 	}
-	denyRead := canonicalAll(expandAll(profile.Home, append(append([]string(nil), AlwaysDenyRead...), profile.Denies...)))
-	reads := allowAll(profile.Reads)
-	writes := allowAll(profile.Writes)
-	denyWrites := canonicalAll(append(append([]string(nil), profile.DenyWrites...), denyRead...))
+	denyRead, err := canonicalAll(expandAll(profile.Home, append(append([]string(nil), AlwaysDenyRead...), profile.Denies...)))
+	if err != nil {
+		return "", fmt.Errorf("render seatbelt profile: %w", err)
+	}
+	reads, err := allowAll(profile.Reads)
+	if err != nil {
+		return "", fmt.Errorf("render seatbelt profile: %w", err)
+	}
+	writes, err := allowAll(profile.Writes)
+	if err != nil {
+		return "", fmt.Errorf("render seatbelt profile: %w", err)
+	}
+	denyWrites, err := canonicalAll(append(append([]string(nil), profile.DenyWrites...), denyRead...))
+	if err != nil {
+		return "", fmt.Errorf("render seatbelt profile: %w", err)
+	}
 	var protected, gitAllowed, gitDenied []string
 	for _, write := range writes {
 		protected = append(protected, protectedPatterns(write)...)
@@ -269,39 +288,43 @@ var (
 // (the home directory, the root, a sibling) is a link that leads out of the
 // grant, and only the spelling is kept: Seatbelt then matches nothing
 // through the link.
-func allowSpellings(path string) []string {
-	spellings := canonical(path)
-	if len(spellings) < 2 {
-		return spellings
+func allowSpellings(path string) ([]string, error) {
+	spellings, err := canonical(path)
+	if err != nil || len(spellings) < 2 {
+		return spellings, err
 	}
 	given, resolved := spellings[0], spellings[1]
 	inside := func(tree string) bool {
 		return resolved == tree || strings.HasPrefix(resolved, tree+string(filepath.Separator))
 	}
 	if inside(given) {
-		return spellings
+		return spellings, nil
 	}
 	for _, firm := range []string{"/tmp", "/var", "/etc"} {
 		if given == firm || strings.HasPrefix(given, firm+string(filepath.Separator)) {
 			if inside("/private" + given) {
-				return spellings
+				return spellings, nil
 			}
 		}
 	}
-	return spellings[:1]
+	return spellings[:1], nil
 }
 
 // allowAll is allowSpellings over every grant, trimmed, without empties or
 // duplicates, and sorted.
-func allowAll(paths []string) []string {
+func allowAll(paths []string) ([]string, error) {
 	var out []string
 	for _, path := range paths {
 		if strings.TrimSpace(path) == "" {
 			continue
 		}
-		out = append(out, allowSpellings(strings.TrimSpace(path))...)
+		spellings, err := allowSpellings(strings.TrimSpace(path))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, spellings...)
 	}
-	return sorted(out)
+	return sorted(out), nil
 }
 
 // protectedPatterns are the regular expressions, for the profile's regex
@@ -447,22 +470,30 @@ func anyCase(name string) string {
 
 // canonical returns a path as written and, when it differs, with its
 // symbolic links resolved: /tmp/x is also /private/tmp/x. A path that does
-// not exist yet is resolved through its deepest existing ancestor, so a
-// grant made before its directory is created still matches once it is.
-func canonical(path string) []string {
+// not exist yet, or does not because an ancestor of it is a file, is
+// resolved through its deepest existing ancestor, so a grant made before its
+// directory is created still matches once it is. Any other failure to
+// resolve a path, a loop of links, a path too long or a directory that may
+// not be searched, is an error: a denial written without its resolved
+// spelling would deny nothing reached through a link.
+func canonical(path string) ([]string, error) {
 	clean := filepath.Clean(path)
 	out := []string{clean}
 	dir, rest := clean, ""
 	for {
-		if real, err := evalSymlinks(dir); err == nil {
+		real, err := evalSymlinks(dir)
+		if err == nil {
 			if resolved := filepath.Join(real, rest); resolved != clean {
 				out = append(out, resolved)
 			}
-			return out
+			return out, nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) {
+			return nil, fmt.Errorf("the path %q cannot be resolved: %w", clean, err)
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return out
+			return out, nil
 		}
 		rest = filepath.Join(filepath.Base(dir), rest)
 		dir = parent
@@ -471,15 +502,19 @@ func canonical(path string) []string {
 
 // canonicalAll is canonical over every path, trimmed, without empties or
 // duplicates, and sorted, so two equal profiles render the same text.
-func canonicalAll(paths []string) []string {
+func canonicalAll(paths []string) ([]string, error) {
 	var out []string
 	for _, path := range paths {
 		if strings.TrimSpace(path) == "" {
 			continue
 		}
-		out = append(out, canonical(strings.TrimSpace(path))...)
+		spellings, err := canonical(strings.TrimSpace(path))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, spellings...)
 	}
-	return sorted(out)
+	return sorted(out), nil
 }
 
 // above lists the directories between home and path, from path's parent up

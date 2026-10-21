@@ -35,6 +35,13 @@ under **Removed** or **Changed** with what to do about it.
   remove them. Files inside them are still created, written and removed as
   before. A profile with no denial inside a writable folder renders exactly
   as before.
+- **`hostsandbox` refuses a path it cannot resolve under Seatbelt.** A path
+  in a profile whose symbolic links cannot be resolved, through a loop of
+  links, a directory that may not be searched or any other failure, makes
+  `RenderSeatbelt` return an error naming it, since a rule written without
+  the resolved path would not cover the path a stage reaches. A path that
+  does not exist yet, including one below a file, is resolved through its
+  deepest existing folder as before.
 
 ## v0.106.0 - 2026-10-20
 

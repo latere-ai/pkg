@@ -6,10 +6,12 @@ package hostsandbox
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"unicode/utf8"
 )
@@ -133,8 +135,11 @@ func TestSeatbeltProfileReachesOnlyTheProxy(t *testing.T) {
 }
 
 // TestSeatbeltProfileWritesResolvedPaths checks that a path is written both
-// as given and resolved, because Seatbelt matches the resolved path, and
-// that a path not created yet resolves through its deepest existing parent.
+// as given and resolved, because Seatbelt matches the resolved path, that a
+// path not created yet, or under an ancestor that is a file, resolves
+// through its deepest existing ancestor, and that a path that fails to
+// resolve for any other reason is an error rather than written only as
+// given.
 func TestSeatbeltProfileWritesResolvedPaths(t *testing.T) {
 	dir := t.TempDir()
 	real := filepath.Join(dir, "real")
@@ -149,19 +154,71 @@ func TestSeatbeltProfileWritesResolvedPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := canonical(filepath.Join(link, "later", "file"))
+	got, err := canonical(filepath.Join(link, "later", "file"))
 	want := filepath.Join(resolvedReal, "later", "file")
-	if len(got) != 2 || got[0] != filepath.Join(link, "later", "file") || got[1] != want {
-		t.Fatalf("canonical = %q, want the path as given and %q", got, want)
+	if err != nil || len(got) != 2 || got[0] != filepath.Join(link, "later", "file") || got[1] != want {
+		t.Fatalf("canonical = %q, %v, want the path as given and %q", got, err, want)
 	}
-	if got := canonical("/"); len(got) != 1 || got[0] != "/" {
-		t.Fatalf("canonical(/) = %q", got)
+	if got, err := canonical("/"); err != nil || len(got) != 1 || got[0] != "/" {
+		t.Fatalf("canonical(/) = %q, %v", got, err)
+	}
+	// An ancestor that is a file: the path names nothing, so it resolves
+	// through the directory holding the file.
+	file := filepath.Join(real, "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := canonical(filepath.Join(link, "file", "below")); err != nil || len(got) != 2 || got[1] != filepath.Join(resolvedReal, "file", "below") {
+		t.Fatalf("canonical below a file = %q, %v, want it resolved through the file's directory", got, err)
 	}
 	saved := evalSymlinks
-	evalSymlinks = func(string) (string, error) { return "", errors.New("nothing resolves") }
 	t.Cleanup(func() { evalSymlinks = saved })
-	if got := canonical("/a/b"); len(got) != 1 || got[0] != "/a/b" {
-		t.Fatalf("canonical with nothing resolving = %q, want the path as given", got)
+	for name, failure := range map[string]error{
+		"does not exist":    &fs.PathError{Op: "lstat", Path: "/a", Err: syscall.ENOENT},
+		"is below a file":   &fs.PathError{Op: "lstat", Path: "/a", Err: syscall.ENOTDIR},
+		"is too long":       &fs.PathError{Op: "lstat", Path: "/a", Err: syscall.ENAMETOOLONG},
+		"may not be read":   &fs.PathError{Op: "lstat", Path: "/a", Err: syscall.EACCES},
+		"loops":             errors.New("EvalSymlinks: too many links"),
+		"fails another way": errors.New("nothing resolves"),
+	} {
+		evalSymlinks = func(string) (string, error) { return "", failure }
+		got, err := canonical("/a/b")
+		walks := errors.Is(failure, fs.ErrNotExist) || errors.Is(failure, syscall.ENOTDIR)
+		if walks && (err != nil || len(got) != 1 || got[0] != "/a/b") {
+			t.Errorf("canonical of a path that %s = %q, %v, want the path as given", name, got, err)
+		}
+		if !walks && err == nil {
+			t.Errorf("canonical of a path that %s = %q, want an error", name, got)
+		}
+	}
+}
+
+// TestSeatbeltProfileRefusesAPathItCannotResolve renders, on the real file
+// system, a profile naming a path through two links that point at each
+// other, in each list a profile names, and checks every one is refused.
+func TestSeatbeltProfileRefusesAPathItCannotResolve(t *testing.T) {
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, second := filepath.Join(dir, "first"), filepath.Join(dir, "second")
+	if err := os.Symlink(second, first); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(first, second); err != nil {
+		t.Fatal(err)
+	}
+	looped := filepath.Join(first, "secret")
+	for name, profile := range map[string]Profile{
+		"home":         {Home: looped},
+		"read":         {Home: dir, Reads: []string{looped}},
+		"write":        {Home: dir, Writes: []string{looped}},
+		"denial":       {Home: dir, Denies: []string{looped}},
+		"write denial": {Home: dir, DenyWrites: []string{looped}},
+	} {
+		if _, err := RenderSeatbelt(profile, 0); err == nil || !strings.Contains(err.Error(), "cannot be resolved") {
+			t.Errorf("a path through a loop of links as the %s was not refused: %v", name, err)
+		}
 	}
 }
 

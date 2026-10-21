@@ -85,7 +85,11 @@
 // /var and /etc are the same trees under /private): a link that leads out of
 // a grant, which a stage can leave in place of a directory it may write,
 // grants nothing beyond its own spelling, and a writable grant that is itself
-// a link is refused. The directories above a grant inside the home directory
+// a link is refused. Only a path that does not exist yet is resolved through
+// its deepest existing ancestor; a path whose links cannot be resolved for
+// another reason, a loop of links, a path longer than macOS opens or a
+// directory that may not be searched, is refused rather than written only as
+// given. The directories above a grant inside the home directory
 // may be examined but not listed. Read denials are also denied writing. A
 // denial inside a writable grant, of reading or of writing, also keeps the
 // grant and every directory between them in place: a stage may not rename,

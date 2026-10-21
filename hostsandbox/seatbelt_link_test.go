@@ -56,8 +56,8 @@ func TestAGrantKeepsOnlyResolutionsInsideItsTree(t *testing.T) {
 		"/tmp/escape":       {"/tmp/escape"},
 		"/Users/op/project": {"/Users/op/project"},
 	} {
-		if got := allowSpellings(given); !slices.Equal(got, want) {
-			t.Errorf("allowSpellings(%s) = %q, want %q", given, got, want)
+		if got, err := allowSpellings(given); err != nil || !slices.Equal(got, want) {
+			t.Errorf("allowSpellings(%s) = %q, %v, want %q", given, got, err, want)
 		}
 	}
 	text, err := RenderSeatbelt(Profile{Home: "/Users/op", Writes: []string{"/data/w"}, Denies: []string{"/data/w"}}, 0)
