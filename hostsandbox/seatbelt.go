@@ -122,7 +122,8 @@ var (
 // stage can put in place of a directory it may write, grants nothing beyond
 // its own spelling. A writable grant that is itself a symbolic link is
 // refused, as is a path holding a control character, which the profile
-// language has no safe way to write.
+// language has no safe way to write, and a path, as given or resolved,
+// longer than seatbeltStringMax, whose links cannot be resolved.
 func RenderSeatbelt(profile Profile, proxyPort int) (string, error) {
 	for _, path := range profile.Writes {
 		if info, err := lstat(filepath.Clean(path)); err == nil && info.Mode()&os.ModeSymlink != 0 {
@@ -154,6 +155,9 @@ func RenderSeatbelt(profile Profile, proxyPort int) (string, error) {
 	for _, path := range concat(homes, denyRead, reads, writes, denyWrites) {
 		if strings.ContainsFunc(path, isControl) {
 			return "", fmt.Errorf("render seatbelt profile: the path %q holds a control character", path)
+		}
+		if len(path) > seatbeltStringMax {
+			return "", fmt.Errorf("render seatbelt profile: the path %q is %d bytes, longer than the %d a path on macOS may have", path, len(path), seatbeltStringMax)
 		}
 	}
 
@@ -208,7 +212,13 @@ func rule(b *strings.Builder, action, operation, filter string, values []string)
 // refuses a longer literal with "Error reading string", and with it the
 // whole profile, so no command runs. A literal of 1023 bytes loads and one of
 // 1024 does not. A protection pattern repeats its writable grant's path, so
-// a grant with a long path reaches it.
+// a grant with a long path reaches it, and sbString splits such a value.
+//
+// It is also the longest path macOS opens: PATH_MAX, 1024 bytes, less the
+// terminating NUL. RenderSeatbelt refuses a longer path rather than split
+// it, since lstat answers such a path with ENAMETOOLONG, so its symbolic
+// links cannot be resolved, and a denial written only as given denies
+// nothing a stage reaches through a link.
 const seatbeltStringMax = 1023
 
 // sbString writes a value as a string of the profile language: in double

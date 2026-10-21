@@ -23,7 +23,10 @@ under **Removed** or **Changed** with what to do about it.
   twice and each Chinese or Japanese character three times.
   `RenderSeatbelt` now writes a longer value as `(string-append ...)` of
   pieces that each fit, which reads as the same value; a profile with no
-  such value renders exactly as before.
+  such value renders exactly as before. A path itself longer than 1023
+  bytes, the longest macOS opens, is still refused, now by `RenderSeatbelt`
+  with an error naming it: its symbolic links cannot be resolved, so a
+  denial of it would not hold.
 
 ## v0.106.0 - 2026-10-20
 

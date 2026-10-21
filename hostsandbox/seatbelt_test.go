@@ -179,6 +179,35 @@ func TestSeatbeltProfileRefusesAControlCharacter(t *testing.T) {
 	}
 }
 
+// TestSeatbeltProfileRefusesAPathLongerThanMacOSOpens checks that a path of
+// 1024 bytes or more, whose links cannot be resolved, is refused in each
+// list a profile names, and also when only its resolved spelling is that
+// long, while a path of exactly seatbeltStringMax bytes is rendered.
+func TestSeatbeltProfileRefusesAPathLongerThanMacOSOpens(t *testing.T) {
+	literalPaths(t)
+	long := "/" + strings.Repeat("a", seatbeltStringMax)
+	for name, profile := range map[string]Profile{
+		"home":         {Home: long},
+		"read":         {Home: "/Users/op", Reads: []string{long}},
+		"write":        {Home: "/Users/op", Writes: []string{long}},
+		"denial":       {Home: "/Users/op", Denies: []string{long}},
+		"write denial": {Home: "/Users/op", DenyWrites: []string{long}},
+	} {
+		if _, err := RenderSeatbelt(profile, 0); err == nil || !strings.Contains(err.Error(), "is 1024 bytes") {
+			t.Errorf("a %d-byte path as the %s was not refused: %v", len(long), name, err)
+		}
+	}
+	fits := "/" + strings.Repeat("a", seatbeltStringMax-1)
+	if _, err := RenderSeatbelt(Profile{Home: "/Users/op", Reads: []string{fits}, Writes: []string{fits}, Denies: []string{fits}}, 0); err != nil {
+		t.Fatalf("a path of %d bytes was refused: %v", len(fits), err)
+	}
+	// /tmp/x is also /private/tmp/x, eight bytes longer once resolved.
+	evalSymlinks = func(path string) (string, error) { return "/private" + path, nil }
+	if _, err := RenderSeatbelt(Profile{Home: "/Users/op", Denies: []string{"/tmp/" + strings.Repeat("a", seatbeltStringMax-5)}}, 0); err == nil {
+		t.Error("a path longer than macOS opens only once resolved was not refused")
+	}
+}
+
 // TestSeatbeltProfileEscapesQuotes checks that a double quote or a backslash
 // in a path cannot end the profile's string.
 func TestSeatbeltProfileEscapesQuotes(t *testing.T) {
