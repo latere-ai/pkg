@@ -6,6 +6,8 @@ package hostsandbox
 import (
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -126,4 +128,89 @@ func TestRenamingARepositoryKeepsItsProtection(t *testing.T) {
 			t.Errorf("after the move, %q succeeded: %q", script, output)
 		}
 	}
+}
+
+// TestADenialInsideAWritableGrantHoldsItsPlace checks, under the real
+// Seatbelt, that a denial of reading and a denial of writing, each nested
+// below a writable grant, keep the grant and every directory above them in
+// place, whichever level a stage tries to move, into the same grant or into
+// a second writable one, so the denied paths stay withheld and unchanged;
+// and that the pins leave ordinary work alone: a file inside a pinned
+// directory is written and removed, and a directory above no denial moves.
+// Each case starts from a fresh layout of its own.
+func TestADenialInsideAWritableGrantHoldsItsPlace(t *testing.T) {
+	driver, home := realSeatbelt(t)
+	layout := func(t *testing.T, root string) func(script string) (string, error) {
+		t.Helper()
+		grant, other := filepath.Join(root, "grant"), filepath.Join(root, "other")
+		for path, body := range map[string]string{
+			"grant/a/b/secret/key": "withheld", "grant/c/d/keep/file": "kept", "grant/free/note": "free", "other/note": "other",
+		} {
+			if err := os.MkdirAll(filepath.Dir(filepath.Join(root, path)), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, path), []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return func(script string) (string, error) {
+			return attached(t, driver, StageSpec{
+				Name: "pinned", Argv: []string{"/bin/sh", "-c", script}, Workdir: root, Network: Network{Mode: NetworkNone},
+				Paths:  []Path{{Host: grant, Access: ReadWrite}, {Host: other, Access: ReadWrite}},
+				Denied: []string{filepath.Join(grant, "a", "b", "secret")}, DeniedWrites: []string{filepath.Join(grant, "c", "d", "keep")},
+			})
+		}
+	}
+	unchanged := func(t *testing.T, root string) {
+		t.Helper()
+		for path, want := range map[string]string{"grant/a/b/secret/key": "withheld", "grant/c/d/keep/file": "kept"} {
+			if body, err := os.ReadFile(filepath.Join(root, path)); err != nil || string(body) != want {
+				t.Errorf("%s = %q, %v; want it in place and unchanged", path, body, err)
+			}
+		}
+	}
+	for i, move := range []struct{ from, to, then string }{
+		{"grant/a/b", "grant/a/b2", "cat grant/a/b2/secret/key"},
+		{"grant/a", "grant/a2", "cat grant/a2/b/secret/key"},
+		{"grant", "other/g", "cat other/g/a/b/secret/key"},
+		{"grant/c/d", "grant/c/d2", "echo x > grant/c/d2/keep/file"},
+		{"grant/c", "grant/c2", "echo x > grant/c2/d/keep/file"},
+		{"grant", "other/h", "echo x > other/h/c/d/keep/file"},
+		{"grant/a/b", "", "rm -rf grant/a/b"},
+		{"grant/c", "", "rm -rf grant/c"},
+	} {
+		name := "removing " + move.from
+		if move.to != "" {
+			name = "moving " + move.from + " to " + move.to
+		}
+		t.Run(name, func(t *testing.T) {
+			root := filepath.Join(home, strconv.Itoa(i))
+			run := layout(t, root)
+			script := move.then
+			if move.to != "" {
+				script = "mv " + move.from + " " + move.to + " && " + move.then
+			}
+			if output, err := run(script); err == nil || strings.Contains(output, "withheld") {
+				t.Errorf("%q let the denial lapse: %q, %v", script, output, err)
+			}
+			if _, err := os.Stat(filepath.Join(root, move.from)); err != nil {
+				t.Errorf("%s was moved or removed: %v", move.from, err)
+			}
+			unchanged(t, root)
+		})
+	}
+	t.Run("ordinary work", func(t *testing.T) {
+		root := filepath.Join(home, "ordinary")
+		run := layout(t, root)
+		if output, err := run("cat grant/a/b/secret/key"); err == nil || strings.Contains(output, "withheld") {
+			t.Errorf("the denied file was read: %q", output)
+		}
+		if output, err := run("echo x > grant/a/b/note && rm grant/a/b/note && mv grant/free grant/free2"); err != nil {
+			t.Errorf("ordinary work beside the denials failed: %q, %v", output, err)
+		}
+		if _, err := os.Stat(filepath.Join(root, "grant", "free2", "note")); err != nil {
+			t.Errorf("a directory above no denial did not move: %v", err)
+		}
+		unchanged(t, root)
+	})
 }

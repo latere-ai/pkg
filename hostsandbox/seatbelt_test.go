@@ -208,6 +208,55 @@ func TestSeatbeltProfileRefusesAPathLongerThanMacOSOpens(t *testing.T) {
 	}
 }
 
+// TestSeatbeltProfilePinsTheDirectoriesAboveADenial checks that a denial
+// inside a writable grant, of reading or of writing, pins the grant and each
+// directory between them against unlinking, after every allowance, and pins
+// nothing else: not the denial, not a directory above the grant, not another
+// grant; and that a profile with no denial inside a writable grant has no
+// such rule.
+func TestSeatbeltProfilePinsTheDirectoriesAboveADenial(t *testing.T) {
+	literalPaths(t)
+	text, err := RenderSeatbelt(Profile{Home: "/Users/op", Reads: []string{"/Users/op/project"}, Writes: []string{"/Users/op/project"}}, 0)
+	if err != nil {
+		t.Fatalf("RenderSeatbelt: %v", err)
+	}
+	if strings.Contains(text, "file-write-unlink") {
+		t.Fatalf("a profile with no denial inside a writable grant pins a directory:\n%s", text)
+	}
+	text, err = RenderSeatbelt(Profile{
+		Home:       "/Users/op",
+		Reads:      []string{"/Users/op/project", "/Users/op/other"},
+		Writes:     []string{"/Users/op/project", "/Users/op/other"},
+		Denies:     []string{"~/project/a/b/secret"},
+		DenyWrites: []string{"/Users/op/project/c/keep"},
+	}, 0)
+	if err != nil {
+		t.Fatalf("RenderSeatbelt: %v", err)
+	}
+	want := "(deny file-write-unlink\n" +
+		"  (literal \"/Users/op/project\")\n" +
+		"  (literal \"/Users/op/project/a\")\n" +
+		"  (literal \"/Users/op/project/a/b\")\n" +
+		"  (literal \"/Users/op/project/c\"))\n"
+	if !strings.Contains(text, want) {
+		t.Fatalf("the pinned directories are not exactly the grant and those between it and each denial:\n%s", text)
+	}
+	if pin, denial := strings.Index(text, want), position(text, "deny", "file-write*", "subpath", "/Users/op/project/c/keep"); denial < 0 || pin < denial {
+		t.Fatalf("the pins come before the denials (pins at %d, denials at %d):\n%s", pin, denial, text)
+	}
+	for _, c := range []struct {
+		writes, denials, want []string
+	}{
+		{[]string{"/"}, []string{"/x/y"}, []string{"/", "/x"}},
+		{[]string{"/a/b"}, []string{"/a/bc/d", "/a/b", "/a"}, nil},
+		{[]string{"/a/b", "/a/b/c"}, []string{"/a/b/c/d/e"}, []string{"/a/b", "/a/b/c", "/a/b/c/d"}},
+	} {
+		if got := pinned(c.writes, c.denials); strings.Join(got, ",") != strings.Join(c.want, ",") {
+			t.Errorf("pinned(%q, %q) = %q, want %q", c.writes, c.denials, got, c.want)
+		}
+	}
+}
+
 // TestSeatbeltProfileEscapesQuotes checks that a double quote or a backslash
 // in a path cannot end the profile's string.
 func TestSeatbeltProfileEscapesQuotes(t *testing.T) {

@@ -108,7 +108,9 @@ var (
 // names at any depth is denied inside them, every gitdir among it; then what
 // everyday git writes in a gitdir is allowed back and its exceptions denied
 // again; then DenyWrites and every denied read are denied, last, so a
-// consumer's denial wins over every allowance.
+// consumer's denial wins over every allowance. A denial inside a writable
+// grant also pins the grant and every directory between them, which a stage
+// may not rename or remove, so the denial stays on the path it names.
 //
 // proxyPort is the loopback port of the stage's egress proxy, the one
 // network destination the stage may reach. Zero renders no network at all:
@@ -184,6 +186,7 @@ func RenderSeatbelt(profile Profile, proxyPort int) (string, error) {
 	rule(&b, "allow", "file-write*", "regex", gitAllowed)
 	rule(&b, "deny", "file-write*", "regex", gitDenied)
 	rule(&b, "deny", "file-write*", "subpath", denyWrites)
+	rule(&b, "deny", "file-write-unlink", "literal", pinned(writes, denyWrites))
 	rule(&b, "allow", "file-write*", "literal", seatbeltDevices)
 	rule(&b, "allow", "file-ioctl", "literal", seatbeltDevices)
 
@@ -334,6 +337,34 @@ func protectedPatterns(write string) []string {
 	// them), and gitPatterns allows back the same everyday-git paths. The
 	// node itself is not pinned, so a file simply named *.git stays writable.
 	return append(out, base+"[^/]+"+anyCase(".git")+"/.*$")
+}
+
+// pinned lists, for every denial inside a writable grant, the grant and the
+// directories between it and the denial, without the denial itself, which
+// its own denial already covers. Seatbelt matches a path, so a denial holds
+// only while the directories above it stay where they are; denying
+// file-write-unlink on each keeps it from being renamed, swapped or removed,
+// while files are still created, written and removed inside it and the
+// denial's path stays free to be created. Every spelling of a grant is
+// paired with every spelling of a denial below it.
+func pinned(writes, denials []string) []string {
+	var out []string
+	for _, write := range writes {
+		prefix := strings.TrimSuffix(write, string(filepath.Separator)) + string(filepath.Separator)
+		for _, denial := range denials {
+			if !strings.HasPrefix(denial, prefix) {
+				continue
+			}
+			// The walk stops at the grant, and never climbs above it.
+			for dir := filepath.Dir(denial); strings.HasPrefix(dir+string(filepath.Separator), prefix); dir = filepath.Dir(dir) {
+				out = append(out, dir)
+				if dir == write {
+					break
+				}
+			}
+		}
+	}
+	return sorted(out)
 }
 
 // gitPatterns are the regular expressions of what everyday git writes in

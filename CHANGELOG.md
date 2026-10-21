@@ -28,6 +28,13 @@ under **Removed** or **Changed** with what to do about it.
   bytes, the longest macOS opens, is still refused, now by `RenderSeatbelt`
   with an error naming it: its symbolic links cannot be resolved, so a
   denial of it would not hold.
+- **`hostsandbox` keeps a denial inside a writable folder on the path it
+  names under Seatbelt.** When a path denied for reading or for writing lies
+  inside a writable folder, the writable folder and every directory between
+  it and the denied path now stay in place: a stage may not rename, swap or
+  remove them. Files inside them are still created, written and removed as
+  before. A profile with no denial inside a writable folder renders exactly
+  as before.
 
 ## v0.106.0 - 2026-10-20
 

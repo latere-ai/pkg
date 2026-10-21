@@ -86,9 +86,12 @@
 // a grant, which a stage can leave in place of a directory it may write,
 // grants nothing beyond its own spelling, and a writable grant that is itself
 // a link is refused. The directories above a grant inside the home directory
-// may be examined but not listed. Read denials are also denied writing.
-// Writes are also allowed to the null and zero devices and the controlling
-// terminal.
+// may be examined but not listed. Read denials are also denied writing. A
+// denial inside a writable grant, of reading or of writing, also keeps the
+// grant and every directory between them in place: a stage may not rename,
+// swap or remove them, while it still creates, writes and removes files
+// inside them, so the denial stays on the path it names. Writes are also
+// allowed to the null and zero devices and the controlling terminal.
 //
 // Inside every writable grant, at any depth and in any case, a stage may not
 // write, move, create or replace what a shell, direnv, git, an editor or an
