@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.109.0 - 2026-10-22
+
 ### Added
 
 - **`hostsandbox` has an opt-in deny-list network under Seatbelt.** A stage
