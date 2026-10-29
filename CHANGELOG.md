@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.110.0 - 2026-10-29
+
 ### Added
 
 - **`egress.PublicDialer` keeps a gateway's workloads off its operator's
