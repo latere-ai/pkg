@@ -48,7 +48,14 @@ func checkPublic(address string, allow []netip.Prefix) error {
 	if err != nil {
 		return fmt.Errorf("%w: %q is not an address and port", ErrNonPublicDestination, address)
 	}
-	ip := dialed.Addr()
+	return CheckPublic(dialed.Addr(), allow)
+}
+
+// CheckPublic is [PublicDialer]'s rule for one address: nil when ip is public
+// or inside allow, and an error wrapping [ErrNonPublicDestination] otherwise.
+// A caller that is handed an address rather than a name decides with it
+// before dialing at all.
+func CheckPublic(ip netip.Addr, allow []netip.Prefix) error {
 	if netaddr.Public(ip) {
 		return nil
 	}

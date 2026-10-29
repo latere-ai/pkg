@@ -109,6 +109,18 @@ func httptestServer(t *testing.T, gw *Gateway) string {
 	return proxy.URL
 }
 
+func TestCheckPublicAddress(t *testing.T) {
+	if err := CheckPublic(netip.MustParseAddr("8.8.8.8"), nil); err != nil {
+		t.Errorf("CheckPublic(8.8.8.8) = %v", err)
+	}
+	if err := CheckPublic(netip.MustParseAddr("10.1.2.3"), nil); !errors.Is(err, ErrNonPublicDestination) {
+		t.Errorf("CheckPublic(10.1.2.3) = %v, want ErrNonPublicDestination", err)
+	}
+	if err := CheckPublic(netip.MustParseAddr("10.1.2.3"), []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}); err != nil {
+		t.Errorf("CheckPublic(10.1.2.3) inside an allowed range = %v", err)
+	}
+}
+
 // recordingDial dials directly and remembers every address it was asked for.
 type recordingDial struct {
 	mu        sync.Mutex

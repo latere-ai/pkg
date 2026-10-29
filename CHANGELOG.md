@@ -18,8 +18,10 @@ under **Removed** or **Changed** with what to do about it.
   dials, after the name was resolved, so a name that resolves to a private,
   loopback or link-local address is refused like the address itself, and so
   is a name whose next lookup answers differently. A refusal wraps
-  `egress.ErrNonPublicDestination`. Public has the same meaning as for a
-  `hostsandbox` deny-list stage, which now shares the rule.
+  `egress.ErrNonPublicDestination`. `egress.CheckPublic` applies the same
+  rule to one address, for a caller handed an address rather than a name.
+  Public has the same meaning as for a `hostsandbox` deny-list stage, which
+  now shares the rule.
 - **`egress.Gateway.Dial` is the one place the gateway opens an upstream
   connection**, for a passthrough tunnel and a terminated request alike. Set
   it to `PublicDialer` to apply that check to both; nil dials directly, as
