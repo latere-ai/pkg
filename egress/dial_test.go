@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -168,24 +169,49 @@ func TestGateway_DialCarriesEveryUpstreamConnection(t *testing.T) {
 }
 
 // TestGateway_PublicDialerRefusesAnInwardUpstream checks that a secret bound
-// to a host that resolves inward does not carry a terminated request there.
+// to a host that resolves inward does not carry a terminated request there,
+// over either framing: the workload is answered 403 and Refused is told once
+// per request, with the principal and the upstream the request named.
 func TestGateway_PublicDialerRefusesAnInwardUpstream(t *testing.T) {
-	up := newUpstream(t)
-	ca, _, _, _ := GenerateCA("")
-	reg := NewRegistry()
-	reg.Set("p-1", []Entry{{Placeholder: []byte("cph_placeholder"), Secret: []byte("sk-real"), AllowedHosts: []string{up.hostIP(t)}}})
-	gw := &Gateway{Registry: reg, CA: ca, Auth: StaticAuth{"Bearer t": "p-1"}, UpstreamTLS: upstreamRoots(up), Dial: PublicDialer(nil)}
-	proxy := httptestServer(t, gw)
-	client := clientThrough(t, proxy, "Bearer t", bothRoots(ca, up))
-	req, _ := http.NewRequest("GET", up.server.URL+"/echo", nil)
-	req.Header.Set("Authorization", "Bearer cph_placeholder")
-	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("request: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusBadGateway || strings.Contains(string(body), "sk-real") {
-		t.Fatalf("status %d, body %q; want 502 and no upstream answer", resp.StatusCode, body)
+	for _, h2 := range []bool{false, true} {
+		up := newUpstream(t)
+		ca, _, _, _ := GenerateCA("")
+		reg := NewRegistry()
+		reg.Set("p-1", []Entry{{Placeholder: []byte("cph_placeholder"), Secret: []byte("sk-real"), AllowedHosts: []string{up.hostIP(t)}}})
+		var (
+			mu      sync.Mutex
+			refused []string
+		)
+		gw := &Gateway{
+			Registry: reg, CA: ca, Auth: StaticAuth{"Bearer t": "p-1"}, UpstreamTLS: upstreamRoots(up), Dial: PublicDialer(nil),
+			Refused: func(principal string, req *http.Request) {
+				mu.Lock()
+				defer mu.Unlock()
+				refused = append(refused, principal+" "+req.URL.Host+req.URL.Path)
+			},
+		}
+		proxy := httptestServer(t, gw)
+		client := clientThrough(t, proxy, "Bearer t", bothRoots(ca, up))
+		if h2 {
+			client = h2ClientThrough(t, proxy, "Bearer t", bothRoots(ca, up))
+		}
+		req, _ := http.NewRequest("GET", up.server.URL+"/echo", nil)
+		req.Header.Set("Authorization", "Bearer cph_placeholder")
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("h2=%v: request: %v", h2, err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusForbidden || strings.Contains(string(body), "sk-real") {
+			t.Fatalf("h2=%v: status %d, body %q; want 403 and no upstream answer", h2, resp.StatusCode, body)
+		}
+		mu.Lock()
+		got := slices.Clone(refused)
+		mu.Unlock()
+		want := []string{"p-1 " + strings.TrimPrefix(up.server.URL, "https://") + "/echo"}
+		if !slices.Equal(got, want) {
+			t.Fatalf("h2=%v: Refused saw %q, want %q", h2, got, want)
+		}
 	}
 }

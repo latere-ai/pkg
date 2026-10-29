@@ -26,6 +26,11 @@ under **Removed** or **Changed** with what to do about it.
   connection**, for a passthrough tunnel and a terminated request alike. Set
   it to `PublicDialer` to apply that check to both; nil dials directly, as
   before.
+- **`egress.Gateway.Refused` reports a terminated request the dialer
+  refused.** It is called once per request, with the workload's principal
+  and the request as rebuilt toward the upstream, so an embedder can record
+  each refusal on a tunnel that carries many requests. The workload is
+  answered `403 Forbidden` over HTTP/1.1 and HTTP/2 alike, not `502`.
 
 ## v0.109.0 - 2026-10-22
 

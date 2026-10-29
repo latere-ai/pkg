@@ -66,6 +66,13 @@ type Gateway struct {
 	// may connect whichever way a request arrived. nil dials directly; an
 	// embedder that keeps workloads off its own network sets [PublicDialer].
 	Dial func(ctx context.Context, network, address string) (net.Conn, error)
+	// Refused is called once for each terminated request that was not sent
+	// because Dial refused the address its host resolved to
+	// ([ErrNonPublicDestination]), with the workload's principal and the
+	// request as rebuilt toward the upstream. The workload is answered 403
+	// either way; nil reports nothing. One tunnel carries many requests, so
+	// it may be called many times for one CONNECT.
+	Refused func(principal string, req *http.Request)
 	// Realm is the Proxy-Authenticate realm on a 407. Empty means DefaultRealm.
 	Realm string
 	Log   *slog.Logger
@@ -168,7 +175,7 @@ func (g *Gateway) handleConnect(w http.ResponseWriter, r *http.Request) {
 	// request context is still live and scopes the upstream dial and the
 	// TLS handshake.
 	if inspect {
-		g.mitm(r.Context(), client, r.Host, m)
+		g.mitm(r.Context(), client, principal, r.Host, m)
 		return
 	}
 	g.passthrough(r.Context(), client, r.Host)
@@ -214,7 +221,7 @@ func (g *Gateway) passthrough(ctx context.Context, client net.Conn, hostport str
 // differing only in framing. hostport is the CONNECT authority (host:port):
 // the bare host drives leaf minting and substitution scoping, the full
 // host:port drives the upstream dial.
-func (g *Gateway) mitm(ctx context.Context, client net.Conn, hostport string, m *Map) {
+func (g *Gateway) mitm(ctx context.Context, client net.Conn, principal, hostport string, m *Map) {
 	host := hostOnly(hostport)
 	tc, err := g.CA.leafFor(host)
 	if err != nil {
@@ -238,10 +245,10 @@ func (g *Gateway) mitm(ctx context.Context, client net.Conn, hostport string, m 
 	defer func() { _ = tlsClient.Close() }()
 
 	if tlsClient.ConnectionState().NegotiatedProtocol == "h2" {
-		g.mitmH2(tlsClient, host, hostport, m)
+		g.mitmH2(tlsClient, principal, host, hostport, m)
 		return
 	}
-	g.mitmH1(tlsClient, host, hostport, m)
+	g.mitmH1(tlsClient, principal, host, hostport, m)
 }
 
 // forward substitutes placeholders in req (scoped to host) and round-trips it to
@@ -249,8 +256,8 @@ func (g *Gateway) mitm(ctx context.Context, client net.Conn, hostport string, m 
 // stream both call it, so the substitution core is identical across framings.
 // A substitution error (a resolver that could not produce a secret) fails the
 // request before it leaves, so a placeholder meant to be replaced is never
-// sent upstream.
-func (g *Gateway) forward(host, hostport string, req *http.Request, m *Map) (*http.Response, error) {
+// sent upstream. A request Dial refused is reported to Refused.
+func (g *Gateway) forward(principal, host, hostport string, req *http.Request, m *Map) (*http.Response, error) {
 	if !sameAuthority(req.Host, hostport) {
 		g.log().WarnContext(req.Context(), "egress misdirected request", "host", host, "request_host", req.Host)
 		return nil, errMisdirected
@@ -262,22 +269,30 @@ func (g *Gateway) forward(host, hostport string, req *http.Request, m *Map) (*ht
 		g.log().WarnContext(req.Context(), "egress substitute", "host", host, "err", err)
 		return nil, err
 	}
-	return g.tr().RoundTrip(req)
+	resp, err := g.tr().RoundTrip(req)
+	if errors.Is(err, ErrNonPublicDestination) && g.Refused != nil {
+		g.Refused(principal, req)
+	}
+	return resp, err
 }
 
 // mitmH1 serves the workload's HTTP/1.1 requests, looping for keep-alive. Each
 // request is substituted and forwarded; the response streams back byte-for-byte
 // (SSE-safe: no buffering).
-func (g *Gateway) mitmH1(tlsClient *tls.Conn, host, hostport string, m *Map) {
+func (g *Gateway) mitmH1(tlsClient *tls.Conn, principal, host, hostport string, m *Map) {
 	br := bufio.NewReader(tlsClient)
 	for {
 		req, err := http.ReadRequest(br)
 		if err != nil {
 			return // EOF or client closed
 		}
-		resp, err := g.forward(host, hostport, req, m)
+		resp, err := g.forward(principal, host, hostport, req, m)
 		if errors.Is(err, errMisdirected) {
 			writeMisdirected(tlsClient)
+			return
+		}
+		if errors.Is(err, ErrNonPublicDestination) {
+			writeRefused(tlsClient)
 			return
 		}
 		if err != nil {
@@ -297,11 +312,15 @@ func (g *Gateway) mitmH1(tlsClient *tls.Conn, host, hostport string, m *Map) {
 // as mitmH1 and copies the upstream response (status, headers, streamed body,
 // trailers) back. http2.Server multiplexes streams over the one connection and
 // runs the handler per stream, so forwarding state never crosses streams.
-func (g *Gateway) mitmH2(tlsClient *tls.Conn, host, hostport string, m *Map) {
+func (g *Gateway) mitmH2(tlsClient *tls.Conn, principal, host, hostport string, m *Map) {
 	h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		resp, err := g.forward(host, hostport, req, m)
+		resp, err := g.forward(principal, host, hostport, req, m)
 		if errors.Is(err, errMisdirected) {
 			w.WriteHeader(http.StatusMisdirectedRequest)
+			return
+		}
+		if errors.Is(err, ErrNonPublicDestination) {
+			w.WriteHeader(http.StatusForbidden)
 			return
 		}
 		if err != nil {
@@ -373,6 +392,13 @@ func writeGatewayError(w io.Writer) {
 // tunnel's host with that host's credentials swapped in, and a front that
 // routes by Host would hand them to the other one, so it is refused.
 var errMisdirected = errors.New("egress: the request names another host than its tunnel")
+
+// writeRefused answers a request whose host resolved to an address Dial does
+// not connect to: the gateway refused it, so it is a 403 and not an upstream
+// that failed.
+func writeRefused(w io.Writer) {
+	_, _ = io.WriteString(w, "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+}
 
 func writeMisdirected(w io.Writer) {
 	_, _ = io.WriteString(w, "HTTP/1.1 421 Misdirected Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
