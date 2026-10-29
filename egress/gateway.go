@@ -299,6 +299,12 @@ func (g *Gateway) mitmH1(tlsClient *tls.Conn, principal, host, hostport string, 
 			writeGatewayError(tlsClient)
 			return
 		}
+		// The shared transport may have reached the upstream over HTTP/2,
+		// and the response names the version it came in. The workload
+		// spoke HTTP/1.1 on this connection, and a strict client refuses
+		// a status line that names another version, so it is written as
+		// HTTP/1.1.
+		resp.Proto, resp.ProtoMajor, resp.ProtoMinor = "HTTP/1.1", 1, 1
 		werr := resp.Write(tlsClient)
 		_ = resp.Body.Close()
 		if werr != nil || req.Close || resp.Close {

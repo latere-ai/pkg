@@ -329,3 +329,48 @@ func TestGateway_H2MisdirectedAuthorityIsRefused(t *testing.T) {
 		t.Fatalf("a misdirected request reached the upstream with %q", up.lastAuth)
 	}
 }
+
+// An HTTP/1.1 client to a credential host whose upstream speaks HTTP/2 reads
+// an HTTP/1.1 status line: the gateway answers in the protocol the workload
+// spoke, not the one the upstream answered in. A strict client, such as Bun's,
+// refuses a response whose status line names HTTP/2.0 on an HTTP/1.1
+// connection.
+func TestGateway_H1ClientReadsH1FromAnH2Upstream(t *testing.T) {
+	up := newH2Upstream(t)
+	ca, _, _, _ := GenerateCA("")
+	reg := NewRegistry()
+	reg.Set("p-1", []Entry{{
+		Placeholder:  []byte("cph_placeholder"),
+		Secret:       []byte("sk-realsecret"),
+		AllowedHosts: []string{up.hostIP(t)},
+	}})
+	proxy := newGateway(t, reg, ca, up, StaticAuth{"Bearer allow": "p-1"})
+	pu, err := url.Parse(proxy.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Transport: &http.Transport{
+		Proxy:              http.ProxyURL(pu),
+		ProxyConnectHeader: http.Header{"Proxy-Authorization": {"Bearer allow"}},
+		TLSClientConfig:    &tls.Config{RootCAs: bothRoots(ca, up), NextProtos: []string{"http/1.1"}},
+	}}
+	for _, path := range []string{"/echo", "/trailer"} {
+		req, _ := http.NewRequest("GET", up.server.URL+path, nil)
+		req.Header.Set("Authorization", "Bearer cph_placeholder")
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("%s: request: %v", path, err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.Proto != "HTTP/1.1" {
+			t.Fatalf("%s: the status line names %s, want HTTP/1.1", path, resp.Proto)
+		}
+		if path == "/echo" && !strings.Contains(string(body), "proto=2 auth=Bearer sk-realsecret") {
+			t.Fatalf("%s: the upstream did not answer over h2 with the secret: %q", path, body)
+		}
+		if path == "/trailer" && string(body) != "body" {
+			t.Fatalf("%s: body %q", path, body)
+		}
+	}
+}

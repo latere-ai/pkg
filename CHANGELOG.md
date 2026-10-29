@@ -10,6 +10,14 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Fixed
+
+- **A terminated HTTP/1.1 request reads an HTTP/1.1 response.** When the
+  gateway reached an upstream over HTTP/2, it wrote the upstream's status
+  line, `HTTP/2.0 200 OK`, back to a workload that spoke HTTP/1.1. curl
+  read it; Bun, and so Claude Code, refused the response as a connection
+  error. The response is now written as HTTP/1.1.
+
 ## v0.110.0 - 2026-10-29
 
 ### Added
