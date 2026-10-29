@@ -10,54 +10,13 @@ import (
 	"net/netip"
 	"strings"
 	"syscall"
+
+	"latere.ai/x/pkg/internal/netaddr"
 )
 
 // errNonPublicDestination is a destination a deny list never reaches: this
 // machine, a network it is on, or an address that is not public.
 var errNonPublicDestination = errors.New("the destination is this machine, a local network or an address that is not public")
-
-// refusedIPv4 are the IPv4 ranges a deny list refuses: this machine and
-// "this network", private networks, the carrier-grade NAT range (which
-// tailnets use for the person's other machines), link-local addresses with
-// the cloud metadata endpoint, the special-purpose, benchmarking and
-// documentation ranges, multicast, and the reserved range with the
-// broadcast address. The benchmarking range, 198.18.0.0/15, is where a proxy
-// or VPN app's fake-IP mode answers every name from before it resolves and
-// connects to the name itself, wherever the name's own servers point it, so
-// the address the proxy checks says nothing of where the connection goes.
-var refusedIPv4 = prefixes(
-	"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12",
-	"192.0.0.0/24", "192.0.2.0/24", "192.88.99.0/24", "192.168.0.0/16", "198.18.0.0/15", "198.51.100.0/24",
-	"203.0.113.0/24", "224.0.0.0/4", "240.0.0.0/4",
-)
-
-// IPv6 is admitted only from global unicast, 2000::/3, less the ranges in
-// refusedIPv6. Outside it lie the loopback and unspecified addresses, the
-// IPv4-compatible form, unique local, link-local and the deprecated
-// site-local addresses, multicast, and the local-use NAT64 prefix, so all of
-// them are refused. Inside it, refusedIPv6 are the IETF's protocol
-// assignments with Teredo, and the documentation prefixes.
-var (
-	globalUnicast = netip.MustParsePrefix("2000::/3")
-	refusedIPv6   = prefixes("2001::/23", "2001:db8::/32", "3fff::/20")
-)
-
-// The IPv6 forms that carry an IPv4 address, each decided by the address it
-// carries: the well-known NAT64 prefix holds it in its last 32 bits, and
-// 6to4 in the 32 bits after its first 16. An IPv4-mapped address is read as
-// the IPv4 address it maps.
-var (
-	nat64     = netip.MustParsePrefix("64:ff9b::/96")
-	sixToFour = netip.MustParsePrefix("2002::/16")
-)
-
-func prefixes(values ...string) []netip.Prefix {
-	out := make([]netip.Prefix, 0, len(values))
-	for _, value := range values {
-		out = append(out, netip.MustParsePrefix(value))
-	}
-	return out
-}
 
 // refuseNonPublic is a deny list's check of the address a name resolved to,
 // made by the dialer before each connection is opened, so a name that
@@ -70,58 +29,20 @@ func refuseNonPublic(_, address string, _ syscall.RawConn) error {
 		return fmt.Errorf("check destination %q: %w", address, err)
 	}
 	ip, err := netip.ParseAddr(host)
-	if err != nil || ip.Zone() != "" || !publicAddress(ip) {
+	if err != nil || !netaddr.Public(ip) {
 		return fmt.Errorf("%w: %s", errNonPublicDestination, host)
 	}
 	networks, err := localNetworks()
 	if err != nil {
 		return fmt.Errorf("%w: reading this machine's networks to check %s: %w", errNonPublicDestination, host, err)
 	}
-	ip = reached(ip)
+	ip = netaddr.Reached(ip)
 	for _, network := range networks {
 		if network.Contains(ip) {
 			return fmt.Errorf("%w: %s", errNonPublicDestination, host)
 		}
 	}
 	return nil
-}
-
-// reached is the address a connection to ip reaches: the IPv4 address an
-// IPv4-mapped address maps, and the one the well-known NAT64 prefix
-// translates to; ip itself otherwise.
-func reached(ip netip.Addr) netip.Addr {
-	ip = ip.Unmap()
-	if ip.Is6() && nat64.Contains(ip) {
-		bytes := ip.As16()
-		return netip.AddrFrom4([4]byte(bytes[12:16]))
-	}
-	return ip
-}
-
-// publicAddress reports whether an address without a zone is public.
-func publicAddress(ip netip.Addr) bool {
-	ip = reached(ip)
-	if ip.Is6() {
-		switch {
-		case sixToFour.Contains(ip):
-			bytes := ip.As16()
-			ip = netip.AddrFrom4([4]byte(bytes[2:6]))
-		case !globalUnicast.Contains(ip):
-			return false
-		default:
-			return !inAny(refusedIPv6, ip)
-		}
-	}
-	return !inAny(refusedIPv4, ip)
-}
-
-func inAny(ranges []netip.Prefix, ip netip.Addr) bool {
-	for _, prefix := range ranges {
-		if prefix.Contains(ip) {
-			return true
-		}
-	}
-	return false
 }
 
 // localInterface is what the check reads of one network interface.
@@ -190,7 +111,7 @@ func localNetworks() ([]netip.Prefix, error) {
 			bits := address.BitLen()
 			if ones, size := mask.Size(); whole && size == bits && ones >= bits/4 {
 				bits = ones
-				if address.Is6() && globalUnicast.Contains(address) {
+				if address.Is6() && netaddr.GlobalUnicast.Contains(address) {
 					bits = min(bits, sitePrefix)
 				}
 			}
@@ -272,5 +193,5 @@ func reachedAddress(host string) (netip.Addr, bool) {
 	if err != nil || ip.Zone() != "" {
 		return netip.Addr{}, false
 	}
-	return reached(ip), true
+	return netaddr.Reached(ip), true
 }

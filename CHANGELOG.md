@@ -10,6 +10,21 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- **`egress.PublicDialer` keeps a gateway's workloads off its operator's
+  network.** It connects only to public addresses, and to the non-public
+  ranges the operator passes in. It checks the address each connection
+  dials, after the name was resolved, so a name that resolves to a private,
+  loopback or link-local address is refused like the address itself, and so
+  is a name whose next lookup answers differently. A refusal wraps
+  `egress.ErrNonPublicDestination`. Public has the same meaning as for a
+  `hostsandbox` deny-list stage, which now shares the rule.
+- **`egress.Gateway.Dial` is the one place the gateway opens an upstream
+  connection**, for a passthrough tunnel and a terminated request alike. Set
+  it to `PublicDialer` to apply that check to both; nil dials directly, as
+  before.
+
 ## v0.109.0 - 2026-10-22
 
 ### Added

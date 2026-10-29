@@ -61,6 +61,11 @@ type Gateway struct {
 	// production binary sets it; it defaults off so embedders and tests that
 	// colocate upstreams on loopback keep working.
 	BlockLoopbackTargets bool
+	// Dial opens the connection to an upstream, for a passthrough tunnel and
+	// for a terminated request alike, so one seam decides where the gateway
+	// may connect whichever way a request arrived. nil dials directly; an
+	// embedder that keeps workloads off its own network sets [PublicDialer].
+	Dial func(ctx context.Context, network, address string) (net.Conn, error)
 	// Realm is the Proxy-Authenticate realm on a 407. Empty means DefaultRealm.
 	Realm string
 	Log   *slog.Logger
@@ -83,9 +88,19 @@ func (g *Gateway) realm() string {
 	return DefaultRealm
 }
 
+// dial opens a connection to an upstream through Dial, or directly.
+func (g *Gateway) dial(ctx context.Context, network, address string) (net.Conn, error) {
+	if g.Dial != nil {
+		return g.Dial(ctx, network, address)
+	}
+	var d net.Dialer
+	return d.DialContext(ctx, network, address)
+}
+
 func (g *Gateway) tr() *http.Transport {
 	g.once.Do(func() {
 		g.transport = &http.Transport{
+			DialContext:         g.dial,
 			TLSClientConfig:     g.UpstreamTLS,
 			ForceAttemptHTTP2:   true,
 			MaxIdleConns:        100,
@@ -172,8 +187,7 @@ func (c *prefixedConn) Read(p []byte) (int, error) { return c.r.Read(p) }
 // passthrough splices the workload connection to the real upstream without
 // terminating TLS. The gateway never sees plaintext for these hosts.
 func (g *Gateway) passthrough(ctx context.Context, client net.Conn, hostport string) {
-	var d net.Dialer
-	up, err := d.DialContext(ctx, "tcp", withPort(hostport))
+	up, err := g.dial(ctx, "tcp", withPort(hostport))
 	if err != nil {
 		g.log().WarnContext(ctx, "egress passthrough dial", "host", hostport, "err", err)
 		return

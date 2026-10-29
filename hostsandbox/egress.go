@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"latere.ai/x/pkg/hostmatch"
+	"latere.ai/x/pkg/internal/netaddr"
 )
 
 // The egress proxy's time limits: reaching a destination, and reading a
@@ -186,7 +187,7 @@ func (e *egress) refuseBlockedAddress(address string) error {
 	if err != nil {
 		return fmt.Errorf("check destination %q: %w", address, err)
 	}
-	ip := reached(dialed.Addr())
+	ip := netaddr.Reached(dialed.Addr())
 	if e.blockedAddrs[ip] || e.blockedAddrPorts[netip.AddrPortFrom(ip, dialed.Port())] {
 		return fmt.Errorf("%w: %s", errBlockedDestination, ip)
 	}
