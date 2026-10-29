@@ -4,15 +4,19 @@
 package egress
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // newH2Upstream is an HTTP/2-capable TLS upstream: /echo records the auth header
@@ -371,6 +375,72 @@ func TestGateway_H1ClientReadsH1FromAnH2Upstream(t *testing.T) {
 		}
 		if path == "/trailer" && string(body) != "body" {
 			t.Fatalf("%s: body %q", path, body)
+		}
+	}
+}
+
+// A streamed answer from an HTTP/2 upstream, which carries no length, reaches
+// an HTTP/1.1 client framed so the client knows where it ends: an event
+// stream a model sends is read to its end, and the next request on the same
+// connection is served. Unframed, the client would wait for the connection to
+// close while the gateway waited for its next request.
+func TestGateway_H1ClientReadsAStreamFromAnH2Upstream(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/stream", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, part := range []string{"data: a\n\n", "data: b\n\n"} {
+			_, _ = io.WriteString(w, part)
+			w.(http.Flusher).Flush()
+		}
+	})
+	s := httptest.NewUnstartedServer(mux)
+	s.EnableHTTP2 = true
+	s.StartTLS()
+	t.Cleanup(s.Close)
+	up := &upstream{server: s}
+	ca, _, _, _ := GenerateCA("")
+	reg := NewRegistry()
+	reg.Set("p-1", []Entry{{Placeholder: []byte("cph_placeholder"), Secret: []byte("sk-realsecret"), AllowedHosts: []string{up.hostIP(t)}}})
+	proxy := newGateway(t, reg, ca, up, StaticAuth{"Bearer allow": "p-1"})
+	pu, err := url.Parse(proxy.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dials atomic.Int32
+	client := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{
+		Proxy:              http.ProxyURL(pu),
+		ProxyConnectHeader: http.Header{"Proxy-Authorization": {"Bearer allow"}},
+		TLSClientConfig:    &tls.Config{RootCAs: bothRoots(ca, up), NextProtos: []string{"http/1.1"}},
+		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			dials.Add(1)
+			var d net.Dialer
+			return d.DialContext(ctx, network, address)
+		},
+	}}
+	for i := range 2 {
+		resp, err := client.Get(s.URL + "/stream")
+		if err != nil {
+			t.Fatalf("request %d: %v", i, err)
+		}
+		body, err := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if err != nil {
+			t.Fatalf("request %d: reading the stream: %v", i, err)
+		}
+		if string(body) != "data: a\n\ndata: b\n\n" || resp.Proto != "HTTP/1.1" {
+			t.Fatalf("request %d: %s with %q", i, resp.Proto, body)
+		}
+	}
+	if got := dials.Load(); got != 1 {
+		t.Fatalf("the client dialed the gateway %d times, want one connection kept alive", got)
+	}
+}
+
+// TestBodyAllowed keeps a chunked framing off the statuses that carry no body.
+func TestBodyAllowed(t *testing.T) {
+	for status, want := range map[int]bool{100: false, 200: true, 204: false, 206: true, 304: false, 404: true, 502: true} {
+		if got := bodyAllowed(status); got != want {
+			t.Errorf("bodyAllowed(%d) = %v, want %v", status, got, want)
 		}
 	}
 }

@@ -10,6 +10,15 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Fixed
+
+- **A streamed answer reaches an HTTP/1.1 workload with its end marked.**
+  A response of no known length, such as the event stream a model sends
+  over HTTP/2, was written to be read until the connection closed, while
+  the gateway kept the connection open for the next request, so the
+  workload waited forever. It is now sent chunked, and the connection
+  serves the next request.
+
 ## v0.110.1 - 2026-10-29
 
 ### Fixed

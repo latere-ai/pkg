@@ -305,6 +305,13 @@ func (g *Gateway) mitmH1(tlsClient *tls.Conn, principal, host, hostport string, 
 		// a status line that names another version, so it is written as
 		// HTTP/1.1.
 		resp.Proto, resp.ProtoMajor, resp.ProtoMinor = "HTTP/1.1", 1, 1
+		// A body of no known length, such as the event stream a model
+		// sends over HTTP/2, is chunked. Written as it came, it would end
+		// only when the connection closed, while this loop waits on the
+		// connection for the workload's next request.
+		if resp.ContentLength < 0 && len(resp.TransferEncoding) == 0 && req.Method != http.MethodHead && bodyAllowed(resp.StatusCode) {
+			resp.TransferEncoding = []string{"chunked"}
+		}
 		werr := resp.Write(tlsClient)
 		_ = resp.Body.Close()
 		if werr != nil || req.Close || resp.Close {
@@ -398,6 +405,12 @@ func writeGatewayError(w io.Writer) {
 // tunnel's host with that host's credentials swapped in, and a front that
 // routes by Host would hand them to the other one, so it is refused.
 var errMisdirected = errors.New("egress: the request names another host than its tunnel")
+
+// bodyAllowed reports whether a response with this status carries a body:
+// none does when informational, 204 or 304.
+func bodyAllowed(status int) bool {
+	return status >= 200 && status != http.StatusNoContent && status != http.StatusNotModified
+}
 
 // writeRefused answers a request whose host resolved to an address Dial does
 // not connect to: the gateway refused it, so it is a 403 and not an upstream
