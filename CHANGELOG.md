@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.110.1 - 2026-10-29
+
 ### Fixed
 
 - **A terminated HTTP/1.1 request reads an HTTP/1.1 response.** When the
