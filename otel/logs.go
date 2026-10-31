@@ -9,8 +9,8 @@ import (
 	"os"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
-	"go.opentelemetry.io/otel/log/global"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
@@ -94,7 +94,7 @@ func SetupLogs(ctx context.Context, cfg LogsConfig) (*slog.Logger, func(context.
 		sdklog.WithProcessor(sdklog.NewBatchProcessor(exp)),
 		sdklog.WithResource(res),
 	)
-	global.SetLoggerProvider(provider)
+	otel.SetLoggerProvider(provider)
 
 	bridge := otelslog.NewHandler(cfg.Scope, otelslog.WithLoggerProvider(provider))
 	tee := teeHandler{primary: cfg.Stdout, secondary: bridge}
