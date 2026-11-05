@@ -92,12 +92,22 @@ func TestUpGivesUpOnPersistentOpenFailure(t *testing.T) {
 // fakeMigrator records whether Close was called and returns a configured Up error.
 type fakeMigrator struct {
 	upErr     error
+	migErr    error
+	migrated  uint
+	version   uint
+	dirty     bool
+	versErr   error
 	sourceErr error
 	dbErr     error
 	closed    bool
 }
 
 func (f *fakeMigrator) Up() error { return f.upErr }
+func (f *fakeMigrator) Migrate(v uint) error {
+	f.migrated = v
+	return f.migErr
+}
+func (f *fakeMigrator) Version() (uint, bool, error) { return f.version, f.dirty, f.versErr }
 func (f *fakeMigrator) Close() (sourceErr, dbErr error) {
 	f.closed = true
 	return f.sourceErr, f.dbErr
@@ -107,7 +117,7 @@ func (f *fakeMigrator) Close() (sourceErr, dbErr error) {
 // exists to prevent: migrate opens its own *sql.DB and must be closed after Up.
 func TestRunUpClosesOnSuccess(t *testing.T) {
 	f := &fakeMigrator{}
-	if err := runUp(f); err != nil {
+	if err := runUpTest(f); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !f.closed {
@@ -119,7 +129,7 @@ func TestRunUpClosesOnSuccess(t *testing.T) {
 // is still closed.
 func TestRunUpNoChange(t *testing.T) {
 	f := &fakeMigrator{upErr: migrate.ErrNoChange}
-	if err := runUp(f); err != nil {
+	if err := runUpTest(f); err != nil {
 		t.Fatalf("ErrNoChange must be success, got: %v", err)
 	}
 	if !f.closed {
@@ -132,7 +142,7 @@ func TestRunUpNoChange(t *testing.T) {
 func TestRunUpClosesOnError(t *testing.T) {
 	boom := errors.New("boom")
 	f := &fakeMigrator{upErr: boom}
-	err := runUp(f)
+	err := runUpTest(f)
 	if err == nil {
 		t.Fatal("expected error from failed Up")
 	}
@@ -147,7 +157,7 @@ func TestRunUpClosesOnError(t *testing.T) {
 func TestRunUpReturnsCloseErrors(t *testing.T) {
 	sourceErr := errors.New("source close")
 	dbErr := errors.New("database close")
-	err := runUp(&fakeMigrator{sourceErr: sourceErr, dbErr: dbErr})
+	err := runUpTest(&fakeMigrator{sourceErr: sourceErr, dbErr: dbErr})
 	if !errors.Is(err, sourceErr) || !errors.Is(err, dbErr) {
 		t.Fatalf("close error = %v, want both source and database causes", err)
 	}
@@ -156,7 +166,7 @@ func TestRunUpReturnsCloseErrors(t *testing.T) {
 func TestRunUpJoinsMigrationAndCloseErrors(t *testing.T) {
 	upErr := errors.New("migration failed")
 	dbErr := errors.New("database close")
-	err := runUp(&fakeMigrator{upErr: upErr, dbErr: dbErr})
+	err := runUpTest(&fakeMigrator{upErr: upErr, dbErr: dbErr})
 	if !errors.Is(err, upErr) || !errors.Is(err, dbErr) {
 		t.Fatalf("joined error = %v, want migration and close causes", err)
 	}
@@ -199,4 +209,9 @@ func TestUpReportsAnUnregisteredDriver(t *testing.T) {
 	if !strings.Contains(err.Error(), "pgxmigrate: init") {
 		t.Errorf("error should name the step, got %v", err)
 	}
+}
+
+// runUpTest runs Up against a fake with a source whose highest version is 1.
+func runUpTest(m migrator) error {
+	return finish(m, "up", (migrator).Up, func() (uint, error) { return HighestOf(oneMigration, ".") })
 }
