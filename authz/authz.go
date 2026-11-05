@@ -270,8 +270,14 @@ type answer struct {
 }
 
 // ParseDecision reads one 200 body. A body with no allow field is no
-// answer: it is an *Unavailable, never an allow.
-func ParseDecision(raw []byte) (Decision, error) {
+// answer: it is an *Unavailable, never an allow. An answer that names no
+// ttl reports DefaultTTL.
+func ParseDecision(raw []byte) (Decision, error) { return parseDecision(raw, DefaultTTL) }
+
+// parseDecision is ParseDecision with def as the ttl of an answer that
+// names none, which is how a client configured with its own default reads
+// one.
+func parseDecision(raw []byte, def time.Duration) (Decision, error) {
 	var a answer
 	if err := json.Unmarshal(raw, &a, foreignJSON); err != nil {
 		return Decision{}, fmt.Errorf("body: %w", err)
@@ -279,7 +285,7 @@ func ParseDecision(raw []byte) (Decision, error) {
 	if a.Allow == nil {
 		return Decision{}, errors.New("body: no allow field")
 	}
-	d := Decision{Allow: *a.Allow, Reason: a.Reason, TTL: DefaultTTL, Filter: a.Filter}
+	d := Decision{Allow: *a.Allow, Reason: a.Reason, TTL: def, Filter: a.Filter}
 	if len(a.Limits) > 0 && string(a.Limits) != "null" {
 		d.Limits = a.Limits
 	}

@@ -10,6 +10,15 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- **`authz.Options.DefaultTTL` sets how long a client caches an allow whose
+  answer names no `ttl`.** A service whose operator configures that
+  default passes it here, and the `Decision` reports it as the allow's
+  `TTL`. Zero keeps `authz.DefaultTTL`, sixty seconds, and a value past
+  `authz.MaxTTL` is held at the cap an answer's own `ttl` meets.
+  `authz.ParseDecision` is unchanged.
+
 ## v0.113.0 - 2026-11-05
 
 ### Changed

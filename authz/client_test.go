@@ -456,3 +456,44 @@ func TestAnUnknownActionNeverReachesTheWire(t *testing.T) {
 		})
 	}
 }
+
+// TestTheDefaultTTLIsTheClientsOwn proves Options.DefaultTTL: an allow
+// whose answer names no ttl is held for the configured default and
+// reports it, an answer's own ttl still wins, and a default past MaxTTL
+// is held at the cap.
+func TestTheDefaultTTLIsTheClientsOwn(t *testing.T) {
+	ctx := context.Background()
+	clk := newClock()
+	s := stub.New(t)
+	s.Allow(stub.Rule{Subject: alice, Resource: repoA, Action: "repo.read"})
+	s.Allow(stub.Rule{Subject: alice, Resource: repoA, Action: "repo.write", TTL: 30})
+	build := func(def time.Duration) *authz.Client {
+		t.Helper()
+		c, err := authz.NewClient(authz.Options{URL: s.URL(), Token: s.Token(), HTTP: &http.Client{}, Now: clk.Now, DefaultTTL: def})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	c := build(90 * time.Second)
+	if d, err := c.Authorize(ctx, request(alice, "repo.read", repoA)); err != nil || !d.Allow || d.TTL != 90*time.Second {
+		t.Fatalf("an allow without a ttl: %+v, %v; want the configured 90s", d, err)
+	}
+	if d, err := c.Authorize(ctx, request(alice, "repo.write", repoA)); err != nil || d.TTL != 30*time.Second {
+		t.Fatalf("an allow with its own ttl: %+v, %v; want its 30s", d, err)
+	}
+	clk.Advance(authz.DefaultTTL + time.Second)
+	if _, err := c.Authorize(ctx, request(alice, "repo.read", repoA)); err != nil || len(s.Requests()) != 2 {
+		t.Fatalf("the allow expired at the package default, not the configured one: %v, %d calls", err, len(s.Requests()))
+	}
+	clk.Advance(90*time.Second - authz.DefaultTTL)
+	if _, err := c.Authorize(ctx, request(alice, "repo.read", repoA)); err != nil || len(s.Requests()) != 3 {
+		t.Fatalf("the allow outlived the configured default: %v, %d calls", err, len(s.Requests()))
+	}
+	if d, err := build(time.Hour).Authorize(ctx, request(alice, "repo.read", repoA)); err != nil || d.TTL != authz.MaxTTL {
+		t.Fatalf("a default past the cap: %+v, %v; want MaxTTL", d, err)
+	}
+	if d, err := build(0).Authorize(ctx, request(alice, "repo.read", repoA)); err != nil || d.TTL != authz.DefaultTTL {
+		t.Fatalf("a zero default: %+v, %v; want DefaultTTL", d, err)
+	}
+}

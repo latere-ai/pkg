@@ -56,6 +56,11 @@ type Options struct {
 	HTTP *http.Client
 	// Timeout bounds one call, the retry included. Timeout when zero.
 	Timeout time.Duration
+	// DefaultTTL is how long an allow whose answer names no ttl is
+	// cached, and the TTL its Decision reports. The package's DefaultTTL
+	// when zero or negative, and held at MaxTTL, the cap an answer's own
+	// ttl meets.
+	DefaultTTL time.Duration
 	// Now is the clock the cache runs on.
 	Now func() time.Time
 	// Observe receives every call's result, allow, deny, or error, and
@@ -108,10 +113,12 @@ type Client struct {
 	token   string
 	http    *http.Client
 	timeout time.Duration
-	now     func() time.Time
-	observe func(string, float64)
-	vocab   Vocabulary
-	cache   *cache.TTLCache[cacheKey, cached]
+	// defaultTTL is the ttl of an allow whose answer names none.
+	defaultTTL time.Duration
+	now        func() time.Time
+	observe    func(string, float64)
+	vocab      Vocabulary
+	cache      *cache.TTLCache[cacheKey, cached]
 }
 
 type cacheKey [sha256.Size]byte
@@ -132,6 +139,10 @@ func NewClient(o Options) (*Client, error) {
 	c := &Client{url: o.URL, token: o.Token, http: o.HTTP, timeout: o.Timeout, now: o.Now, observe: o.Observe, vocab: o.Vocabulary}
 	if c.timeout == 0 {
 		c.timeout = Timeout
+	}
+	c.defaultTTL = DefaultTTL
+	if o.DefaultTTL > 0 {
+		c.defaultTTL = min(o.DefaultTTL, MaxTTL)
 	}
 	if c.now == nil {
 		c.now = time.Now
@@ -291,7 +302,7 @@ func (c *Client) decision(raw []byte) (Decision, error) {
 	if len(raw) > maxDecisionBytes {
 		return Decision{}, &Unavailable{URL: c.url, Status: http.StatusOK, Err: errors.New("body: over the decision bound")}
 	}
-	d, err := ParseDecision(raw)
+	d, err := parseDecision(raw, c.defaultTTL)
 	if err != nil {
 		return Decision{}, &Unavailable{URL: c.url, Status: http.StatusOK, Err: err}
 	}
