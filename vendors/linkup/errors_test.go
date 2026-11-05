@@ -5,6 +5,7 @@ package linkup
 
 import (
 	"errors"
+	"math"
 	"net/http"
 	"reflect"
 	"strings"
@@ -228,26 +229,24 @@ func TestALongMessageIsCut(t *testing.T) {
 	}
 }
 
-func TestRetryAfter(t *testing.T) {
+func TestRetryAfterHeader(t *testing.T) {
 	at := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
-	for value, want := range map[string]struct {
-		wait time.Duration
-		ok   bool
-	}{
-		"":                              {0, false},
-		"  ":                            {0, false},
-		"0":                             {0, true},
-		" 120 ":                         {2 * time.Minute, true},
-		"-1":                            {0, false},
-		"1.5":                           {0, false},
-		"soon":                          {0, false},
-		"99999999999999999":             {maxRetryAfter, true},
-		"Mon, 05 Oct 2026 12:00:30 GMT": {30 * time.Second, true},
-		"Mon, 05 Oct 2026 11:00:00 GMT": {0, true},
+	t.Cleanup(func() { now = time.Now })
+	now = func() time.Time { return at }
+	for value, want := range map[string]time.Duration{
+		"":                              0,
+		"soon":                          0,
+		"-1":                            0,
+		" 120 ":                         2 * time.Minute,
+		"1.5":                           1500 * time.Millisecond,
+		"99999999999999999":             math.MaxInt64,
+		"Mon, 05 Oct 2026 12:00:30 GMT": 30 * time.Second,
+		"Mon, 05 Oct 2026 11:00:00 GMT": 0,
 	} {
-		wait, ok := retryAfter(value, at)
-		if wait != want.wait || ok != want.ok {
-			t.Errorf("retryAfter(%q) = %v, %v; want %v, %v", value, wait, ok, want.wait, want.ok)
+		h := http.Header{}
+		h.Set("Retry-After", value)
+		if got := newError(http.StatusTooManyRequests, h, nil, testKey).RetryAfter; got != want {
+			t.Errorf("Retry-After %q gave %v, want %v", value, got, want)
 		}
 	}
 }
@@ -282,19 +281,6 @@ func FuzzNewError(f *testing.F) {
 		}
 		if matched != 1 {
 			t.Fatalf("status %d code %q matched %d kinds", status, e.Code, matched)
-		}
-	})
-}
-
-func FuzzRetryAfter(f *testing.F) {
-	for _, seed := range []string{"", "0", "120", "-5", "1e3", "99999999999999999999", "Mon, 05 Oct 2026 12:00:30 GMT", "Monday, 05-Oct-26 12:00:30 GMT"} {
-		f.Add(seed)
-	}
-	at := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
-	f.Fuzz(func(t *testing.T, value string) {
-		wait, ok := retryAfter(value, at)
-		if wait < 0 || (!ok && wait != 0) {
-			t.Fatalf("retryAfter(%q) = %v, %v", value, wait, ok)
 		}
 	})
 }

@@ -252,10 +252,14 @@ func TestRetryAfter(t *testing.T) {
 			ok:     true,
 		},
 		{
-			name:   "infinite seconds saturate",
-			header: http.Header{"Retry-After": {"+Inf"}},
+			name:   "seconds beyond the duration range saturate",
+			header: http.Header{"Retry-After": {"99999999999"}},
 			want:   math.MaxInt64,
 			ok:     true,
+		},
+		{
+			name:   "infinite seconds are ignored",
+			header: http.Header{"Retry-After": {"+Inf"}},
 		},
 		{
 			name:   "not a number is ignored",

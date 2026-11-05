@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"latere.ai/x/pkg/retryafter"
 )
 
 // The retry defaults. They match the retry behavior of the other TypeSafe
@@ -137,33 +139,23 @@ func retryableStatus(status int) bool {
 func retryAfter(header http.Header, now time.Time) (time.Duration, bool) {
 	if value := strings.TrimSpace(header.Get("retry-after-ms")); value != "" {
 		if ms, err := strconv.ParseFloat(value, 64); err == nil {
-			if d, ok := scaleDuration(ms, time.Millisecond); ok {
+			if d, ok := scaleMillis(ms); ok {
 				return d, true
 			}
 		}
 	}
-	value := strings.TrimSpace(header.Get("Retry-After"))
-	if value == "" {
-		return 0, false
-	}
-	if seconds, err := strconv.ParseFloat(value, 64); err == nil {
-		return scaleDuration(seconds, time.Second)
-	}
-	if deadline, err := http.ParseTime(value); err == nil {
-		return max(deadline.Sub(now), 0), true
-	}
-	return 0, false
+	return retryafter.Parse(header.Get(retryafter.Header), now)
 }
 
-// scaleDuration converts a count of unit into a duration. A negative count or
-// NaN reports false. A count beyond the duration range saturates at the
-// largest duration, because converting an out-of-range float to an integer is
-// implementation-defined and yields a negative wait on some platforms.
-func scaleDuration(count float64, unit time.Duration) (time.Duration, bool) {
+// scaleMillis converts a count of milliseconds into a duration. A negative
+// count or NaN reports false. A count beyond the duration range saturates at
+// the largest duration, because converting an out-of-range float to an integer
+// is implementation-defined and yields a negative wait on some platforms.
+func scaleMillis(count float64) (time.Duration, bool) {
 	if math.IsNaN(count) || count < 0 {
 		return 0, false
 	}
-	scaled := count * float64(unit)
+	scaled := count * float64(time.Millisecond)
 	if scaled >= math.MaxInt64 {
 		return math.MaxInt64, true
 	}

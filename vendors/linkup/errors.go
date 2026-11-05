@@ -9,10 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"latere.ai/x/pkg/retryafter"
 )
 
 // The kinds of failure. Every *Error matches exactly one of them under
@@ -173,7 +174,7 @@ func newError(status int, header http.Header, body []byte, key string) *Error {
 	if e.Message == "" {
 		e.Message = http.StatusText(status)
 	}
-	if wait, ok := retryAfter(header.Get("Retry-After"), now()); ok {
+	if wait, ok := retryafter.Parse(header.Get(retryafter.Header), now()); ok {
 		e.RetryAfter = wait
 	}
 	return e
@@ -246,30 +247,3 @@ func truncate(s string) string {
 	}
 	return s[:cut] + "..."
 }
-
-// retryAfter reads a Retry-After value: a count of seconds, or an HTTP date
-// read against at. A date already past is a wait of zero; a value of
-// neither form, or a negative count, is no wait.
-func retryAfter(value string, at time.Time) (time.Duration, bool) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return 0, false
-	}
-	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil {
-		if seconds < 0 {
-			return 0, false
-		}
-		if seconds > int64(maxRetryAfter/time.Second) {
-			return maxRetryAfter, true
-		}
-		return time.Duration(seconds) * time.Second, true
-	}
-	if when, err := http.ParseTime(value); err == nil {
-		return max(when.Sub(at), 0), true
-	}
-	return 0, false
-}
-
-// maxRetryAfter is the longest wait a Retry-After count is read as. A count
-// past it would overflow a time.Duration.
-const maxRetryAfter = time.Duration(1<<63 - 1)
