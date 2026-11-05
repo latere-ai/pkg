@@ -25,11 +25,11 @@ func TestIsLine(t *testing.T) {
 		{"c1 control", "a\u0085b", false},
 		{"line separator", "a b", false},
 		{"paragraph separator", "a b", false},
-		{"right-to-left override", "a‮b", false},
-		{"embedding", "a‪b", false},
-		{"isolate", "a⁦b", false},
-		{"left-to-right mark", "a‎b", false},
-		{"arabic letter mark", "a؜b", false},
+		{"right-to-left override", "a\u202eb", false},
+		{"embedding", "a\u202ab", false},
+		{"isolate", "a\u2066b", false},
+		{"left-to-right mark", "a\u200eb", false},
+		{"arabic letter mark", "a\u061cb", false},
 		{"invalid utf8", "a\xffb", false},
 		{"no-break space is fine", "a b", true},
 	}
@@ -46,7 +46,7 @@ func TestIsLine(t *testing.T) {
 // valid UTF-8 holding no control, separator or bidirectional control
 // character, and that it never accepts a string once a newline is appended.
 func FuzzIsLine(f *testing.F) {
-	for _, s := range []string{"", "a", "a\tb", "a b", "a‮b", "a\xffb", "你好"} {
+	for _, s := range []string{"", "a", "a\tb", "a b", "a\u202eb", "a\xffb", "你好"} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, s string) {
