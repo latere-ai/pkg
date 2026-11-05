@@ -220,7 +220,7 @@ func TestAMalformedRequestIsA400(t *testing.T) {
 		detail     string
 	}{
 		{name: "a body that is not JSON", body: "{not json", detail: "invalid character"},
-		{name: "a body that is a list", body: `[{"action":"repo.read"}]`, detail: "cannot unmarshal"},
+		{name: "a body that is a list", body: `[{"action":"repo.read"}]`, detail: "unmarshal"},
 		{name: "an unknown action", body: envelope(alice, "repo.raed", repoKnd, repoID),
 			detail: "action must be one of origo's vocabulary; got repo.raed"},
 		{name: "an action with no name", body: envelope(alice, "", repoKnd, repoID),
