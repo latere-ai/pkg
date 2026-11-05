@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.114.0 - 2026-11-06
+
 ### Added
 
 - **`authz.Options.DefaultTTL` sets how long a client caches an allow whose
