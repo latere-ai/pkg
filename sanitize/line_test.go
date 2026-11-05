@@ -38,8 +38,8 @@ func TestIsLine(t *testing.T) {
 	}
 }
 
-// FuzzIsLine pins that IsLine never panics and that a line survives
-// OneLine's whitespace rules only when it holds no space other than ' '.
+// FuzzIsLine pins that IsLine never panics and and never accepts a
+// string once a newline is appended.
 func FuzzIsLine(f *testing.F) {
 	for _, s := range []string{"", "a", "a\tb", "a b", "a‮b", "a\xffb", "你好"} {
 		f.Add(s)
