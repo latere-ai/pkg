@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.112.0 - 2026-11-05
+
 ### Changed
 
 - **Every package encodes and decodes JSON with `encoding/json/v2`.**
