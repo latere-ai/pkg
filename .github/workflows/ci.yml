@@ -1,47 +1,26 @@
 name: ci
 
-# The gates this module runs on every push live in latere-ai/ci (which orders
-# them) and latere.ai/x/ci-gate (which decides what each asserts), and are
-# reached through this repository's Makefile.
-#
-# Sixteen repositories depend on this module, so a gate that slips here slips
-# fleet-wide. Every one of them also runs locally -- `make cover`, `make deps`,
-# `make test-hermetic` and the rest need nothing but this checkout -- which is
-# the point: a gate you can only run in CI tells you too late.
-#
-# `make validate` carries the five checks specific to what this module
-# promises: no internal specs tracked in a public repository, llmdialect
-# staying stdlib-only, no cgo anywhere, govulncheck over what this module
-# imports or calls, and the fuzz targets. It runs the same work the single
-# pre-migration job did, in parallel with the rest instead of in front of it.
-
-# A push or pull request that changes only markdown starts no run, because no
-# build or test here reads it. specs/ is not ignored: this module is public,
-# and `make no-tracked-specs` fails a tree that tracks anything under it.
+# The bar lives in latere-ai/ci-gate, pinned in go.mod, and the shared
+# workflow runs it. What this repository decides is in .lateregate.yaml.
+# `lateregate init` writes this file, the same in every repository.
 on:
   push:
     branches: [main]
-    paths:
-      - "**"
-      - "!**.md"
-      - "specs/**"
   pull_request:
-    branches: [main]
-    paths:
-      - "**"
-      - "!**.md"
-      - "specs/**"
   workflow_dispatch:
 
 # A newer push to the same ref supersedes this run: its commit carries every
-# change this one would verify, and the runner is better spent on it.
+# change this one would verify.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
+# actions: read lets the gate find the last commit whose CI passed, which it
+# measures the change from.
 permissions:
   contents: read
+  actions: read
 
 jobs:
-  verify:
+  gate:
     uses: latere-ai/ci/.github/workflows/lateregate.yml@v1
