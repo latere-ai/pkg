@@ -3,7 +3,11 @@
 
 package sanitize
 
-import "testing"
+import (
+	"testing"
+	"unicode"
+	"unicode/utf8"
+)
 
 func TestIsLine(t *testing.T) {
 	tests := []struct {
@@ -38,15 +42,27 @@ func TestIsLine(t *testing.T) {
 	}
 }
 
-// FuzzIsLine pins that IsLine never panics and and never accepts a
-// string once a newline is appended.
+// FuzzIsLine pins that IsLine never panics, that whatever it accepts is
+// valid UTF-8 holding no control, separator or bidirectional control
+// character, and that it never accepts a string once a newline is appended.
 func FuzzIsLine(f *testing.F) {
 	for _, s := range []string{"", "a", "a\tb", "a b", "a‮b", "a\xffb", "你好"} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, s string) {
-		if IsLine(s) && IsLine(s+"\n") {
+		if !IsLine(s) {
+			return
+		}
+		if IsLine(s + "\n") {
 			t.Fatalf("IsLine accepts %q with a newline appended", s)
+		}
+		if !utf8.ValidString(s) {
+			t.Fatalf("IsLine accepts invalid UTF-8 %q", s)
+		}
+		for _, r := range s {
+			if unicode.In(r, unicode.Cc, unicode.Zl, unicode.Zp, unicode.Bidi_Control) {
+				t.Fatalf("IsLine accepts %q holding %U", s, r)
+			}
 		}
 	})
 }
