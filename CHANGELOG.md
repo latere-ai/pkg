@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.111.0 - 2026-11-05
+
 ### Added
 
 - **`pgxmigrate` reports a dirty schema and a newer one as typed errors.**
