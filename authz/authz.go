@@ -109,6 +109,9 @@ type Request struct {
 // MarshalJSON renders the envelope with claims as an object: a request
 // whose Claims is nil carries {} and not null, so an authorizer reads one
 // shape and a nil map and an empty one are the same request on the wire.
+// Embedding Request in another struct promotes this method, and the outer
+// struct's own fields would then not be marshaled: hold a Request in a
+// named field instead.
 func (r Request) MarshalJSON() ([]byte, error) {
 	type plain Request
 	p := plain(r)

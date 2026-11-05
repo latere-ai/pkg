@@ -17,7 +17,7 @@ import (
 )
 
 func TestVocabularyCheck(t *testing.T) {
-	v, err := authz.NewVocabulary("origo",
+	v, err := authz.NewVocabulary("demo",
 		authz.Action{Name: "repo.read", Kind: "Repository"},
 		authz.Action{Name: "org.read", Kind: "Org"})
 	if err != nil {
@@ -33,7 +33,7 @@ func TestVocabularyCheck(t *testing.T) {
 		t.Fatalf("matching kind: %v", err)
 	}
 	var unknown *authz.UnknownAction
-	if err := v.Check(req("repo.raed", "Repository")); !errors.As(err, &unknown) || unknown.Core != "origo" {
+	if err := v.Check(req("repo.raed", "Repository")); !errors.As(err, &unknown) || unknown.Core != "demo" {
 		t.Fatalf("unknown action: %v", err)
 	}
 	for _, kind := range []string{"Org", ""} {
@@ -42,7 +42,7 @@ func TestVocabularyCheck(t *testing.T) {
 		if !errors.As(err, &km) {
 			t.Fatalf("kind %q: %v; want *KindMismatch", kind, err)
 		}
-		if km.Core != "origo" || km.Action != "repo.read" || km.Want != "Repository" || km.Got != kind {
+		if km.Core != "demo" || km.Action != "repo.read" || km.Want != "Repository" || km.Got != kind {
 			t.Fatalf("KindMismatch = %+v", km)
 		}
 		for _, s := range []string{"repo.read", "Repository", kind} {
@@ -64,7 +64,7 @@ func TestAKindMismatchNeverReachesTheWire(t *testing.T) {
 		_, _ = io.WriteString(w, `{"allow": true}`)
 	}))
 	t.Cleanup(srv.Close)
-	v, err := authz.NewVocabulary("origo", authz.Action{Name: "repo.read", Kind: "Repository"})
+	v, err := authz.NewVocabulary("demo", authz.Action{Name: "repo.read", Kind: "Repository"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func FuzzFilterAdmits(f *testing.F) {
 func TestRestrictByClaims(t *testing.T) {
 	covered := authz.Request{Action: "repo.read", Resource: authz.NewResource("Repository", grantedRepo, nil),
 		Claims: map[string]any{"token_use": "pat", "authorization_details": []any{map[string]any{
-			"type": "latere-authz", "actions": []any{"origo:repo.read"}}}}}
+			"type": "latere-authz", "actions": []any{"demo:repo.read"}}}}}
 	uncovered := covered
 	uncovered.Action = "repo.write"
 	unreadable := covered
@@ -195,19 +195,19 @@ func TestRestrictByClaims(t *testing.T) {
 	allow := authz.Decision{Allow: true, Reason: "ok"}
 	deny := authz.Decision{Reason: authz.ReasonNotOwner}
 
-	if got := authz.RestrictByClaims("origo", allow, covered); !reflect.DeepEqual(got, allow) {
+	if got := authz.RestrictByClaims("demo", allow, covered); !reflect.DeepEqual(got, allow) {
 		t.Fatalf("covered = %+v", got)
 	}
-	if got := authz.RestrictByClaims("origo", allow, uncovered); got.Allow || got.Reason != authz.ReasonGrant {
+	if got := authz.RestrictByClaims("demo", allow, uncovered); got.Allow || got.Reason != authz.ReasonGrant {
 		t.Fatalf("uncovered = %+v", got)
 	}
-	if got := authz.RestrictByClaims("origo", allow, unreadable); got.Allow || got.Reason != authz.ReasonGrant {
+	if got := authz.RestrictByClaims("demo", allow, unreadable); got.Allow || got.Reason != authz.ReasonGrant {
 		t.Fatalf("unreadable allow = %+v", got)
 	}
-	if got := authz.RestrictByClaims("origo", deny, unreadable); !reflect.DeepEqual(got, deny) {
+	if got := authz.RestrictByClaims("demo", deny, unreadable); !reflect.DeepEqual(got, deny) {
 		t.Fatalf("unreadable deny = %+v", got)
 	}
-	if got := authz.RestrictByClaims("origo", allow, authz.Request{}); !reflect.DeepEqual(got, allow) {
+	if got := authz.RestrictByClaims("demo", allow, authz.Request{}); !reflect.DeepEqual(got, allow) {
 		t.Fatalf("no claims = %+v", got)
 	}
 }
