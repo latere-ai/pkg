@@ -175,9 +175,9 @@ func TestVectors(t *testing.T) {
 	if !Valid("", zero) || !Valid("", max) || !Valid("", strings.ToLower(max)) {
 		t.Error("bounds should be valid")
 	}
-	// The spec example: 01ARZ3NDEKTSV4RRFFQ69G5FAV is 1469922850259 ms.
+	// The ULID specification's example: 01ARZ3NDEKTSV4RRFFQ69G5FAV is 1469922850259 ms.
 	if got, ok := Time("01ARZ3NDEKTSV4RRFFQ69G5FAV"); !ok || got.UnixMilli() != 1469922850259 {
-		t.Errorf("spec example: %v %v", got, ok)
+		t.Errorf("specification example: %v %v", got, ok)
 	}
 	// A timestamp of 1 ms.
 	if got, ok := Time(strings.Repeat("0", 9) + "1" + strings.Repeat("0", 16)); !ok || got.UnixMilli() != 1 {
