@@ -27,7 +27,8 @@ func TestOneLine(t *testing.T) {
 		{"cut", "one two three", 7, "one two…"},
 		{"no cut when short", "a b", 10, "a b"},
 		{"negative is no cut", "a   b", -1, "a b"},
-		{"multibyte cut", "你好 世界 再见", 3, "你好 …"},
+		{"multibyte cut", "你好 世界 再见", 3, "你好…"},
+		{"no space before the ellipsis", "hello world foo", 6, "hello…"},
 		{"invalid utf8", "a\xff\xfeb", 0, "a�b"},
 		{"invalid utf8 cut", "ab\xffcd", 3, "ab�…"},
 	}
