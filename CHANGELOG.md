@@ -10,6 +10,61 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Added
+
+- **`pgxmigrate` reports a dirty schema and a newer one as typed errors.**
+  `Up` and the new `To` wrap `ErrDirty` and `ErrNewer`, read under
+  migrate's own lock. A caller that read the version itself before `Up`
+  saw another replica's migration in progress as a failed one and
+  exited; it can now drop that read and branch on the error. `HighestOf`
+  reads the highest version a migration directory carries, and
+  `DriverURL` turns a Postgres URL into the one migrate's pgx driver
+  reads, dropping the `pool_` settings the server would refuse.
+- **`authz.Filter.Admits` is the row test for a list decision.** The
+  `Filter` type now states the contract: no filter does not narrow, an
+  empty owner list does not narrow by owner, and a filter that names
+  labels admits only rows carrying them, so a row with no labels never
+  passes it. `RestrictByClaims` reads a request's grants and narrows a
+  decision by them in one call, and `Vocabulary.Check` validates a
+  request against the action table.
+- **`retryafter`** reads `Retry-After` as seconds, whole or fractional,
+  or an HTTP date, and saturates at the longest duration where a hand
+  parse overflowed into a negative wait. `Format` writes a wait in whole
+  seconds rounded up.
+- **`ulid`** mints prefixed, time-ordered identifiers in either case,
+  increasing within a millisecond and safe for concurrent use, validates
+  them in either case, and reads their timestamp back.
+- **`clientip`** finds the caller's address behind reverse proxies: the
+  rightmost forwarded entry that is not a trusted proxy, with IPv4-mapped
+  addresses unmapped so one client has one address.
+- **`requestid`** reads, checks and mints `X-Request-Id`: 1 to 128 bytes
+  of visible ASCII, so a value is safe to log and echo back.
+- **`sanitize.OneLine` and `sanitize.IsLine`.** `OneLine` collapses every
+  run of whitespace, carriage returns, tabs and line separators included,
+  to one space and cuts at a rune budget without splitting a character.
+  `IsLine` refuses control characters, line and paragraph separators,
+  and bidirectional controls.
+
+### Changed
+
+- **`authz.Client.Authorize` refuses a request whose resource is of
+  another kind than its action acts on**, with `*KindMismatch`, before
+  anything is sent, when the client has a vocabulary. An endpoint built
+  on `authz/server` already answered such a request 400. A core that
+  sends a list or a create with an empty resource kind gets the error
+  too: set the kind.
+- **`authz.Request` sends nil claims as `{}`**, not `null`, so a nil map
+  and an empty one are the same request on the wire and in the cache.
+  A struct that embeds `Request` now marshals as the request alone; hold
+  it in a named field.
+- **`pgxmigrate.Up` waits up to `LockTimeout`, five minutes, for the
+  migration lock** where it gave up after 15 seconds, so a replica that
+  starts during another's migration waits instead of failing.
+- **`vendors/typesafe` and `vendors/linkup` read `Retry-After` through
+  `retryafter`.** linkup now reads a fractional count of seconds;
+  typesafe no longer reads an exponent such as `1e3` or infinity as a
+  wait.
+
 ## v0.110.2 - 2026-10-29
 
 ### Fixed
