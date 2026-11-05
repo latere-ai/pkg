@@ -3,7 +3,10 @@
 
 package httpjson
 
-import "net/http"
+import (
+	"encoding/json/v2"
+	"net/http"
+)
 
 // Error is the error a Latere API answers with, rendered as
 //
@@ -26,7 +29,10 @@ type ErrorEnvelope struct {
 	Error Error `json:"error"`
 }
 
-// WriteError sends e in the envelope with status, through Write.
+// WriteError sends e in the envelope with status, through Write. The
+// members of Details are written in sorted order, so two answers with the
+// same details are the same bytes: a refusal can then be answered exactly
+// as a missing object is, and a client or a test can compare the bodies.
 func WriteError(w http.ResponseWriter, status int, e Error) {
-	Write(w, status, ErrorEnvelope{Error: e})
+	write(w, status, ErrorEnvelope{Error: e}, json.Deterministic(true))
 }

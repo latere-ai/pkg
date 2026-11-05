@@ -10,6 +10,14 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Changed
+
+- **`httpjson.WriteError` writes the members of `details` in sorted
+  order**, as it did before v0.112.0. Two errors with the same details are
+  the same bytes again, so a service can answer a refused request exactly
+  as it answers a missing object. Other `httpjson.Write` bodies keep their
+  v0.112.0 behavior.
+
 ## v0.112.0 - 2026-11-05
 
 ### Changed

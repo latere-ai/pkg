@@ -39,3 +39,18 @@ func TestWriteErrorCarriesDetailsOnlyWhenPresent(t *testing.T) {
 		t.Fatalf("details = %v", env.Error.Details)
 	}
 }
+
+func TestWriteErrorWritesDetailsInSortedOrder(t *testing.T) {
+	e := Error{
+		Code: "not_found", Message: "There is nothing at this address.",
+		Details: map[string]any{"hint": "Check the path.", "deploy_id": "d1", "attempt": 2, "zone": "eu", "beta": true},
+	}
+	want := `{"error":{"code":"not_found","message":"There is nothing at this address.","details":{"attempt":2,"beta":true,"deploy_id":"d1","hint":"Check the path.","zone":"eu"}}}` + "\n"
+	for range 20 {
+		w := httptest.NewRecorder()
+		WriteError(w, http.StatusNotFound, e)
+		if got := w.Body.String(); got != want {
+			t.Fatalf("body = %s, want %s", got, want)
+		}
+	}
+}

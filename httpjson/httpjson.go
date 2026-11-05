@@ -106,7 +106,12 @@ func finishDecode(w http.ResponseWriter, dec *jsontext.Decoder) bool {
 // The encoded body ends with a newline, so a client that reads the response
 // line by line sees a complete line.
 func Write[T any](w http.ResponseWriter, status int, v T) {
-	body, err := json.Marshal(v)
+	write(w, status, v)
+}
+
+// write is Write with encoding options, so WriteError can ask for its own.
+func write(w http.ResponseWriter, status int, v any, opts ...json.Options) {
+	body, err := json.Marshal(v, opts...)
 	if err != nil {
 		slog.Error("write json", "error", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
