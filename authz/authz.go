@@ -38,6 +38,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -103,6 +104,18 @@ type Request struct {
 	Action   string         `json:"action"`
 	Resource Resource       `json:"resource"`
 	Request  Caller         `json:"request"`
+}
+
+// MarshalJSON renders the envelope with claims as an object: a request
+// whose Claims is nil carries {} and not null, so an authorizer reads one
+// shape and a nil map and an empty one are the same request on the wire.
+func (r Request) MarshalJSON() ([]byte, error) {
+	type plain Request
+	p := plain(r)
+	if p.Claims == nil {
+		p.Claims = map[string]any{}
+	}
+	return json.Marshal(p)
 }
 
 // Caller is what the authorizer learns about the request itself: the
@@ -200,10 +213,38 @@ type Decision struct {
 	Filter *Filter
 }
 
-// Filter narrows a core's own list to owners and labels.
+// Filter narrows a core's own list to owners and labels. It can only
+// narrow, never widen: a row the core would not list without it is not
+// listed with it.
+//
+//   - A nil filter does not narrow.
+//   - Owners, when it names any, admits only rows owned by one of them;
+//     an empty Owners does not narrow by owner.
+//   - Labels admits only rows that carry every named label with the named
+//     value, so a row with no labels never passes a filter that names
+//     labels. An empty Labels does not narrow by label.
+//
+// [Filter.Admits] implements the rule.
 type Filter struct {
 	Owners []string          `json:"owners,omitempty"`
 	Labels map[string]string `json:"labels,omitempty"`
+}
+
+// Admits reports whether a row owned by owner and carrying labels passes
+// the filter. It is safe on a nil receiver, which admits every row.
+func (f *Filter) Admits(owner string, labels map[string]string) bool {
+	if f == nil {
+		return true
+	}
+	if len(f.Owners) > 0 && !slices.Contains(f.Owners, owner) {
+		return false
+	}
+	for k, want := range f.Labels {
+		if got, ok := labels[k]; !ok || got != want {
+			return false
+		}
+	}
+	return true
 }
 
 // DecodeLimits reads the limits object into v. A decision with no limits

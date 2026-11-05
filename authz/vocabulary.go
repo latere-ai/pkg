@@ -138,3 +138,22 @@ func (v Vocabulary) Kinds() []string {
 // fields and a cursor the contract does not fix, is the exception a core
 // declares by name in authz/server's Options.PageActions.
 func IsList(action string) bool { return strings.HasSuffix(action, ".list") }
+
+// Check validates a request against the table before it is sent. It
+// returns nil when the vocabulary names no actions, so the zero value
+// validates nothing; an *UnknownAction when the table does not name
+// req.Action; and a *KindMismatch when the action is known but acts on a
+// different kind than req.Resource.Kind, an empty kind included.
+func (v Vocabulary) Check(req Request) error {
+	if len(v.Actions) == 0 {
+		return nil
+	}
+	want, ok := v.Kind(req.Action)
+	if !ok {
+		return &UnknownAction{Core: v.Core, Action: req.Action}
+	}
+	if want != req.Resource.Kind {
+		return &KindMismatch{Core: v.Core, Action: req.Action, Want: want, Got: req.Resource.Kind}
+	}
+	return nil
+}

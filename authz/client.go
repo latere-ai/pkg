@@ -63,7 +63,8 @@ type Options struct {
 	// Vocabulary is the core's action table. When it names an action,
 	// Authorize refuses one outside it before the wire, so a typo is
 	// caught by a core's own tests rather than by a round trip in
-	// production. Optional: the zero vocabulary validates nothing, which
+	// production. The client also refuses a request whose resource kind
+	// is not the kind the table gives its action. Optional: the zero vocabulary validates nothing, which
 	// is how a client with no table declared behaves.
 	Vocabulary Vocabulary
 }
@@ -79,6 +80,23 @@ type UnknownAction struct {
 
 func (e *UnknownAction) Error() string {
 	return fmt.Sprintf("authz: %q is not one of %s's actions", e.Action, e.Core)
+}
+
+// KindMismatch is a request whose action is in the client's vocabulary
+// but acts on another kind than the request's resource names. Want is the
+// kind the vocabulary gives the action and Got the resource's, empty when
+// the resource names none. Like [UnknownAction] it is a mistake in the
+// core, not an outage: it is no *Unavailable, [Retryable] reports false
+// for it, and no call was made.
+type KindMismatch struct {
+	Core   string
+	Action string
+	Want   string
+	Got    string
+}
+
+func (e *KindMismatch) Error() string {
+	return fmt.Sprintf("authz: %s's action %q acts on kind %q, not %q", e.Core, e.Action, e.Want, e.Got)
 }
 
 // Client is the authorizer client: one call per decision, one retry when
@@ -132,14 +150,15 @@ func (c *Client) URL() string { return c.url }
 // answer about a resource with no id is never cached: it is a creation or
 // an unresolved name, and neither names a key to remember it by.
 //
-// An action outside the configured vocabulary is an *UnknownAction before
-// anything is sent, read from the cache, or observed. [Client.Ask] does
+// An action outside the configured vocabulary is an *UnknownAction, and
+// one that acts on another kind than the request's resource is a
+// *KindMismatch, each before anything is sent, read from the cache, or observed. [Client.Ask] does
 // not validate: it carries the actions whose answer is the core's own,
 // and a core that wants them checked names them in the vocabulary and
 // asks through Authorize.
 func (c *Client) Authorize(ctx context.Context, req Request) (Decision, error) {
-	if len(c.vocab.Actions) > 0 && !c.vocab.Known(req.Action) {
-		return Decision{}, &UnknownAction{Core: c.vocab.Core, Action: req.Action}
+	if err := c.vocab.Check(req); err != nil {
+		return Decision{}, err
 	}
 	// Serialize once: the cache fingerprint and the wire must describe the
 	// same snapshot, even when a resource value implements json.Marshaler.

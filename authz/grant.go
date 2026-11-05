@@ -151,3 +151,17 @@ func covers(core string, g Grant, req Request) bool {
 	}
 	return g.Identifier == "" || g.Identifier == req.Resource.ID
 }
+
+// RestrictByClaims reads the grants off req.Claims and applies [Restrict].
+// When the claims cannot be read as grants the token's reach is unknown:
+// an allow becomes a deny with [ReasonGrant] and a deny stays as it is.
+func RestrictByClaims(core string, d Decision, req Request) Decision {
+	grants, err := ParseGrants(req.Claims)
+	if err != nil {
+		if d.Allow {
+			return Decision{Reason: ReasonGrant}
+		}
+		return d
+	}
+	return Restrict(core, d, req, grants)
+}
