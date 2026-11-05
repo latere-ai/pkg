@@ -5,7 +5,7 @@ package oidc
 
 import (
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -753,7 +753,7 @@ func TestExchange(t *testing.T) {
 			t.Errorf("code_verifier = %q", r.FormValue("code_verifier"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]any{
+		if err := json.MarshalWrite(w, map[string]any{
 			"access_token":  "new-at",
 			"token_type":    "Bearer",
 			"refresh_token": "new-rt",
@@ -799,7 +799,7 @@ func TestRefreshToken(t *testing.T) {
 			t.Errorf("refresh_token = %q", r.FormValue("refresh_token"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]any{
+		if err := json.MarshalWrite(w, map[string]any{
 			"access_token":  "refreshed-at",
 			"token_type":    "Bearer",
 			"refresh_token": "new-rt",

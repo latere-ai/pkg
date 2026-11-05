@@ -5,7 +5,7 @@ package oidc
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"strings"
@@ -239,7 +239,7 @@ func fetchDiscovery(ctx context.Context, hc *http.Client, issuer string) (*disco
 		return nil, fmt.Errorf("oidc: discover %q: status %d", issuer, resp.StatusCode)
 	}
 	var doc discoveryDoc
-	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &doc, foreignJSON); err != nil {
 		return nil, fmt.Errorf("oidc: decode discovery: %w", err)
 	}
 	if doc.AuthorizationEndpoint == "" || doc.TokenEndpoint == "" || doc.JWKSURI == "" {

@@ -4,7 +4,8 @@
 package ndjson
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,13 +15,13 @@ import (
 )
 
 type benchEntry struct {
-	Seq       int             `json:"seq"`
-	TS        time.Time       `json:"ts"`
-	Role      string          `json:"role"`
-	Text      string          `json:"text"`
-	ToolName  string          `json:"tool_name,omitempty"`
-	ToolInput json.RawMessage `json:"tool_input,omitempty"`
-	Tokens    int             `json:"tokens"`
+	Seq       int            `json:"seq"`
+	TS        time.Time      `json:"ts"`
+	Role      string         `json:"role"`
+	Text      string         `json:"text"`
+	ToolName  string         `json:"tool_name,omitempty"`
+	ToolInput jsontext.Value `json:"tool_input,omitzero"`
+	Tokens    int            `json:"tokens"`
 }
 
 func benchEntries(n int) []benchEntry {
@@ -31,7 +32,7 @@ func benchEntries(n int) []benchEntry {
 		e := benchEntry{Seq: i, TS: base.Add(time.Duration(i) * 7 * time.Second), Role: "assistant", Text: text, Tokens: 180 + i%40}
 		if i%3 == 0 {
 			e.ToolName = "read_file"
-			e.ToolInput = json.RawMessage(`{"path":"internal/svc/handler.go","limit":200}`)
+			e.ToolInput = jsontext.Value(`{"path":"internal/svc/handler.go","limit":200}`)
 		}
 		out[i] = e
 	}
@@ -106,7 +107,7 @@ func BenchmarkJSONPreferResultLineDecode(b *testing.B) {
 		Subtype    string `json:"subtype,omitempty"`
 		Text       string `json:"text,omitempty"`
 		StopReason string `json:"stop_reason,omitempty"`
-		NumTurns   int    `json:"num_turns,omitempty"`
+		NumTurns   int    `json:"num_turns,omitzero"`
 	}
 	var sb strings.Builder
 	for i := range 60 {

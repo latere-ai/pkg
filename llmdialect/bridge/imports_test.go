@@ -19,15 +19,16 @@ import (
 // build listed, so the test runs with no tool on PATH.
 func TestImportsAreTheAllowedSet(t *testing.T) {
 	allowed := map[string]bool{
-		"latere.ai/x/pkg/llmdialect":              true,
-		"latere.ai/x/pkg/llmdialect/ir":           true,
-		"latere.ai/x/pkg/llmdialect/anthropic":    true,
-		"latere.ai/x/pkg/llmdialect/lux":          true,
-		"latere.ai/x/pkg/llmdialect/openaichat":   true,
-		"latere.ai/x/pkg/llmdialect/openairesp":   true,
-		"latere.ai/x/pkg/llmdialect/tokencount":   true,
-		"latere.ai/x/pkg/llmdialect/internal/sse": true,
-		"latere.ai/x/pkg/httpjson":                true,
+		"latere.ai/x/pkg/llmdialect":                   true,
+		"latere.ai/x/pkg/llmdialect/ir":                true,
+		"latere.ai/x/pkg/llmdialect/anthropic":         true,
+		"latere.ai/x/pkg/llmdialect/lux":               true,
+		"latere.ai/x/pkg/llmdialect/openaichat":        true,
+		"latere.ai/x/pkg/llmdialect/openairesp":        true,
+		"latere.ai/x/pkg/llmdialect/tokencount":        true,
+		"latere.ai/x/pkg/llmdialect/internal/sse":      true,
+		"latere.ai/x/pkg/llmdialect/internal/wirejson": true,
+		"latere.ai/x/pkg/httpjson":                     true,
 	}
 	files, err := filepath.Glob("*.go")
 	if err != nil {

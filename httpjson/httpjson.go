@@ -14,7 +14,8 @@
 package httpjson
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"log/slog"
@@ -28,9 +29,8 @@ import (
 // response on any error. Returns (*T, true) on success or (nil, false) on error.
 func DecodeBody[T any](w http.ResponseWriter, r *http.Request) (*T, bool) {
 	v := new(T)
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
+	dec := jsontext.NewDecoder(r.Body)
+	if err := json.UnmarshalDecode(dec, v, json.RejectUnknownMembers(true)); err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			Write(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "request body too large"})
 			return nil, false
@@ -53,9 +53,8 @@ func DecodeOptionalBody[T any](w http.ResponseWriter, r *http.Request) (*T, bool
 		return new(T), true
 	}
 	v := new(T)
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
+	dec := jsontext.NewDecoder(r.Body)
+	if err := json.UnmarshalDecode(dec, v, json.RejectUnknownMembers(true)); err != nil {
 		if errors.Is(err, io.EOF) {
 			return new(T), true // empty body — treat as no body provided
 		}
@@ -72,9 +71,8 @@ func DecodeOptionalBody[T any](w http.ResponseWriter, r *http.Request) (*T, bool
 	return v, true
 }
 
-func finishDecode(w http.ResponseWriter, dec *json.Decoder) bool {
-	var extra any
-	err := dec.Decode(&extra)
+func finishDecode(w http.ResponseWriter, dec *jsontext.Decoder) bool {
+	_, err := dec.ReadValue()
 	if errors.Is(err, io.EOF) {
 		return true
 	}
@@ -105,8 +103,8 @@ func finishDecode(w http.ResponseWriter, dec *json.Decoder) bool {
 // caller that cares should marshal-check the value itself rather than inherit
 // a shape from here.
 //
-// The encoded body keeps the trailing newline that [json.Encoder.Encode]
-// writes, so the bytes on the wire are unchanged for values that marshal.
+// The encoded body ends with a newline, so a client that reads the response
+// line by line sees a complete line.
 func Write[T any](w http.ResponseWriter, status int, v T) {
 	body, err := json.Marshal(v)
 	if err != nil {

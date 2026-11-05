@@ -4,7 +4,7 @@
 package hostsandbox
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -78,14 +78,14 @@ type stageFile struct {
 	Argv        []string `json:"argv"`
 	SandboxExec string   `json:"sandbox_exec"`
 	Policy      string   `json:"policy"`
-	Local       bool     `json:"local,omitempty"`
+	Local       bool     `json:"local,omitzero"`
 	// Refusals says the launcher holds the write end of the refusals' pipe
 	// on refusalDescriptor.
-	Refusals bool `json:"refusals,omitempty"`
+	Refusals bool `json:"refusals,omitzero"`
 	// NoProxy says the stage has no network: its profile, already at
 	// Policy, allows none, and the launcher serves no proxy and becomes the
 	// stage.
-	NoProxy bool `json:"no_proxy,omitempty"`
+	NoProxy bool `json:"no_proxy,omitzero"`
 }
 
 // runLauncher serves the stage's egress proxy, runs the stage under

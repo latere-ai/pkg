@@ -5,7 +5,7 @@ package typesafe
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"time"
@@ -34,7 +34,7 @@ func (c *Client) ListModels(ctx context.Context) ([]Model, error) {
 	var body struct {
 		Models []Model `json:"models"`
 	}
-	if err := json.Unmarshal(result.body, &body); err != nil {
+	if err := json.Unmarshal(result.body, &body, foreignJSON); err != nil {
 		return nil, fmt.Errorf("typesafe: decoding the %s response: %w", pathModels, err)
 	}
 	return body.Models, nil

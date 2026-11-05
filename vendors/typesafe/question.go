@@ -4,7 +4,8 @@
 package typesafe
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"maps"
 	"slices"
@@ -57,13 +58,13 @@ type Noul struct {
 
 func (Noul) questionType() string { return typeNoul }
 
-// MarshalJSON writes the question with its type discriminator.
-func (q Noul) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
+// MarshalJSONTo writes the question with its type discriminator.
+func (q Noul) MarshalJSONTo(enc *jsontext.Encoder) error {
+	return json.MarshalEncode(enc, struct {
 		Type         string        `json:"type"`
 		Instructions any           `json:"instructions,omitzero"`
 		Criteria     *NoulCriteria `json:"criteria,omitzero"`
-	}{typeNoul, q.Instructions, q.Criteria})
+	}{typeNoul, q.Instructions, q.Criteria}, outboundJSON)
 }
 
 // Choice selects one option out of a named set. The answer carries the chosen
@@ -81,13 +82,13 @@ type Choice struct {
 
 func (Choice) questionType() string { return typeChoice }
 
-// MarshalJSON writes the question with its type discriminator.
-func (q Choice) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
+// MarshalJSONTo writes the question with its type discriminator.
+func (q Choice) MarshalJSONTo(enc *jsontext.Encoder) error {
+	return json.MarshalEncode(enc, struct {
 		Type         string         `json:"type"`
 		Instructions any            `json:"instructions,omitzero"`
 		Criteria     map[string]any `json:"criteria"`
-	}{typeChoice, q.Instructions, q.Criteria})
+	}{typeChoice, q.Instructions, q.Criteria}, outboundJSON)
 }
 
 // Score rates the state against an ordered rubric. The answer is a
@@ -105,13 +106,13 @@ type Score struct {
 
 func (Score) questionType() string { return typeScore }
 
-// MarshalJSON writes the question with its type discriminator.
-func (q Score) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
+// MarshalJSONTo writes the question with its type discriminator.
+func (q Score) MarshalJSONTo(enc *jsontext.Encoder) error {
+	return json.MarshalEncode(enc, struct {
 		Type         string `json:"type"`
 		Instructions any    `json:"instructions,omitzero"`
 		Criteria     []any  `json:"criteria"`
-	}{typeScore, q.Instructions, q.Criteria})
+	}{typeScore, q.Instructions, q.Criteria}, outboundJSON)
 }
 
 // Request is one evaluation: a single state, and the questions to answer
@@ -144,7 +145,7 @@ func encodeRequest(req *Request, defaultModel string) ([]byte, error) {
 		State     any                 `json:"state"`
 		Model     string              `json:"model"`
 		Questions map[string]Question `json:"questions"`
-	}{req.State, model, req.Questions})
+	}{req.State, model, req.Questions}, outboundJSON)
 	if err != nil {
 		return nil, fmt.Errorf("typesafe: encoding the request: %w", err)
 	}
@@ -236,3 +237,14 @@ func validateScore(q Score, field string) error {
 	}
 	return nil
 }
+
+// outboundJSON is how requests are written. The service is not ours: a nil
+// map or slice is sent as null, keys are sorted so equal requests are equal
+// bytes, and text that is not valid UTF-8 is replaced rather than refused.
+var outboundJSON = json.JoinOptions(
+	json.Deterministic(true),
+	json.FormatNilSliceAsNull(true),
+	json.FormatNilMapAsNull(true),
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+)

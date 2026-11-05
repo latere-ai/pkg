@@ -4,7 +4,8 @@
 package linkup
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"strings"
 	"time"
@@ -80,7 +81,7 @@ type Request struct {
 	// StructuredOutputSchema is the JSON Schema a structured answer
 	// follows, with an object at its root. It is required for
 	// OutputStructured and sent as a JSON string, as the API takes it.
-	StructuredOutputSchema json.RawMessage
+	StructuredOutputSchema jsontext.Value
 	// IncludeSources asks a structured answer to carry the results it was
 	// built from, which changes the answer's shape; Search reads either.
 	// It applies to OutputStructured only.
@@ -92,20 +93,30 @@ type wireRequest struct {
 	Query                  string     `json:"q"`
 	Depth                  Depth      `json:"depth"`
 	OutputType             OutputType `json:"outputType"`
-	MaxResults             int        `json:"maxResults,omitempty"`
+	MaxResults             int        `json:"maxResults,omitzero"`
 	IncludeDomains         []string   `json:"includeDomains,omitempty"`
 	ExcludeDomains         []string   `json:"excludeDomains,omitempty"`
 	FromDate               string     `json:"fromDate,omitempty"`
 	ToDate                 string     `json:"toDate,omitempty"`
-	IncludeImages          bool       `json:"includeImages,omitempty"`
-	IncludeInlineCitations bool       `json:"includeInlineCitations,omitempty"`
+	IncludeImages          bool       `json:"includeImages,omitzero"`
+	IncludeInlineCitations bool       `json:"includeInlineCitations,omitzero"`
 	StructuredOutputSchema string     `json:"structuredOutputSchema,omitempty"`
-	IncludeSources         bool       `json:"includeSources,omitempty"`
+	IncludeSources         bool       `json:"includeSources,omitzero"`
 }
 
 // marshal encodes the request body. Tests replace it to reach the branch
 // where encoding fails.
-var marshal = json.Marshal
+var marshal = func(v any) ([]byte, error) { return json.Marshal(v, outboundJSON) }
+
+// outboundJSON is how requests are written. The service is not ours: a nil
+// slice is sent as null and keys are sorted, so equal requests are equal
+// bytes.
+var outboundJSON = json.JoinOptions(
+	json.Deterministic(true),
+	json.FormatNilSliceAsNull(true),
+	json.FormatNilMapAsNull(true),
+	jsontext.AllowInvalidUTF8(true),
+)
 
 // encode checks the request and renders the body sent to the API.
 func (r Request) encode() ([]byte, error) {
@@ -146,7 +157,7 @@ func (r Request) validate() error {
 		return fmt.Errorf("%w: maxResults is negative", ErrBadRequest)
 	case r.OutputType == OutputStructured && len(r.StructuredOutputSchema) == 0:
 		return fmt.Errorf("%w: structuredOutputSchema is required for outputType structured", ErrBadRequest)
-	case len(r.StructuredOutputSchema) > 0 && !json.Valid(r.StructuredOutputSchema):
+	case len(r.StructuredOutputSchema) > 0 && !r.StructuredOutputSchema.IsValid(jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true)):
 		return fmt.Errorf("%w: structuredOutputSchema is not JSON", ErrBadRequest)
 	}
 	return nil

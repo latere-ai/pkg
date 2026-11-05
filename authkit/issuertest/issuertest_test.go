@@ -10,7 +10,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -81,7 +81,7 @@ func TestES256SignsWithAP256KeyAndServesAnECKey(t *testing.T) {
 			var set struct {
 				Keys []map[string]string `json:"keys"`
 			}
-			_ = json.NewDecoder(resp.Body).Decode(&set)
+			_ = json.UnmarshalRead(resp.Body, &set)
 			resp.Body.Close()
 			if len(set.Keys) != 1 || set.Keys[0]["kty"] != "EC" || set.Keys[0]["crv"] != "P-256" {
 				t.Fatalf("jwks = %v", set.Keys)
@@ -137,7 +137,7 @@ func TestDiscoveryAndJWKS(t *testing.T) {
 		t.Fatal(err)
 	}
 	var disc map[string]any
-	_ = json.NewDecoder(resp.Body).Decode(&disc)
+	_ = json.UnmarshalRead(resp.Body, &disc)
 	resp.Body.Close()
 	if disc["issuer"] != s.URL() || disc["jwks_uri"] != s.JWKSURL() {
 		t.Fatalf("discovery = %v", disc)
@@ -149,7 +149,7 @@ func TestDiscoveryAndJWKS(t *testing.T) {
 	var set struct {
 		Keys []map[string]string `json:"keys"`
 	}
-	_ = json.NewDecoder(resp.Body).Decode(&set)
+	_ = json.UnmarshalRead(resp.Body, &set)
 	resp.Body.Close()
 	if len(set.Keys) != 1 || set.Keys[0]["kid"] != s.KID() || set.Keys[0]["kty"] != "RSA" || set.Keys[0]["alg"] != "RS256" {
 		t.Fatalf("jwks = %v", set.Keys)
@@ -220,7 +220,7 @@ func TestControlAPIMintsAndRotates(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out map[string]string
-	_ = json.NewDecoder(resp.Body).Decode(&out)
+	_ = json.UnmarshalRead(resp.Body, &out)
 	resp.Body.Close()
 	if decode(t, out["token"])["sub"] != "u9" {
 		t.Fatalf("minted sub = %v", decode(t, out["token"])["sub"])
@@ -231,7 +231,7 @@ func TestControlAPIMintsAndRotates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = json.NewDecoder(resp.Body).Decode(&out)
+	_ = json.UnmarshalRead(resp.Body, &out)
 	resp.Body.Close()
 	if m := decode(t, out["token"]); m["act"] != "alice" || m["sub"] != "svc" {
 		t.Fatalf("extra claim not minted: %v", m)
@@ -274,7 +274,7 @@ func TestActorTokensMintForTheBearer(t *testing.T) {
 		}
 		defer resp.Body.Close()
 		var m map[string]any
-		_ = json.NewDecoder(resp.Body).Decode(&m)
+		_ = json.UnmarshalRead(resp.Body, &m)
 		return resp, m
 	}
 	resp, m := post(login, `{"audience":"drive","ttl_seconds":60}`)
@@ -405,7 +405,7 @@ func TestTokenEndpointMintsAServiceTokenForARegisteredClient(t *testing.T) {
 		defer resp.Body.Close()
 		if resp.StatusCode == http.StatusOK {
 			var m map[string]any
-			_ = json.NewDecoder(resp.Body).Decode(&m)
+			_ = json.UnmarshalRead(resp.Body, &m)
 			ac, err := validator(s, aud).Validate(m["actor_token"].(string))
 			if err != nil || ac.Sub != "sa-org1" || ac.PrincipalType != "service" || ac.OrgID != "org1" {
 				t.Fatalf("actor token for %s: %+v, %v", aud, ac, err)
@@ -513,7 +513,7 @@ func TestNewServesTheIssuerItSetBeforeStarting(t *testing.T) {
 	var doc struct {
 		Issuer string `json:"issuer"`
 	}
-	if err := json.NewDecoder(res.Body).Decode(&doc); err != nil {
+	if err := json.UnmarshalRead(res.Body, &doc); err != nil {
 		t.Fatal(err)
 	}
 	if doc.Issuer != s.URL() {

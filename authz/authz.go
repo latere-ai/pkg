@@ -35,7 +35,8 @@ package authz
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"slices"
@@ -106,19 +107,19 @@ type Request struct {
 	Request  Caller         `json:"request"`
 }
 
-// MarshalJSON renders the envelope with claims as an object: a request
+// MarshalJSONTo renders the envelope with claims as an object: a request
 // whose Claims is nil carries {} and not null, so an authorizer reads one
 // shape and a nil map and an empty one are the same request on the wire.
 // Embedding Request in another struct promotes this method, and the outer
 // struct's own fields would then not be marshaled: hold a Request in a
 // named field instead.
-func (r Request) MarshalJSON() ([]byte, error) {
+func (r Request) MarshalJSONTo(enc *jsontext.Encoder) error {
 	type plain Request
 	p := plain(r)
 	if p.Claims == nil {
 		p.Claims = map[string]any{}
 	}
-	return json.Marshal(p)
+	return json.MarshalEncode(enc, p)
 }
 
 // Caller is what the authorizer learns about the request itself: the
@@ -164,8 +165,8 @@ func (r Resource) Int(field string) int {
 	return 0
 }
 
-// MarshalJSON renders the flat object.
-func (r Resource) MarshalJSON() ([]byte, error) {
+// MarshalJSONTo renders the flat object.
+func (r Resource) MarshalJSONTo(enc *jsontext.Encoder) error {
 	out := make(map[string]any, len(r.Fields)+2)
 	for k, v := range r.Fields {
 		if k == "kind" || k == "id" {
@@ -177,13 +178,13 @@ func (r Resource) MarshalJSON() ([]byte, error) {
 	if r.ID != "" {
 		out["id"] = r.ID
 	}
-	return json.Marshal(out)
+	return json.MarshalEncode(enc, out)
 }
 
-// UnmarshalJSON reads the flat object.
-func (r *Resource) UnmarshalJSON(b []byte) error {
+// UnmarshalJSONFrom reads the flat object.
+func (r *Resource) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 	var raw map[string]any
-	if err := json.Unmarshal(b, &raw); err != nil {
+	if err := json.UnmarshalDecode(dec, &raw); err != nil {
 		return err
 	}
 	*r = Resource{}
@@ -212,7 +213,7 @@ type Decision struct {
 	Allow  bool
 	Reason string
 	TTL    time.Duration
-	Limits json.RawMessage
+	Limits jsontext.Value
 	Filter *Filter
 }
 
@@ -256,23 +257,23 @@ func (d Decision) DecodeLimits(v any) error {
 	if len(d.Limits) == 0 {
 		return nil
 	}
-	return json.Unmarshal(d.Limits, v)
+	return json.Unmarshal(d.Limits, v, foreignJSON)
 }
 
 // answer is the wire form of a decision.
 type answer struct {
-	Allow  *bool           `json:"allow"`
-	Reason string          `json:"reason"`
-	TTL    *int            `json:"ttl"`
-	Limits json.RawMessage `json:"limits"`
-	Filter *Filter         `json:"filter"`
+	Allow  *bool          `json:"allow"`
+	Reason string         `json:"reason"`
+	TTL    *int           `json:"ttl"`
+	Limits jsontext.Value `json:"limits"`
+	Filter *Filter        `json:"filter"`
 }
 
 // ParseDecision reads one 200 body. A body with no allow field is no
 // answer: it is an *Unavailable, never an allow.
 func ParseDecision(raw []byte) (Decision, error) {
 	var a answer
-	if err := json.Unmarshal(raw, &a); err != nil {
+	if err := json.Unmarshal(raw, &a, foreignJSON); err != nil {
 		return Decision{}, fmt.Errorf("body: %w", err)
 	}
 	if a.Allow == nil {
@@ -316,3 +317,24 @@ func Check(ctx context.Context, a Authorizer, action, kind string) error {
 	}
 	return nil
 }
+
+// foreignJSON reads what an authorizer answers with. The authorizer is not
+// always ours: duplicate names, invalid UTF-8 and any letter case are
+// accepted.
+var foreignJSON = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+	json.MatchCaseInsensitiveNames(true),
+)
+
+// wireJSON is how a request is written. The bytes are fingerprinted for the
+// decision cache, so keys are sorted; an authorizer reads null for a nil
+// slice or map, and text that is not valid UTF-8 is replaced instead of
+// failing the check.
+var wireJSON = json.JoinOptions(
+	json.Deterministic(true),
+	json.FormatNilSliceAsNull(true),
+	json.FormatNilMapAsNull(true),
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+)

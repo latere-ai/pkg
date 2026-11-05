@@ -16,7 +16,8 @@
 package audit
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"time"
 )
 
@@ -90,14 +91,35 @@ func (s Subject) IsZero() bool {
 // values will produce a payload identical to a reader that did not know
 // those fields existed.
 type Event struct {
-	EventID   string          `json:"event_id"`
-	TS        time.Time       `json:"ts"`
-	Category  Category        `json:"category"`
-	Actor     Actor           `json:"actor"`
-	Replica   string          `json:"replica,omitempty"`
-	RequestID string          `json:"request_id,omitempty"`
-	OrgID     string          `json:"org_id,omitempty"`
-	Subject   *Subject        `json:"subject,omitempty"`
-	Policy    string          `json:"policy,omitempty"`
-	Payload   json.RawMessage `json:"payload,omitempty"`
+	EventID   string         `json:"event_id"`
+	TS        time.Time      `json:"ts"`
+	Category  Category       `json:"category"`
+	Actor     Actor          `json:"actor"`
+	Replica   string         `json:"replica,omitempty"`
+	RequestID string         `json:"request_id,omitempty"`
+	OrgID     string         `json:"org_id,omitempty"`
+	Subject   *Subject       `json:"subject,omitzero"`
+	Policy    string         `json:"policy,omitempty"`
+	Payload   jsontext.Value `json:"payload,omitzero"`
+}
+
+// MarshalJSONTo writes the event with its subject present whenever the
+// pointer is non-nil. Subject has an IsZero method, which omitzero would
+// otherwise apply to a non-nil pointer and drop an empty subject. The
+// mirror below lists Event's fields in order; subject has no IsZero, so
+// omitzero there tests the pointer alone.
+func (e Event) MarshalJSONTo(enc *jsontext.Encoder) error {
+	type subject Subject
+	return json.MarshalEncode(enc, struct {
+		EventID   string         `json:"event_id"`
+		TS        time.Time      `json:"ts"`
+		Category  Category       `json:"category"`
+		Actor     Actor          `json:"actor"`
+		Replica   string         `json:"replica,omitempty"`
+		RequestID string         `json:"request_id,omitempty"`
+		OrgID     string         `json:"org_id,omitempty"`
+		Subject   *subject       `json:"subject,omitzero"`
+		Policy    string         `json:"policy,omitempty"`
+		Payload   jsontext.Value `json:"payload,omitzero"`
+	}{e.EventID, e.TS, e.Category, e.Actor, e.Replica, e.RequestID, e.OrgID, (*subject)(e.Subject), e.Policy, e.Payload})
 }

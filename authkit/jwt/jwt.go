@@ -225,7 +225,8 @@ import (
 	"crypto/elliptic"
 	"crypto/rsa"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -1215,7 +1216,7 @@ func (c *jwksCache) load(force bool) ([]jwkEntry, error) {
 	var jwks struct {
 		Keys []jwkRaw `json:"keys"`
 	}
-	if err := json.Unmarshal(body, &jwks); err != nil {
+	if err := json.Unmarshal(body, &jwks, foreignJSON); err != nil {
 		return c.cachedOr(err)
 	}
 
@@ -1289,7 +1290,7 @@ func (c *jwksCache) resolve(get func(string) (*http.Response, error)) (string, e
 		Issuer  string `json:"issuer"`
 		JWKSURI string `json:"jwks_uri"`
 	}
-	if err := json.Unmarshal(body, &doc); err != nil {
+	if err := json.Unmarshal(body, &doc, foreignJSON); err != nil {
 		return "", err
 	}
 	// OpenID Connect Discovery 4.3, weighed before the document is read
@@ -1448,8 +1449,8 @@ type rawPayload struct {
 	// created it said it may do. Both are read only together: the grants
 	// claim belongs to a personal access token and to no other token the
 	// family mints, so token_use is what selects it.
-	TokenUse             string          `json:"token_use"`
-	AuthorizationDetails json.RawMessage `json:"authorization_details"`
+	TokenUse             string         `json:"token_use"`
+	AuthorizationDetails jsontext.Value `json:"authorization_details"`
 
 	// The issuer's display labels. Each is a plain string like the claims
 	// above it, so a non-string value fails the payload unmarshal and the
@@ -1481,3 +1482,13 @@ func audMatch(tokenAud jsonAud, expected []string) bool {
 		return slices.Contains(expected, a)
 	})
 }
+
+// foreignJSON reads documents served by identity providers we do not run
+// (JWKS, discovery): duplicate names, invalid UTF-8 and any letter case are
+// accepted. Token headers and payloads are decoded with the strict defaults,
+// so a token carrying a duplicated claim is malformed rather than ambiguous.
+var foreignJSON = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+	json.MatchCaseInsensitiveNames(true),
+)

@@ -5,7 +5,8 @@ package ndjson
 
 import (
 	"bufio"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"io"
 	"os"
 	"strings"
@@ -77,7 +78,7 @@ func readAll[T any](rc io.ReadCloser, cfg *config) ([]T, error) {
 			continue
 		}
 		var v T
-		if err := json.Unmarshal([]byte(line), &v); err != nil {
+		if err := json.Unmarshal([]byte(line), &v, foreignJSON); err != nil {
 			if cfg.onError != nil {
 				cfg.onError(lineNum, err)
 			}
@@ -110,7 +111,7 @@ func readAll[T any](rc io.ReadCloser, cfg *config) ([]T, error) {
 // Linux for writes under PIPE_BUF (4 KB). Larger records may interleave
 // with concurrent writers.
 func AppendFile[T any](path string, record T) error {
-	data, err := json.Marshal(record)
+	data, err := json.Marshal(record, lineJSON)
 	if err != nil {
 		return err
 	}
@@ -132,3 +133,20 @@ func appendTo(wc io.WriteCloser, data []byte) error {
 	}
 	return wc.Close()
 }
+
+// foreignJSON reads lines written by other processes, such as agent and tool
+// output: duplicate names, invalid UTF-8 and any letter case are accepted.
+var foreignJSON = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+	json.MatchCaseInsensitiveNames(true),
+)
+
+// lineJSON writes the lines of a file that is stored and compared: map keys
+// are sorted, and text that is not valid UTF-8 is replaced instead of
+// failing the append.
+var lineJSON = json.JoinOptions(
+	json.Deterministic(true),
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+)

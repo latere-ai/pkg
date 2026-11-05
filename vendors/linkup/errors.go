@@ -5,7 +5,8 @@ package linkup
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -187,10 +188,10 @@ func newError(status int, header http.Header, body []byte, key string) *Error {
 // that is not JSON, such as a gateway's page, is carried as text.
 func parseErrorBody(body []byte) (code, message string, details []Detail) {
 	var envelope struct {
-		Error   json.RawMessage `json:"error"`
-		Message string          `json:"message"`
+		Error   jsontext.Value `json:"error"`
+		Message string         `json:"message"`
 	}
-	if err := json.Unmarshal(body, &envelope); err != nil {
+	if err := json.Unmarshal(body, &envelope, foreignJSON); err != nil {
 		return "", string(body), nil
 	}
 	raw := bytes.TrimSpace(envelope.Error)
@@ -207,7 +208,7 @@ func parseErrorBody(body []byte) (code, message string, details []Detail) {
 				Message string `json:"message"`
 			} `json:"details"`
 		}
-		if err := json.Unmarshal(raw, &object); err != nil {
+		if err := json.Unmarshal(raw, &object, foreignJSON); err != nil {
 			return "", compact(raw), nil
 		}
 		for _, d := range object.Details {
@@ -216,7 +217,7 @@ func parseErrorBody(body []byte) (code, message string, details []Detail) {
 		return object.Code, object.Message, details
 	case '"':
 		var text string
-		if err := json.Unmarshal(raw, &text); err != nil {
+		if err := json.Unmarshal(raw, &text, foreignJSON); err != nil {
 			return "", compact(raw), nil
 		}
 		return "", text, nil
@@ -228,12 +229,12 @@ func parseErrorBody(body []byte) (code, message string, details []Detail) {
 // compact renders a JSON value the shapes above do not cover as one line.
 // It is called on a value json.Unmarshal already accepted, so it cannot
 // fail.
-func compact(raw json.RawMessage) string {
-	var buf bytes.Buffer
-	if err := json.Compact(&buf, raw); err != nil {
+func compact(raw jsontext.Value) string {
+	v := jsontext.Value(bytes.Clone(raw))
+	if err := v.Compact(foreignJSON); err != nil {
 		return string(raw)
 	}
-	return buf.String()
+	return string(v)
 }
 
 // truncate caps a message at maxMessage bytes, on a rune boundary.

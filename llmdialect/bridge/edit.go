@@ -5,9 +5,12 @@ package bridge
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
+
+	"latere.ai/x/pkg/llmdialect/internal/wirejson"
 )
 
 // Call is what Probe reads off any dialect's request body.
@@ -23,8 +26,8 @@ type Call struct {
 // type is read as absent, because the dialect's own server owns the
 // verdict on it.
 func Probe(body []byte) (Call, error) {
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal(body, &top); err != nil {
+	var top map[string]jsontext.Value
+	if err := json.Unmarshal(body, &top, wirejson.In); err != nil {
 		return Call{}, fmt.Errorf("the body is not a JSON object: %w", err)
 	}
 	if top == nil {
@@ -33,20 +36,20 @@ func Probe(body []byte) (Call, error) {
 	var c Call
 	if raw, ok := top["model"]; ok {
 		var s string
-		if json.Unmarshal(raw, &s) == nil && s != "" {
+		if json.Unmarshal(raw, &s, wirejson.In) == nil && s != "" {
 			c.Model, c.HasModel = s, true
 		}
 	}
 	if raw, ok := top["stream"]; ok {
 		var b bool
-		if json.Unmarshal(raw, &b) == nil {
+		if json.Unmarshal(raw, &b, wirejson.In) == nil {
 			c.Stream = b
 		}
 	}
 	for _, member := range []string{"max_tokens", "max_completion_tokens", "max_output_tokens"} {
 		if raw, ok := top[member]; ok {
 			var n int64
-			if json.Unmarshal(raw, &n) == nil && n > 0 {
+			if json.Unmarshal(raw, &n, wirejson.In) == nil && n > 0 {
 				c.MaxTokens = n
 				break
 			}
@@ -56,7 +59,7 @@ func Probe(body []byte) (Call, error) {
 		var gc struct {
 			MaxOutputTokens int64 `json:"maxOutputTokens"`
 		}
-		if json.Unmarshal(raw, &gc) == nil && gc.MaxOutputTokens > 0 {
+		if json.Unmarshal(raw, &gc, wirejson.In) == nil && gc.MaxOutputTokens > 0 {
 			c.MaxTokens = gc.MaxOutputTokens
 		}
 	}
@@ -74,7 +77,7 @@ var errNotObject = errors.New("not a JSON object")
 // integers and booleans, or a string, all of which always marshal. A
 // failure is a bug in this package and is a panic.
 func marshal(v any) []byte {
-	out, err := json.Marshal(v)
+	out, err := json.Marshal(v, wirejson.Out)
 	if err != nil {
 		panic("bridge: a shape of this package does not marshal: " + err.Error())
 	}
@@ -184,7 +187,7 @@ func member(b []byte, start int, key string) (s span, ok bool, err error) {
 			return span{}, false, err
 		}
 		var k string
-		if err := json.Unmarshal(b[keyStart:keyEnd], &k); err != nil {
+		if err := json.Unmarshal(b[keyStart:keyEnd], &k, wirejson.In); err != nil {
 			return span{}, false, err
 		}
 		i = skipSpace(b, keyEnd)

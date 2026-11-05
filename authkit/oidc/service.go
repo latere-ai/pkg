@@ -5,7 +5,7 @@ package oidc
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -67,7 +67,7 @@ func clientCredentials(ctx context.Context, authURL, clientID, clientSecret, aud
 		AccessToken string `json:"access_token"`
 		ExpiresIn   int64  `json:"expires_in"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &out); err != nil {
 		return "", 0, fmt.Errorf("oidc: service token for %s: decode: %w", clientID, err)
 	}
 	if out.AccessToken == "" || out.ExpiresIn <= 0 {

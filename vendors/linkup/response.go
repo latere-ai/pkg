@@ -5,7 +5,8 @@ package linkup
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 )
 
@@ -60,7 +61,7 @@ type Response struct {
 	Results []Result
 	Answer  string
 	Sources []Source
-	Data    json.RawMessage
+	Data    jsontext.Value
 }
 
 // decodeResponse reads a 200 body into the fields its output type fills. A
@@ -72,7 +73,7 @@ func decodeResponse(raw []byte, req Request) (Response, error) {
 		var doc struct {
 			Results *[]Result `json:"results"`
 		}
-		if err := json.Unmarshal(raw, &doc); err != nil {
+		if err := json.Unmarshal(raw, &doc, foreignJSON); err != nil {
 			return Response{}, malformed(req.OutputType, err)
 		}
 		if doc.Results == nil {
@@ -84,7 +85,7 @@ func decodeResponse(raw []byte, req Request) (Response, error) {
 			Answer  *string   `json:"answer"`
 			Sources *[]Source `json:"sources"`
 		}
-		if err := json.Unmarshal(raw, &doc); err != nil {
+		if err := json.Unmarshal(raw, &doc, foreignJSON); err != nil {
 			return Response{}, malformed(req.OutputType, err)
 		}
 		if doc.Answer == nil {
@@ -97,10 +98,10 @@ func decodeResponse(raw []byte, req Request) (Response, error) {
 	case OutputStructured:
 		if req.IncludeSources {
 			var doc struct {
-				Data    json.RawMessage `json:"data"`
-				Sources *[]Result       `json:"sources"`
+				Data    jsontext.Value `json:"data"`
+				Sources *[]Result      `json:"sources"`
 			}
-			if err := json.Unmarshal(raw, &doc); err != nil {
+			if err := json.Unmarshal(raw, &doc, foreignJSON); err != nil {
 				return Response{}, malformed(req.OutputType, err)
 			}
 			if !isObject(doc.Data) {
@@ -111,12 +112,12 @@ func decodeResponse(raw []byte, req Request) (Response, error) {
 			}
 			return Response{Data: doc.Data, Results: *doc.Sources}, nil
 		}
-		if !json.Valid(raw) || !isObject(raw) {
+		if !jsontext.Value(raw).IsValid(foreignJSON) || !isObject(raw) {
 			return Response{}, fmt.Errorf("%w: the %s answer is not a JSON object", ErrUpstream, req.OutputType)
 		}
 		return Response{Data: bytes.TrimSpace(raw)}, nil
 	default:
-		if !json.Valid(raw) {
+		if !jsontext.Value(raw).IsValid(foreignJSON) {
 			return Response{}, fmt.Errorf("%w: the %s answer is not JSON", ErrUpstream, req.OutputType)
 		}
 		return Response{Data: bytes.TrimSpace(raw)}, nil
@@ -125,7 +126,7 @@ func decodeResponse(raw []byte, req Request) (Response, error) {
 
 // isObject reports whether a JSON value is an object. It reads the first
 // byte only, so it is called on values already known to be JSON.
-func isObject(raw json.RawMessage) bool {
+func isObject(raw jsontext.Value) bool {
 	trimmed := bytes.TrimSpace(raw)
 	return len(trimmed) > 0 && trimmed[0] == '{'
 }
@@ -139,3 +140,12 @@ func malformed(output OutputType, err error) error {
 func missing(output OutputType, member string) error {
 	return fmt.Errorf("%w: the %s answer has no %s", ErrUpstream, output, member)
 }
+
+// foreignJSON reads what the service answers with: duplicate names, invalid
+// UTF-8 and any letter case are accepted, as the service's own clients accept
+// them.
+var foreignJSON = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+	json.MatchCaseInsensitiveNames(true),
+)

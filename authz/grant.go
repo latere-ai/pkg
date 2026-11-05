@@ -4,7 +4,8 @@
 package authz
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"slices"
 
@@ -94,7 +95,7 @@ func ParseGrants(claims map[string]any) (Grants, error) {
 	if !ok || raw == nil {
 		return nil, nil
 	}
-	b, err := json.Marshal(raw)
+	b, err := json.Marshal(raw, jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true))
 	if err != nil {
 		return nil, fmt.Errorf("%w: authorization_details: %w", authkit.ErrMalformedGrants, err)
 	}

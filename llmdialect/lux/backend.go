@@ -9,13 +9,14 @@ package lux
 // gateway is exactly "encode toward a lux upstream".
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
 
 	"latere.ai/x/pkg/llmdialect/internal/sse"
+	"latere.ai/x/pkg/llmdialect/internal/wirejson"
 	"latere.ai/x/pkg/llmdialect/ir"
 )
 
@@ -101,13 +102,13 @@ func (*Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 			Strict:      req.Schema.Strict,
 		}
 	}
-	return json.Marshal(wire)
+	return json.Marshal(wire, wirejson.Out)
 }
 
 // DecodeResponse parses a lux non-streaming response into the IR.
 func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 	var wire Response
-	if err := json.Unmarshal(body, &wire); err != nil {
+	if err := json.Unmarshal(body, &wire, wirejson.In); err != nil {
 		return nil, fmt.Errorf("lux: invalid response JSON: %w", err)
 	}
 	out := &ir.Response{
@@ -196,7 +197,7 @@ func (s *StreamReader) Next() (Event, error) {
 			continue
 		}
 		var ev Event
-		if err := json.Unmarshal(frame.Data, &ev); err != nil {
+		if err := json.Unmarshal(frame.Data, &ev, wirejson.In); err != nil {
 			return Event{}, fmt.Errorf("lux: malformed %s event: %w", frame.Name, err)
 		}
 		if ev.Type == "" {
@@ -227,7 +228,7 @@ func decodeStreamError(data []byte) error {
 			} `json:"details"`
 		} `json:"error"`
 	}
-	if err := json.Unmarshal(data, &wire); err != nil || wire.Error.Message == "" && wire.Error.Code == "" && wire.Error.Type == "" {
+	if err := json.Unmarshal(data, &wire, wirejson.In); err != nil || wire.Error.Message == "" && wire.Error.Code == "" && wire.Error.Type == "" {
 		return &StreamError{Message: string(data)}
 	}
 	code := wire.Error.Code

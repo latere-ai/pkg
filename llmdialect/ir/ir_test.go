@@ -4,7 +4,8 @@
 package ir
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"math"
 	"math/bits"
 	"reflect"
@@ -134,7 +135,7 @@ func TestPrefixCacheKeys(t *testing.T) {
 			{Type: BlockText, Text: "after"},
 		}},
 		{Role: RoleAssistant, Blocks: []Block{
-			{Type: BlockToolUse, ToolUse: &ToolUse{ID: "t", Name: "f", Args: json.RawMessage(`{}`)}},
+			{Type: BlockToolUse, ToolUse: &ToolUse{ID: "t", Name: "f", Args: jsontext.Value(`{}`)}},
 		}},
 	}
 	two := PrefixCacheKeys(sys, msgs)
@@ -161,11 +162,11 @@ func TestPrefixCacheKeys(t *testing.T) {
 		{Type: BlockThinking, Text: "x", Signature: "r", CacheHint: true},
 		{Type: BlockRedactedThinking, Redacted: "r", CacheHint: true},
 		{Type: BlockImage, Image: &Image{URL: "https://x/y.png"}, CacheHint: true},
-		{Type: BlockToolUse, ToolUse: &ToolUse{ID: "t", Name: "f", Args: json.RawMessage(`{"a":1}`)}, CacheHint: true},
-		{Type: BlockOpaque, Opaque: &Opaque{Dialect: DialectOpenAIResponses, Kind: "reasoning", Raw: json.RawMessage(`{}`)}, CacheHint: true},
-		{Type: BlockOpaque, Opaque: &Opaque{Dialect: DialectLux, Kind: "reasoning", Raw: json.RawMessage(`{}`)}, CacheHint: true},
-		{Type: BlockOpaque, Opaque: &Opaque{Dialect: DialectOpenAIResponses, Kind: "other", Raw: json.RawMessage(`{}`)}, CacheHint: true},
-		{Type: BlockOpaque, Opaque: &Opaque{Dialect: DialectOpenAIResponses, Kind: "reasoning", Raw: json.RawMessage(`{"a":1}`)}, CacheHint: true},
+		{Type: BlockToolUse, ToolUse: &ToolUse{ID: "t", Name: "f", Args: jsontext.Value(`{"a":1}`)}, CacheHint: true},
+		{Type: BlockOpaque, Opaque: &Opaque{Dialect: DialectOpenAIResponses, Kind: "reasoning", Raw: jsontext.Value(`{}`)}, CacheHint: true},
+		{Type: BlockOpaque, Opaque: &Opaque{Dialect: DialectLux, Kind: "reasoning", Raw: jsontext.Value(`{}`)}, CacheHint: true},
+		{Type: BlockOpaque, Opaque: &Opaque{Dialect: DialectOpenAIResponses, Kind: "other", Raw: jsontext.Value(`{}`)}, CacheHint: true},
+		{Type: BlockOpaque, Opaque: &Opaque{Dialect: DialectOpenAIResponses, Kind: "reasoning", Raw: jsontext.Value(`{"a":1}`)}, CacheHint: true},
 	}
 	seen := map[string]bool{PrefixCacheKeys(nil, []Message{{Role: RoleUser, Blocks: []Block{base}}})[0]: true}
 	for _, v := range variants {
@@ -182,7 +183,7 @@ func TestPrefixCacheKeys(t *testing.T) {
 // and raw JSON, each as a netstring.
 func TestPrefixCacheKeysOpaque(t *testing.T) {
 	blk := Block{Type: BlockOpaque, CacheHint: true, Opaque: &Opaque{
-		Dialect: DialectOpenAIResponses, Kind: "reasoning", Raw: json.RawMessage(`{"id":"rs_1"}`),
+		Dialect: DialectOpenAIResponses, Kind: "reasoning", Raw: jsontext.Value(`{"id":"rs_1"}`),
 	}}
 	// SHA-256 of
 	// `4:user,6:opaque,0:,0:,0:,16:openai-responses,9:reasoning,13:{"id":"rs_1"},`.

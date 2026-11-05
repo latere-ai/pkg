@@ -36,7 +36,8 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -105,7 +106,7 @@ type FlowState struct {
 	// person did not start, which signs them in only when they are already
 	// signed in at the issuer. HandleCallback answers its refusal by going
 	// back to ReturnTo as if nothing was tried.
-	Silent bool `json:"sl,omitempty"`
+	Silent bool `json:"sl,omitzero"`
 }
 
 // Config holds auth integration configuration.
@@ -399,7 +400,7 @@ func (c *Client) FetchUserInfoContext(ctx context.Context, accessToken string) (
 	}
 
 	var u User
-	if err := json.NewDecoder(resp.Body).Decode(&u); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &u, foreignJSON); err != nil {
 		return nil, fmt.Errorf("decode userinfo: %w", err)
 	}
 	u.PrincipalType = authkit.PrincipalUser
@@ -581,7 +582,7 @@ func (c *Client) setCookie(w http.ResponseWriter, name string, v any, maxAge int
 		return errNoCookieKey
 	}
 	name = c.effectiveCookieName(name)
-	data, err := json.Marshal(v)
+	data, err := json.Marshal(v, jsontext.AllowInvalidUTF8(true))
 	if err != nil {
 		return fmt.Errorf("marshal cookie %s: %w", name, err)
 	}
@@ -689,3 +690,12 @@ func aesGCMDecrypt(key, ciphertext []byte) ([]byte, error) {
 	nonce, ct := ciphertext[:nonceSize], ciphertext[nonceSize:]
 	return gcm.Open(nil, nonce, ct, nil)
 }
+
+// foreignJSON reads documents served by identity providers we do not run
+// (userinfo, discovery): duplicate names, invalid UTF-8 and any letter case
+// are accepted.
+var foreignJSON = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+	json.MatchCaseInsensitiveNames(true),
+)

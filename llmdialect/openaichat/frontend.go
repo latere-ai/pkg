@@ -8,13 +8,15 @@ package openaichat
 // and re-synthesizes the chunked SSE stream from canonical IR events.
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"strings"
 
 	"latere.ai/x/pkg/llmdialect/internal/servertool"
 	"latere.ai/x/pkg/llmdialect/internal/sse"
+	"latere.ai/x/pkg/llmdialect/internal/wirejson"
 	"latere.ai/x/pkg/llmdialect/ir"
 )
 
@@ -40,8 +42,8 @@ var requestKeys = map[string]bool{
 
 // DecodeRequest parses a Chat Completions request body into the IR.
 func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal(body, &top); err != nil {
+	var top map[string]jsontext.Value
+	if err := json.Unmarshal(body, &top, wirejson.In); err != nil {
 		return nil, fmt.Errorf("openaichat: invalid request JSON: %w", err)
 	}
 	req := &ir.Request{}
@@ -52,30 +54,30 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	}
 
 	var wire struct {
-		Model               string            `json:"model"`
-		Messages            []frontMessage    `json:"messages"`
-		Tools               []json.RawMessage `json:"tools"`
-		ToolChoice          json.RawMessage   `json:"tool_choice"`
-		ParallelToolCalls   *bool             `json:"parallel_tool_calls"`
-		MaxTokens           *int64            `json:"max_tokens"`
-		MaxCompletionTokens *int64            `json:"max_completion_tokens"`
-		Temperature         *float64          `json:"temperature"`
-		TopP                *float64          `json:"top_p"`
-		Stop                json.RawMessage   `json:"stop"`
-		Stream              bool              `json:"stream"`
-		User                string            `json:"user"`
+		Model               string           `json:"model"`
+		Messages            []frontMessage   `json:"messages"`
+		Tools               []jsontext.Value `json:"tools"`
+		ToolChoice          jsontext.Value   `json:"tool_choice"`
+		ParallelToolCalls   *bool            `json:"parallel_tool_calls"`
+		MaxTokens           *int64           `json:"max_tokens"`
+		MaxCompletionTokens *int64           `json:"max_completion_tokens"`
+		Temperature         *float64         `json:"temperature"`
+		TopP                *float64         `json:"top_p"`
+		Stop                jsontext.Value   `json:"stop"`
+		Stream              bool             `json:"stream"`
+		User                string           `json:"user"`
 		ResponseFormat      *struct {
 			Type       string `json:"type"`
 			JSONSchema *struct {
-				Name        string          `json:"name"`
-				Description string          `json:"description"`
-				Schema      json.RawMessage `json:"schema"`
-				Strict      bool            `json:"strict"`
+				Name        string         `json:"name"`
+				Description string         `json:"description"`
+				Schema      jsontext.Value `json:"schema"`
+				Strict      bool           `json:"strict"`
 			} `json:"json_schema"`
 		} `json:"response_format"`
 		WebSearchOptions *struct {
-			SearchContextSize string          `json:"search_context_size"`
-			UserLocation      json.RawMessage `json:"user_location"`
+			SearchContextSize string         `json:"search_context_size"`
+			UserLocation      jsontext.Value `json:"user_location"`
 		} `json:"web_search_options"`
 		ReasoningEffort string `json:"reasoning_effort"`
 		N               *int   `json:"n"`
@@ -84,7 +86,7 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 		PromptCacheKey  string `json:"prompt_cache_key"`
 		CacheSalt       string `json:"cache_salt"`
 	}
-	if err := json.Unmarshal(body, &wire); err != nil {
+	if err := json.Unmarshal(body, &wire, wirejson.In); err != nil {
 		return nil, fmt.Errorf("openaichat: malformed request: %w", err)
 	}
 	if wire.Model == "" {
@@ -130,7 +132,7 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	}
 	for _, raw := range wire.Tools {
 		var t frontTool
-		if err := json.Unmarshal(raw, &t); err != nil {
+		if err := json.Unmarshal(raw, &t, wirejson.In); err != nil {
 			return nil, fmt.Errorf("openaichat: malformed tool: %w", err)
 		}
 		// A type other than "function" names a tool the provider runs
@@ -208,30 +210,30 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 }
 
 type frontMessage struct {
-	Role             string          `json:"role"`
-	Content          json.RawMessage `json:"content"`
-	ToolCalls        []wireToolCall  `json:"tool_calls"`
-	ToolCallID       string          `json:"tool_call_id"`
-	ReasoningContent string          `json:"reasoning_content"`
+	Role             string         `json:"role"`
+	Content          jsontext.Value `json:"content"`
+	ToolCalls        []wireToolCall `json:"tool_calls"`
+	ToolCallID       string         `json:"tool_call_id"`
+	ReasoningContent string         `json:"reasoning_content"`
 }
 
 type frontTool struct {
 	Type     string `json:"type"`
 	Function struct {
-		Name        string          `json:"name"`
-		Description string          `json:"description"`
-		Parameters  json.RawMessage `json:"parameters"`
-		Strict      bool            `json:"strict"`
+		Name        string         `json:"name"`
+		Description string         `json:"description"`
+		Parameters  jsontext.Value `json:"parameters"`
+		Strict      bool           `json:"strict"`
 	} `json:"function"`
 }
 
-func decodeStop(raw json.RawMessage) ([]string, error) {
+func decodeStop(raw jsontext.Value) ([]string, error) {
 	var one string
-	if err := json.Unmarshal(raw, &one); err == nil {
+	if err := json.Unmarshal(raw, &one, wirejson.In); err == nil {
 		return []string{one}, nil
 	}
 	var many []string
-	if err := json.Unmarshal(raw, &many); err != nil {
+	if err := json.Unmarshal(raw, &many, wirejson.In); err != nil {
 		return nil, fmt.Errorf("openaichat: stop must be a string or string array")
 	}
 	return many, nil
@@ -273,7 +275,7 @@ func decodeFrontMessages(req *ir.Request, msgs []frontMessage) error {
 			}
 			for _, tc := range m.ToolCalls {
 				blocks = append(blocks, ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{
-					ID: tc.ID, Name: tc.Function.Name, Args: json.RawMessage(tc.Function.Arguments),
+					ID: tc.ID, Name: tc.Function.Name, Args: jsontext.Value(tc.Function.Arguments),
 				}})
 			}
 			req.Messages = append(req.Messages, ir.Message{Role: ir.RoleAssistant, Blocks: blocks})
@@ -301,27 +303,27 @@ func decodeFrontMessages(req *ir.Request, msgs []frontMessage) error {
 // marked reports whether a content part's cache_control member, the
 // Anthropic breakpoint that gateways serving Anthropic models take on
 // this dialect, is present.
-func marked(cacheControl json.RawMessage) bool {
+func marked(cacheControl jsontext.Value) bool {
 	return len(cacheControl) > 0 && string(cacheControl) != "null"
 }
 
 // decodeFrontText accepts the string and text-parts forms of content.
 // The parts are joined into one text, so a cache breakpoint on any of
 // them is reported as one after the whole text.
-func decodeFrontText(raw json.RawMessage) (string, bool, error) {
+func decodeFrontText(raw jsontext.Value) (string, bool, error) {
 	if len(raw) == 0 {
 		return "", false, nil
 	}
 	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
+	if err := json.Unmarshal(raw, &s, wirejson.In); err == nil {
 		return s, false, nil
 	}
 	var parts []struct {
-		Type         string          `json:"type"`
-		Text         string          `json:"text"`
-		CacheControl json.RawMessage `json:"cache_control"`
+		Type         string         `json:"type"`
+		Text         string         `json:"text"`
+		CacheControl jsontext.Value `json:"cache_control"`
 	}
-	if err := json.Unmarshal(raw, &parts); err != nil {
+	if err := json.Unmarshal(raw, &parts, wirejson.In); err != nil {
 		return "", false, fmt.Errorf("content must be a string or content parts")
 	}
 	var texts []string
@@ -335,9 +337,9 @@ func decodeFrontText(raw json.RawMessage) (string, bool, error) {
 	return strings.Join(texts, "\n\n"), hint, nil
 }
 
-func decodeFrontUserContent(raw json.RawMessage, loss *ir.Loss) ([]ir.Block, error) {
+func decodeFrontUserContent(raw jsontext.Value, loss *ir.Loss) ([]ir.Block, error) {
 	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
+	if err := json.Unmarshal(raw, &s, wirejson.In); err == nil {
 		return []ir.Block{{Type: ir.BlockText, Text: s}}, nil
 	}
 	var parts []struct {
@@ -346,9 +348,9 @@ func decodeFrontUserContent(raw json.RawMessage, loss *ir.Loss) ([]ir.Block, err
 		ImageURL *struct {
 			URL string `json:"url"`
 		} `json:"image_url"`
-		CacheControl json.RawMessage `json:"cache_control"`
+		CacheControl jsontext.Value `json:"cache_control"`
 	}
-	if err := json.Unmarshal(raw, &parts); err != nil {
+	if err := json.Unmarshal(raw, &parts, wirejson.In); err != nil {
 		return nil, fmt.Errorf("content must be a string or content parts")
 	}
 	var out []ir.Block
@@ -386,9 +388,9 @@ func decodeImageURL(url string) (*ir.Image, error) {
 	return &ir.Image{MediaType: before, Data: after}, nil
 }
 
-func decodeFrontToolChoice(raw json.RawMessage) (*ir.ToolChoice, error) {
+func decodeFrontToolChoice(raw jsontext.Value) (*ir.ToolChoice, error) {
 	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
+	if err := json.Unmarshal(raw, &s, wirejson.In); err == nil {
 		switch s {
 		case "auto":
 			return &ir.ToolChoice{Mode: ir.ToolChoiceAuto}, nil
@@ -405,7 +407,7 @@ func decodeFrontToolChoice(raw json.RawMessage) (*ir.ToolChoice, error) {
 			Name string `json:"name"`
 		} `json:"function"`
 	}
-	if err := json.Unmarshal(raw, &named); err != nil || named.Function.Name == "" {
+	if err := json.Unmarshal(raw, &named, wirejson.In); err != nil || named.Function.Name == "" {
 		return nil, fmt.Errorf("openaichat: malformed tool_choice")
 	}
 	return &ir.ToolChoice{Mode: ir.ToolChoiceTool, Name: named.Function.Name}, nil
@@ -461,7 +463,7 @@ func (*Frontend) EncodeResponse(resp *ir.Response) ([]byte, error) {
 		}},
 		"usage": encodeFrontUsage(resp.Usage),
 	}
-	return json.Marshal(out)
+	return json.Marshal(out, wirejson.Out)
 }
 
 // encodeLogProbs renders the per-choice logprobs object, and nil when
@@ -640,7 +642,7 @@ func (e *frontEventEncoder) chunk(delta map[string]any, finish *string, usage ma
 	if usage != nil {
 		body["usage"] = usage
 	}
-	raw, err := json.Marshal(body)
+	raw, err := json.Marshal(body, wirejson.Out)
 	if err != nil {
 		return err
 	}
@@ -657,7 +659,7 @@ func (e *frontEventEncoder) usageChunk(u ir.Usage) error {
 		"model":   e.model,
 		"choices": []any{},
 		"usage":   encodeFrontUsage(u),
-	})
+	}, wirejson.Out)
 	if err != nil {
 		return err
 	}

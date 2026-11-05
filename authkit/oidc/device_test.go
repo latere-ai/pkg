@@ -5,7 +5,7 @@ package oidc
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -30,7 +30,7 @@ func TestDeviceAuth_HappyPath(t *testing.T) {
 		_ = r.ParseForm()
 		sawForm = r.PostForm
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		_ = json.MarshalWrite(w, map[string]any{
 			"device_code":               "dev-xyz",
 			"user_code":                 "ABCD-1234",
 			"verification_uri":          "https://auth.example.com/device",
@@ -84,13 +84,13 @@ func TestDeviceAccessToken_HonorsAuthorizationPending(t *testing.T) {
 		n := calls.Add(1)
 		if n == 1 {
 			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{
+			_ = json.MarshalWrite(w, map[string]string{
 				"error":             "authorization_pending",
 				"error_description": "the user has not yet acted",
 			})
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		_ = json.MarshalWrite(w, map[string]any{
 			"access_token": "tok-abc",
 			"token_type":   "Bearer",
 			"expires_in":   3600,
@@ -122,7 +122,7 @@ func TestDeviceAccessToken_AccessDeniedSurfaces(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{
+		_ = json.MarshalWrite(w, map[string]string{
 			"error":             "access_denied",
 			"error_description": "the user denied the request",
 		})

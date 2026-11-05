@@ -4,11 +4,12 @@
 package cli
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"golang.org/x/oauth2"
 )
@@ -73,7 +74,7 @@ func (s *FileTokenStore) Save(t *oauth2.Token) error {
 	if err := os.MkdirAll(filepath.Dir(s.Path), 0o700); err != nil {
 		return fmt.Errorf("authkit/cli: create token dir: %w", err)
 	}
-	data, err := json.Marshal(t)
+	data, err := json.Marshal(storedToken{AccessToken: t.AccessToken, TokenType: t.TokenType, RefreshToken: t.RefreshToken, Expiry: t.Expiry, ExpiresIn: t.ExpiresIn})
 	if err != nil {
 		return fmt.Errorf("authkit/cli: marshal token: %w", err)
 	}
@@ -134,4 +135,15 @@ func (s *FileTokenStore) Clear() error {
 		return fmt.Errorf("authkit/cli: remove token: %w", err)
 	}
 	return nil
+}
+
+// storedToken is the on-disk form of an oauth2.Token. The oauth2 struct tags
+// are written for encoding/json v1, where omitempty on expires_in dropped a
+// zero; omitzero here keeps the file the same.
+type storedToken struct {
+	AccessToken  string    `json:"access_token"`
+	TokenType    string    `json:"token_type,omitempty"`
+	RefreshToken string    `json:"refresh_token,omitempty"`
+	Expiry       time.Time `json:"expiry"`
+	ExpiresIn    int64     `json:"expires_in,omitzero"`
 }

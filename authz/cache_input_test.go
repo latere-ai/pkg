@@ -4,7 +4,7 @@
 package authz_test
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -38,7 +38,7 @@ func TestCacheIncludesEveryDecisionInput(t *testing.T) {
 			var calls atomic.Int32
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				allow := calls.Add(1) == 1
-				_ = json.NewEncoder(w).Encode(map[string]bool{"allow": allow})
+				_ = json.MarshalWrite(w, map[string]bool{"allow": allow})
 			}))
 			defer srv.Close()
 			c, err := authz.NewClient(authz.Options{URL: srv.URL, HTTP: srv.Client()})
@@ -101,7 +101,7 @@ func TestCacheAndWireShareOneSerializedSnapshot(t *testing.T) {
 	var encodes, calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request authz.Request
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		if err := json.UnmarshalRead(r.Body, &request); err != nil {
 			t.Error(err)
 			w.WriteHeader(400)
 			return
@@ -111,7 +111,7 @@ func TestCacheAndWireShareOneSerializedSnapshot(t *testing.T) {
 		if version != float64(expected) {
 			t.Errorf("wire version %v, expected %d", version, expected)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]bool{"allow": expected == 1})
+		_ = json.MarshalWrite(w, map[string]bool{"allow": expected == 1})
 	}))
 	defer srv.Close()
 	c, err := authz.NewClient(authz.Options{URL: srv.URL, HTTP: srv.Client()})

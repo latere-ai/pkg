@@ -12,13 +12,15 @@
 package anthropic
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"strings"
 
 	"latere.ai/x/pkg/llmdialect/internal/servertool"
 	"latere.ai/x/pkg/llmdialect/internal/sse"
+	"latere.ai/x/pkg/llmdialect/internal/wirejson"
 	"latere.ai/x/pkg/llmdialect/ir"
 )
 
@@ -61,8 +63,8 @@ var requestKeys = map[string]bool{
 
 // DecodeRequest parses a Messages API request body into the IR.
 func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal(body, &top); err != nil {
+	var top map[string]jsontext.Value
+	if err := json.Unmarshal(body, &top, wirejson.In); err != nil {
 		return nil, fmt.Errorf("anthropic: invalid request JSON: %w", err)
 	}
 	req := &ir.Request{}
@@ -73,17 +75,17 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	}
 
 	var wire struct {
-		Model         string            `json:"model"`
-		MaxTokens     *int64            `json:"max_tokens"`
-		System        json.RawMessage   `json:"system"`
-		Messages      []wireMessage     `json:"messages"`
-		Tools         []json.RawMessage `json:"tools"`
-		ToolChoice    *wireToolChoice   `json:"tool_choice"`
-		Temperature   *float64          `json:"temperature"`
-		TopP          *float64          `json:"top_p"`
-		TopK          *int64            `json:"top_k"`
-		StopSequences []string          `json:"stop_sequences"`
-		Stream        bool              `json:"stream"`
+		Model         string           `json:"model"`
+		MaxTokens     *int64           `json:"max_tokens"`
+		System        jsontext.Value   `json:"system"`
+		Messages      []wireMessage    `json:"messages"`
+		Tools         []jsontext.Value `json:"tools"`
+		ToolChoice    *wireToolChoice  `json:"tool_choice"`
+		Temperature   *float64         `json:"temperature"`
+		TopP          *float64         `json:"top_p"`
+		TopK          *int64           `json:"top_k"`
+		StopSequences []string         `json:"stop_sequences"`
+		Stream        bool             `json:"stream"`
 		Metadata      struct {
 			UserID string `json:"user_id"`
 		} `json:"metadata"`
@@ -99,7 +101,7 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 		// send output_config.format. Both decode to the same schema.
 		OutputFormat *wireOutputFormat `json:"output_format"`
 	}
-	if err := json.Unmarshal(body, &wire); err != nil {
+	if err := json.Unmarshal(body, &wire, wirejson.In); err != nil {
 		return nil, fmt.Errorf("anthropic: malformed request: %w", err)
 	}
 	if wire.Model == "" {
@@ -155,7 +157,7 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	}
 	for _, raw := range wire.Tools {
 		var t wireTool
-		if err := json.Unmarshal(raw, &t); err != nil {
+		if err := json.Unmarshal(raw, &t, wirejson.In); err != nil {
 			return nil, fmt.Errorf("anthropic: malformed tool: %w", err)
 		}
 		// A type other than "custom" names a tool Anthropic runs itself.
@@ -213,21 +215,21 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 // wireOutputFormat is the structured-output request, spelled the same
 // under output_config.format and under the retired top-level output_format.
 type wireOutputFormat struct {
-	Type   string          `json:"type"`
-	Schema json.RawMessage `json:"schema"`
+	Type   string         `json:"type"`
+	Schema jsontext.Value `json:"schema"`
 }
 
 type wireMessage struct {
-	Role    string          `json:"role"`
-	Content json.RawMessage `json:"content"`
+	Role    string         `json:"role"`
+	Content jsontext.Value `json:"content"`
 }
 
 type wireTool struct {
-	Type         string          `json:"type"`
-	Name         string          `json:"name"`
-	Description  string          `json:"description"`
-	InputSchema  json.RawMessage `json:"input_schema"`
-	CacheControl json.RawMessage `json:"cache_control"`
+	Type         string         `json:"type"`
+	Name         string         `json:"name"`
+	Description  string         `json:"description"`
+	InputSchema  jsontext.Value `json:"input_schema"`
+	CacheControl jsontext.Value `json:"cache_control"`
 }
 
 type wireToolChoice struct {
@@ -239,19 +241,19 @@ type wireToolChoice struct {
 type wireBlock struct {
 	Type string `json:"type"`
 
-	Text         string          `json:"text,omitempty"`
-	Source       *wireImage      `json:"source,omitempty"`
-	ID           string          `json:"id,omitempty"`
-	Name         string          `json:"name,omitempty"`
-	Input        json.RawMessage `json:"input,omitempty"`
-	ToolUseID    string          `json:"tool_use_id,omitempty"`
-	Content      json.RawMessage `json:"content,omitempty"`
-	IsError      bool            `json:"is_error,omitempty"`
-	Thinking     string          `json:"thinking,omitempty"`
-	Signature    string          `json:"signature,omitempty"`
-	Data         string          `json:"data,omitempty"`
-	CacheControl json.RawMessage `json:"cache_control,omitempty"`
-	Citations    json.RawMessage `json:"citations,omitempty"`
+	Text         string         `json:"text,omitempty"`
+	Source       *wireImage     `json:"source,omitzero"`
+	ID           string         `json:"id,omitempty"`
+	Name         string         `json:"name,omitempty"`
+	Input        jsontext.Value `json:"input,omitzero"`
+	ToolUseID    string         `json:"tool_use_id,omitempty"`
+	Content      jsontext.Value `json:"content,omitzero"`
+	IsError      bool           `json:"is_error,omitzero"`
+	Thinking     string         `json:"thinking,omitempty"`
+	Signature    string         `json:"signature,omitempty"`
+	Data         string         `json:"data,omitempty"`
+	CacheControl jsontext.Value `json:"cache_control,omitzero"`
+	Citations    jsontext.Value `json:"citations,omitzero"`
 }
 
 type wireImage struct {
@@ -262,13 +264,13 @@ type wireImage struct {
 }
 
 // decodeSystem accepts the string and block-array forms of `system`.
-func decodeSystem(raw json.RawMessage, loss *ir.Loss, path string) ([]ir.Block, error) {
+func decodeSystem(raw jsontext.Value, loss *ir.Loss, path string) ([]ir.Block, error) {
 	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
+	if err := json.Unmarshal(raw, &s, wirejson.In); err == nil {
 		return []ir.Block{{Type: ir.BlockText, Text: s}}, nil
 	}
 	var blocks []wireBlock
-	if err := json.Unmarshal(raw, &blocks); err != nil {
+	if err := json.Unmarshal(raw, &blocks, wirejson.In); err != nil {
 		return nil, fmt.Errorf("%s: must be a string or a block array", path)
 	}
 	var out []ir.Block
@@ -304,13 +306,13 @@ func decodeMessage(m wireMessage, loss *ir.Loss, path string) (ir.Message, error
 // decodeContent accepts the string and block-array forms of message
 // (and tool_result) content. path names the content member itself, so
 // a block error can point at its own index inside it.
-func decodeContent(raw json.RawMessage, loss *ir.Loss, path string) ([]ir.Block, error) {
+func decodeContent(raw jsontext.Value, loss *ir.Loss, path string) ([]ir.Block, error) {
 	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
+	if err := json.Unmarshal(raw, &s, wirejson.In); err == nil {
 		return []ir.Block{{Type: ir.BlockText, Text: s}}, nil
 	}
 	var wire []wireBlock
-	if err := json.Unmarshal(raw, &wire); err != nil {
+	if err := json.Unmarshal(raw, &wire, wirejson.In); err != nil {
 		return nil, fmt.Errorf("%s: must be a string or a block array", path)
 	}
 	var out []ir.Block
@@ -415,7 +417,7 @@ func (*Frontend) EncodeResponse(resp *ir.Response) ([]byte, error) {
 		"stop_sequence": nullableString(resp.StopSequence),
 		"usage":         encodeUsage(resp.Usage),
 	}
-	return json.Marshal(out)
+	return json.Marshal(out, wirejson.Out)
 }
 
 func encodeResponseBlock(b ir.Block) (map[string]any, error) {
@@ -425,7 +427,7 @@ func encodeResponseBlock(b ir.Block) (map[string]any, error) {
 	case ir.BlockToolUse:
 		args := b.ToolUse.Args
 		if len(args) == 0 {
-			args = json.RawMessage("{}")
+			args = jsontext.Value("{}")
 		}
 		return map[string]any{"type": "tool_use", "id": b.ToolUse.ID, "name": b.ToolUse.Name, "input": args}, nil
 	case ir.BlockThinking:
@@ -600,7 +602,7 @@ func encodeStreamBlockHeader(b *ir.Block) (map[string]any, error) {
 }
 
 func (e *EventEncoder) write(name string, data map[string]any) error {
-	raw, err := json.Marshal(data)
+	raw, err := json.Marshal(data, wirejson.Out)
 	if err != nil {
 		return err
 	}

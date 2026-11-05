@@ -5,7 +5,8 @@ package openaichat
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"reflect"
 	"strings"
 	"testing"
@@ -17,7 +18,7 @@ const opaqueItem = `{"id":"rs_1","type":"reasoning","encrypted_content":"gAAAAAB
 
 func opaqueBlock() ir.Block {
 	return ir.Block{Type: ir.BlockOpaque, Opaque: &ir.Opaque{
-		Dialect: ir.DialectOpenAIResponses, Kind: "reasoning", Raw: json.RawMessage(opaqueItem),
+		Dialect: ir.DialectOpenAIResponses, Kind: "reasoning", Raw: jsontext.Value(opaqueItem),
 	}}
 }
 

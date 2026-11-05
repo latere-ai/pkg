@@ -5,7 +5,8 @@ package openaichat
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"os"
@@ -47,14 +48,14 @@ func TestEncodeRequestFull(t *testing.T) {
 			{Role: ir.RoleUser, Blocks: []ir.Block{{Type: ir.BlockText, Text: "hello"}}},
 			{Role: ir.RoleAssistant, Blocks: []ir.Block{
 				{Type: ir.BlockText, Text: "checking"},
-				{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "t1", Name: "get_time", Args: json.RawMessage(`{"tz":"UTC"}`)}},
+				{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "t1", Name: "get_time", Args: jsontext.Value(`{"tz":"UTC"}`)}},
 			}},
 			{Role: ir.RoleUser, Blocks: []ir.Block{
 				{Type: ir.BlockToolResult, ToolResult: &ir.ToolResult{ToolUseID: "t1", Blocks: []ir.Block{{Type: ir.BlockText, Text: "14:02"}}}},
 				{Type: ir.BlockText, Text: "thanks"},
 			}},
 		},
-		Tools:         []ir.Tool{{Name: "get_time", Description: "clock", InputSchema: json.RawMessage(`{"type":"object"}`)}},
+		Tools:         []ir.Tool{{Name: "get_time", Description: "clock", InputSchema: jsontext.Value(`{"type":"object"}`)}},
 		ToolChoice:    &ir.ToolChoice{Mode: ir.ToolChoiceAuto, DisableParallel: true},
 		MaxTokens:     i64(4096),
 		Temperature:   f64(0.5),
@@ -232,7 +233,7 @@ func TestEncodeRequestSchemaAndMaxCompletionTokens(t *testing.T) {
 	req := &ir.Request{
 		Model:     "m",
 		MaxTokens: i64(100),
-		Schema:    &ir.ResponseSchema{Name: "out", Description: "d", Schema: json.RawMessage(`{"type":"object"}`), Strict: true},
+		Schema:    &ir.ResponseSchema{Name: "out", Description: "d", Schema: jsontext.Value(`{"type":"object"}`), Strict: true},
 		Messages:  []ir.Message{{Role: ir.RoleUser, Blocks: []ir.Block{{Type: ir.BlockText, Text: "x"}}}},
 	}
 	got := encode(t, req, BackendOptions{UseMaxCompletionTokens: true})
@@ -419,7 +420,7 @@ func TestDecodeResponseReasoningAlias(t *testing.T) {
 // folds to key, which is how encoding/json matches a member, so the
 // fuzz invariant asks the question the decoder answers.
 func jsonHasKey(raw []byte, key string) bool {
-	var obj map[string]json.RawMessage
+	var obj map[string]jsontext.Value
 	if json.Unmarshal(raw, &obj) != nil {
 		return false
 	}
@@ -527,7 +528,7 @@ func FuzzReasoningAlias(f *testing.F) {
 	f.Fuzz(func(t *testing.T, canonical, alias string) {
 		decode := func(message map[string]any) []ir.Block {
 			t.Helper()
-			raw, _ := json.Marshal(map[string]any{"id": "x", "choices": []any{map[string]any{"message": message}}})
+			raw, _ := json.Marshal(map[string]any{"id": "x", "choices": []any{map[string]any{"message": message}}}, jsontext.AllowInvalidUTF8(true))
 			resp, err := NewBackend(BackendOptions{}).DecodeResponse(raw)
 			if err != nil {
 				t.Fatal(err)

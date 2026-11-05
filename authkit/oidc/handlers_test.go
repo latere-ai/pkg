@@ -5,7 +5,7 @@ package oidc
 
 import (
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -572,7 +572,7 @@ func TestUserFromRequest_ExpiredTokenRefreshSuccess(t *testing.T) {
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]any{
+		if err := json.MarshalWrite(w, map[string]any{
 			"access_token":  newJWT,
 			"token_type":    "Bearer",
 			"refresh_token": "new-rt",
@@ -841,7 +841,7 @@ func TestUserFromRequest_RefreshPersistError(t *testing.T) {
 	newJWT := makeJWT(map[string]string{"sub": "u1", "email": "a@b.com"})
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]any{
+		if err := json.MarshalWrite(w, map[string]any{
 			"access_token": newJWT,
 			"token_type":   "Bearer",
 			"expires_in":   3600,

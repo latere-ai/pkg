@@ -4,7 +4,8 @@
 package openairesp
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"reflect"
@@ -77,7 +78,7 @@ func TestBackendEncodeRequestExtras(t *testing.T) {
 		{"schema + top_p + user", func(r *ir.Request) {
 			r.TopP = &topP
 			r.UserID = "u1"
-			r.Schema = &ir.ResponseSchema{Name: "out", Description: "d", Schema: json.RawMessage(`{"type":"object"}`), Strict: true}
+			r.Schema = &ir.ResponseSchema{Name: "out", Description: "d", Schema: jsontext.Value(`{"type":"object"}`), Strict: true}
 		}, func(t *testing.T, b map[string]any, _ *ir.Request) {
 			if b["top_p"].(float64) != 0.9 || b["user"] != "u1" {
 				t.Errorf("top_p/user = %v %v", b["top_p"], b["user"])
@@ -251,7 +252,7 @@ func TestBackendDecodeUsageCacheReporting(t *testing.T) {
 // folds to key, which is how encoding/json matches a member, so the
 // fuzz invariant asks the question the decoder answers.
 func jsonHasKey(raw []byte, key string) bool {
-	var obj map[string]json.RawMessage
+	var obj map[string]jsontext.Value
 	if json.Unmarshal(raw, &obj) != nil {
 		return false
 	}

@@ -5,13 +5,15 @@ package lux
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"flag"
 	"math"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"latere.ai/x/pkg/llmdialect/internal/wirejson"
 	"latere.ai/x/pkg/llmdialect/ir"
 )
 
@@ -40,12 +42,12 @@ func TestWireBytesAreUnchanged(t *testing.T) {
 			{Role: ir.RoleAssistant, Blocks: []Block{
 				{Type: ir.BlockThinking, Text: "hm", Signature: "sig"},
 				{Type: ir.BlockRedactedThinking, Redacted: "xx"},
-				{Type: ir.BlockOpaque, Opaque: &Opaque{Dialect: ir.DialectOpenAIResponses, Kind: "reasoning", Raw: json.RawMessage(`{"id":"rs_1"}`)}},
-				{Type: ir.BlockToolUse, ToolUse: &ToolUse{ID: "tu_1", Name: "bash", Args: json.RawMessage(`{"cmd":"ls"}`)}},
+				{Type: ir.BlockOpaque, Opaque: &Opaque{Dialect: ir.DialectOpenAIResponses, Kind: "reasoning", Raw: jsontext.Value(`{"id":"rs_1"}`)}},
+				{Type: ir.BlockToolUse, ToolUse: &ToolUse{ID: "tu_1", Name: "bash", Args: jsontext.Value(`{"cmd":"ls"}`)}},
 			}},
 		},
-		Tools:           []Tool{{Name: "bash", Description: "run", InputSchema: json.RawMessage(`{"type":"object"}`)}},
-		ServerTools:     []ServerTool{{Type: "web_search", Name: "search", Config: json.RawMessage(`{"max_uses":2}`)}},
+		Tools:           []Tool{{Name: "bash", Description: "run", InputSchema: jsontext.Value(`{"type":"object"}`)}},
+		ServerTools:     []ServerTool{{Type: "web_search", Name: "search", Config: jsontext.Value(`{"max_uses":2}`)}},
 		ToolChoice:      &ToolChoice{Mode: ir.ToolChoiceTool, Name: "bash", DisableParallel: true},
 		MaxTokens:       &maxTokens,
 		Temperature:     &temperature,
@@ -54,15 +56,15 @@ func TestWireBytesAreUnchanged(t *testing.T) {
 		StopSequences:   []string{"END"},
 		Stream:          true,
 		Reasoning:       &Reasoning{Level: ir.EffortHigh},
-		Schema:          &ResponseSchema{Name: "answer", Description: "d", Schema: json.RawMessage(`{"type":"object"}`), Strict: true},
-		WebSearch:       &WebSearch{ContextSize: "low", UserLocation: json.RawMessage(`{"country":"DE"}`)},
+		Schema:          &ResponseSchema{Name: "answer", Description: "d", Schema: jsontext.Value(`{"type":"object"}`), Strict: true},
+		WebSearch:       &WebSearch{ContextSize: "low", UserLocation: jsontext.Value(`{"country":"DE"}`)},
 		UserID:          "u_1",
 		CacheKey:        "k",
 		LogProbs:        true,
 		TopLogProbs:     2,
 		ReasoningReplay: true,
 	}
-	reqJSON, err := json.Marshal(req)
+	reqJSON, err := json.Marshal(req, wirejson.Out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +80,7 @@ func TestWireBytesAreUnchanged(t *testing.T) {
 		Blocks: []ir.Block{
 			{Type: ir.BlockText, Text: "Hello"},
 			{Type: ir.BlockThinking, Text: "hm", Signature: "sig"},
-			{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "tu_1", Name: "bash", Args: json.RawMessage(`{"cmd":"ls"}`)}},
+			{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "tu_1", Name: "bash", Args: jsontext.Value(`{"cmd":"ls"}`)}},
 		},
 		Usage: ir.Usage{InputTokens: 3, OutputTokens: 4, CacheReadInputTokens: &read, CacheWriteInputTokens: &write, ReasoningTokens: 2, CostUSDMicro: &cost},
 		LogProbs: []ir.TokenLogProb{

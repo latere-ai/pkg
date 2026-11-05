@@ -5,7 +5,8 @@ package anthropic
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"reflect"
@@ -50,7 +51,7 @@ func TestBackendEncodeRequestFull(t *testing.T) {
 			userMsg("hi"),
 			{Role: ir.RoleAssistant, Blocks: []ir.Block{
 				{Type: ir.BlockText, Text: "checking"},
-				{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "t1", Name: "f", Args: json.RawMessage(`{"a":1}`)}},
+				{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "t1", Name: "f", Args: jsontext.Value(`{"a":1}`)}},
 			}},
 			{Role: ir.RoleUser, Blocks: []ir.Block{
 				{Type: ir.BlockToolResult, ToolResult: &ir.ToolResult{
@@ -62,7 +63,7 @@ func TestBackendEncodeRequestFull(t *testing.T) {
 				}},
 			}},
 		},
-		Tools:         []ir.Tool{{Name: "f", Description: "d", InputSchema: json.RawMessage(`{"type":"object"}`)}},
+		Tools:         []ir.Tool{{Name: "f", Description: "d", InputSchema: jsontext.Value(`{"type":"object"}`)}},
 		ToolChoice:    &ir.ToolChoice{Mode: ir.ToolChoiceTool, Name: "f", DisableParallel: true},
 		MaxTokens:     i64(2048),
 		Temperature:   f64(1.4),
@@ -119,7 +120,7 @@ func TestBackendEncodeDefaultMaxTokensAndSchema(t *testing.T) {
 	req := &ir.Request{
 		Model:    "m",
 		Messages: []ir.Message{userMsg("x")},
-		Schema:   &ir.ResponseSchema{Name: "out", Schema: json.RawMessage(`{"type":"object"}`)},
+		Schema:   &ir.ResponseSchema{Name: "out", Schema: jsontext.Value(`{"type":"object"}`)},
 	}
 	got := encodeBack(t, req, BackendOptions{})
 	if got["max_tokens"].(float64) != 4096 {
@@ -347,7 +348,7 @@ func TestBackendDecodeUsageCacheReporting(t *testing.T) {
 // folds to key, which is how encoding/json matches a member, so the
 // fuzz invariant asks the question the decoder answers.
 func jsonHasKey(raw []byte, key string) bool {
-	var obj map[string]json.RawMessage
+	var obj map[string]jsontext.Value
 	if json.Unmarshal(raw, &obj) != nil {
 		return false
 	}
@@ -545,7 +546,7 @@ func TestDecodeResponseCarriesThinkingTokensAsReasoning(t *testing.T) {
 func TestBackendEncodeToolResultBreakpoint(t *testing.T) {
 	req := &ir.Request{Model: "claude-sonnet-5", Messages: []ir.Message{
 		userMsg("read a.txt"),
-		{Role: ir.RoleAssistant, Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "t1", Name: "read", Args: json.RawMessage(`{}`)}}}},
+		{Role: ir.RoleAssistant, Blocks: []ir.Block{{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "t1", Name: "read", Args: jsontext.Value(`{}`)}}}},
 		{Role: ir.RoleUser, Blocks: []ir.Block{
 			{Type: ir.BlockToolResult, ToolResult: &ir.ToolResult{ToolUseID: "t0", Blocks: []ir.Block{{Type: ir.BlockText, Text: "old"}}}},
 			{Type: ir.BlockToolResult, CacheHint: true, ToolResult: &ir.ToolResult{ToolUseID: "t1", Blocks: []ir.Block{{Type: ir.BlockText, Text: "contents"}}}},

@@ -4,7 +4,8 @@
 package bridge
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"slices"
 	"testing"
 
@@ -36,8 +37,8 @@ func TestMessagesToChatKeepsBreakpointsForAnthropicModels(t *testing.T) {
 	}
 	var got struct {
 		Messages []struct {
-			Role    string          `json:"role"`
-			Content json.RawMessage `json:"content"`
+			Role    string         `json:"role"`
+			Content jsontext.Value `json:"content"`
 		} `json:"messages"`
 	}
 	if err := json.Unmarshal(out, &got); err != nil {

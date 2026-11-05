@@ -5,7 +5,8 @@ package httpjson
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -345,7 +346,7 @@ func TestWrite_EncodingErrorAtNonDefaultStatus(t *testing.T) {
 }
 
 // Values that do marshal must produce byte-identical output to what
-// json.Encoder.Encode wrote, trailing newline included. Callers and their
+// a line-oriented JSON encoder writes, trailing newline included. Callers and their
 // clients compare bodies.
 func TestWrite_WireBytesMatchEncoder(t *testing.T) {
 	type payload struct {
@@ -361,7 +362,7 @@ func TestWrite_WireBytesMatchEncoder(t *testing.T) {
 	}
 	for _, v := range cases {
 		var want bytes.Buffer
-		if err := json.NewEncoder(&want).Encode(v); err != nil {
+		if err := json.MarshalEncode(jsontext.NewEncoder(&want), v); err != nil {
 			t.Fatalf("reference encode of %#v: %v", v, err)
 		}
 		w := httptest.NewRecorder()

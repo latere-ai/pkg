@@ -5,7 +5,7 @@ package egress
 
 import (
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -38,11 +38,11 @@ type IngestEntry struct {
 	// [IngestKindOAuthClientCredentials]. Any other value rejects the body.
 	Kind string `json:"kind,omitempty"`
 	// SubstituteBody sets [Entry.SubstituteBody].
-	SubstituteBody bool `json:"substitute_body,omitempty"`
+	SubstituteBody bool `json:"substitute_body,omitzero"`
 	// OAuth is the token endpoint for the oauth_client_credentials kind and
 	// must be present for it; token_url, client_id, and client_secret are
 	// required.
-	OAuth *IngestOAuth `json:"oauth,omitempty"`
+	OAuth *IngestOAuth `json:"oauth,omitzero"`
 }
 
 // IngestOAuth is the client_credentials grant an oauth entry mints from: the

@@ -5,7 +5,8 @@ package bridge
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"strings"
@@ -497,7 +498,7 @@ func TestResponseEvents(t *testing.T) {
 		Blocks: []ir.Block{
 			{Type: ir.BlockText, Text: "hi"},
 			{Type: ir.BlockThinking, Text: "hm", Signature: "sig"},
-			{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "t", Name: "f", Args: json.RawMessage(`{"a":1}`)}},
+			{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "t", Name: "f", Args: jsontext.Value(`{"a":1}`)}},
 			{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "t2", Name: "g"}},
 			{Type: ir.BlockRedactedThinking, Redacted: "x"},
 		},
@@ -524,7 +525,7 @@ func TestResponseEvents(t *testing.T) {
 // re-emitted header is where its payload travels, exactly as a
 // backend's stream carries it.
 func TestResponseEventsCarryOpaque(t *testing.T) {
-	op := &ir.Opaque{Dialect: ir.DialectOpenAIResponses, Kind: "reasoning", Raw: json.RawMessage(`{"id":"rs_1"}`)}
+	op := &ir.Opaque{Dialect: ir.DialectOpenAIResponses, Kind: "reasoning", Raw: jsontext.Value(`{"id":"rs_1"}`)}
 	events := responseEvents(&ir.Response{ID: "r", Blocks: []ir.Block{
 		{Type: ir.BlockOpaque, Opaque: op},
 		{Type: ir.BlockText, Text: "hi"},
@@ -668,7 +669,7 @@ func FuzzRequest(f *testing.F) {
 		b, _ := Open(fe, be, Options{})
 		out, loss, err := b.Request(body, RequestOptions{Model: "up", Loss: []string{"x"}})
 		checkError(t, err)
-		if err == nil && (!json.Valid(out) || len(loss) == 0) {
+		if err == nil && (!jsontext.Value(out).IsValid() || len(loss) == 0) {
 			t.Fatalf("a success with invalid JSON or no loss entry: %s %v", out, loss)
 		}
 	})
@@ -683,7 +684,7 @@ func FuzzResponse(f *testing.F) {
 		b, _ := Open(fe, be, Options{})
 		out, _, _, err := b.Response(body, ResponseOptions{Model: "shown"})
 		checkError(t, err)
-		if err == nil && !json.Valid(out) {
+		if err == nil && !jsontext.Value(out).IsValid() {
 			t.Fatalf("a success with invalid JSON: %s", out)
 		}
 	})

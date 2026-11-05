@@ -5,7 +5,7 @@ package hostsandbox
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -471,7 +471,7 @@ func (d *Driver) prepareSeatbelt(spec StageSpec, profile Profile, policy func(ex
 	if err != nil {
 		return prepared{}, fmt.Errorf("stage %s: finding this program to launch the stage with: %w", spec.Name, err)
 	}
-	body, err := json.Marshal(stageFile{Profile: profile, Argv: spec.Argv, SandboxExec: sandboxExec, Policy: path, Local: localDestinations, Refusals: proxy && spec.OnRefused != nil, NoProxy: !proxy})
+	body, err := json.Marshal(stageFile{Profile: profile, Argv: spec.Argv, SandboxExec: sandboxExec, Policy: path, Local: localDestinations, Refusals: proxy && spec.OnRefused != nil, NoProxy: !proxy}, json.Deterministic(true))
 	if err != nil {
 		return prepared{}, fmt.Errorf("stage %s: %w", spec.Name, err)
 	}

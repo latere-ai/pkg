@@ -4,7 +4,8 @@
 package authz_test
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"reflect"
 	"strings"
 	"testing"
@@ -86,7 +87,7 @@ func req(claims map[string]any, action, kind, id string) authz.Request {
 // it: an allow with every optional field set, so a test can see which of
 // them a deny keeps.
 var allowed = authz.Decision{Allow: true, TTL: 30 * time.Second,
-	Limits: json.RawMessage(`{"requests_per_minute":60}`)}
+	Limits: jsontext.Value(`{"requests_per_minute":60}`)}
 
 // TestReasonGrantIsTheWireWord: the word a decision point writes when no
 // grant covers the request. It is the reason id-13 names and it replaces

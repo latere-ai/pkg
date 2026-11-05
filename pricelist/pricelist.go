@@ -28,7 +28,8 @@ package pricelist
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -167,7 +168,7 @@ func Decode(r io.Reader) ([]Model, error) {
 	var body struct {
 		Data []row `json:"data"`
 	}
-	if err := json.NewDecoder(io.LimitReader(r, maxListBytes)).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(io.LimitReader(r, maxListBytes), &body, foreignJSON); err != nil {
 		return nil, fmt.Errorf("pricelist: decode the list: %w", err)
 	}
 	out := make([]Model, 0, len(body.Data))
@@ -227,15 +228,15 @@ type row struct {
 // change to its form never fails the decode.
 type override struct {
 	Prices
-	MinPromptTokens count           `json:"min_prompt_tokens"`
-	UTCDays         json.RawMessage `json:"utc_days"`
-	UTCStart        json.RawMessage `json:"utc_start"`
-	UTCEnd          json.RawMessage `json:"utc_end"`
+	MinPromptTokens count          `json:"min_prompt_tokens"`
+	UTCDays         jsontext.Value `json:"utc_days"`
+	UTCStart        jsontext.Value `json:"utc_start"`
+	UTCEnd          jsontext.Value `json:"utc_end"`
 }
 
 // present reports whether an override states a condition: a member that is
 // there and not null.
-func present(raw json.RawMessage) bool {
+func present(raw jsontext.Value) bool {
 	return len(raw) > 0 && string(raw) != "null"
 }
 
@@ -252,3 +253,11 @@ func (c *count) UnmarshalJSON(b []byte) error {
 	}
 	return nil
 }
+
+// foreignJSON reads the published list, which is not ours: duplicate names,
+// invalid UTF-8 and any letter case are accepted.
+var foreignJSON = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+	json.MatchCaseInsensitiveNames(true),
+)

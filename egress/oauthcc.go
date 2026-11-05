@@ -5,7 +5,8 @@ package egress
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -178,9 +179,9 @@ func (c *OAuthClientCredentials) mint(ctx context.Context) (string, time.Duratio
 // tokenResponse is the RFC 6749 section 5.1 success body. expires_in is a
 // number by the RFC and a string on some servers, so it is decoded loosely.
 type tokenResponse struct {
-	AccessToken string          `json:"access_token"`
-	TokenType   string          `json:"token_type"`
-	ExpiresIn   json.RawMessage `json:"expires_in"`
+	AccessToken string         `json:"access_token"`
+	TokenType   string         `json:"token_type"`
+	ExpiresIn   jsontext.Value `json:"expires_in"`
 }
 
 // parseTokenResponse returns the bare token and its lifetime. A missing or
@@ -189,7 +190,7 @@ type tokenResponse struct {
 // it says "Bearer".
 func parseTokenResponse(body []byte) (string, time.Duration, error) {
 	var tr tokenResponse
-	if err := json.Unmarshal(body, &tr); err != nil {
+	if err := json.Unmarshal(body, &tr, foreignJSON); err != nil {
 		return "", 0, fmt.Errorf("token response: %w", err)
 	}
 	if tr.AccessToken == "" {
@@ -206,7 +207,7 @@ func parseTokenResponse(body []byte) (string, time.Duration, error) {
 }
 
 // parseExpiresIn accepts a JSON number, a quoted number, null, or nothing.
-func parseExpiresIn(raw json.RawMessage) (time.Duration, error) {
+func parseExpiresIn(raw jsontext.Value) (time.Duration, error) {
 	s := strings.TrimSpace(string(raw))
 	s = strings.Trim(s, `"`)
 	if s == "" || s == "null" {
@@ -226,7 +227,7 @@ func tokenErrorText(body []byte) string {
 		Error       string `json:"error"`
 		Description string `json:"error_description"`
 	}
-	if json.Unmarshal(body, &e) == nil && e.Error != "" {
+	if json.Unmarshal(body, &e, foreignJSON) == nil && e.Error != "" {
 		if e.Description != "" {
 			return e.Error + ": " + e.Description
 		}
@@ -270,3 +271,11 @@ func (c *OAuthClientCredentials) now() time.Time {
 	}
 	return time.Now()
 }
+
+// foreignJSON reads answers from token endpoints we do not run: duplicate
+// names, invalid UTF-8 and any letter case are accepted.
+var foreignJSON = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+	json.MatchCaseInsensitiveNames(true),
+)

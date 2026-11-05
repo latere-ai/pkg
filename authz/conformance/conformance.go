@@ -38,11 +38,13 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
 	"slices"
+	"strconv"
 	"testing"
 
 	"latere.ai/x/pkg/authz"
@@ -368,7 +370,7 @@ func setSubject(req *authz.Request, subject string) {
 // produces no response fails the run: nothing else can be checked.
 func (s *suite) post(t testing.TB, token string, req authz.Request, what string) (int, []byte) {
 	t.Helper()
-	body, err := json.Marshal(req)
+	body, err := json.Marshal(req, json.Deterministic(true), json.FormatNilSliceAsNull(true), json.FormatNilMapAsNull(true), jsontext.AllowInvalidUTF8(true))
 	if err != nil {
 		t.Fatalf("%s: encoding the envelope: %v", what, err)
 	}
@@ -401,8 +403,8 @@ func (s *suite) post(t testing.TB, token string, req authz.Request, what string)
 // JSON object is all that is checked.
 func checkPage(t testing.TB, what string, raw []byte) {
 	t.Helper()
-	var obj map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &obj); err != nil {
+	var obj map[string]jsontext.Value
+	if err := json.Unmarshal(raw, &obj, foreignJSON); err != nil {
 		t.Errorf("%s: the body is not a JSON object: %v", what, err)
 	}
 }
@@ -410,8 +412,8 @@ func checkPage(t testing.TB, what string, raw []byte) {
 // carriesAllow reports whether a body is an object with an allow field,
 // which is a decision and is checked as one.
 func carriesAllow(raw []byte) bool {
-	var obj map[string]json.RawMessage
-	if json.Unmarshal(raw, &obj) != nil {
+	var obj map[string]jsontext.Value
+	if json.Unmarshal(raw, &obj, foreignJSON) != nil {
 		return false
 	}
 	_, ok := obj["allow"]
@@ -426,8 +428,8 @@ func carriesAllow(raw []byte) bool {
 // no decision at all.
 func checkShape(t testing.TB, what string, raw []byte) (authz.Decision, bool) {
 	t.Helper()
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil {
+	var fields map[string]jsontext.Value
+	if err := json.Unmarshal(raw, &fields, foreignJSON); err != nil {
 		t.Errorf("%s: the body is not a JSON object: %v", what, err)
 		return authz.Decision{}, false
 	}
@@ -437,7 +439,7 @@ func checkShape(t testing.TB, what string, raw []byte) (authz.Decision, bool) {
 		return authz.Decision{}, false
 	}
 	var verdict bool
-	if err := json.Unmarshal(allow, &verdict); err != nil {
+	if err := json.Unmarshal(allow, &verdict, foreignJSON); err != nil {
 		t.Errorf("%s: allow is %s; it is a boolean", what, allow)
 		return authz.Decision{}, false
 	}
@@ -445,8 +447,8 @@ func checkShape(t testing.TB, what string, raw []byte) (authz.Decision, bool) {
 		t.Errorf("%s: ttl is %s; it is a positive integer of seconds", what, ttl)
 	}
 	if limits, present := fields["limits"]; present && !isNull(limits) {
-		var obj map[string]json.RawMessage
-		if err := json.Unmarshal(limits, &obj); err != nil {
+		var obj map[string]jsontext.Value
+		if err := json.Unmarshal(limits, &obj, foreignJSON); err != nil {
 			t.Errorf("%s: limits is %s; it is an object of the core's figures", what, limits)
 		}
 	}
@@ -455,7 +457,7 @@ func checkShape(t testing.TB, what string, raw []byte) (authz.Decision, bool) {
 	}
 	var reason string
 	if r, present := fields["reason"]; present && !isNull(r) {
-		if err := json.Unmarshal(r, &reason); err != nil {
+		if err := json.Unmarshal(r, &reason, foreignJSON); err != nil {
 			t.Errorf("%s: reason is %s; it is a string", what, r)
 		}
 	}
@@ -472,10 +474,10 @@ func checkShape(t testing.TB, what string, raw []byte) (authz.Decision, bool) {
 
 // checkFilter reads a filter object: owners a list of strings, labels a
 // map of strings, and no other key.
-func checkFilter(t testing.TB, what string, filter json.RawMessage) {
+func checkFilter(t testing.TB, what string, filter jsontext.Value) {
 	t.Helper()
-	var obj map[string]json.RawMessage
-	if err := json.Unmarshal(filter, &obj); err != nil {
+	var obj map[string]jsontext.Value
+	if err := json.Unmarshal(filter, &obj, foreignJSON); err != nil {
 		t.Errorf("%s: filter is %s; it is an object of owners and labels", what, filter)
 		return
 	}
@@ -483,12 +485,12 @@ func checkFilter(t testing.TB, what string, filter json.RawMessage) {
 		switch k {
 		case "owners":
 			var owners []string
-			if !isNull(v) && json.Unmarshal(v, &owners) != nil {
+			if !isNull(v) && json.Unmarshal(v, &owners, foreignJSON) != nil {
 				t.Errorf("%s: filter.owners is %s; it is a list of rendered subjects", what, v)
 			}
 		case "labels":
 			var labels map[string]string
-			if !isNull(v) && json.Unmarshal(v, &labels) != nil {
+			if !isNull(v) && json.Unmarshal(v, &labels, foreignJSON) != nil {
 				t.Errorf("%s: filter.labels is %s; it is a map of string to string", what, v)
 			}
 		default:
@@ -497,22 +499,16 @@ func checkFilter(t testing.TB, what string, filter json.RawMessage) {
 	}
 }
 
-func isNull(raw json.RawMessage) bool { return bytes.Equal(bytes.TrimSpace(raw), []byte("null")) }
+func isNull(raw jsontext.Value) bool { return bytes.Equal(bytes.TrimSpace(raw), []byte("null")) }
 
 // isPositiveInteger reports whether raw is a JSON number, not a quoted
 // one, that is a whole number above zero.
-func isPositiveInteger(raw json.RawMessage) bool {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
-	var v any
-	if err := dec.Decode(&v); err != nil {
+func isPositiveInteger(raw jsontext.Value) bool {
+	v := bytes.TrimSpace(raw)
+	if jsontext.Value(v).Kind() != '0' {
 		return false
 	}
-	n, ok := v.(json.Number)
-	if !ok {
-		return false
-	}
-	i, err := n.Int64()
+	i, err := strconv.ParseInt(string(v), 10, 64)
 	return err == nil && i > 0
 }
 
@@ -529,3 +525,11 @@ func freshID() string {
 	h := hex.EncodeToString(b[:])
 	return h[:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
 }
+
+// foreignJSON reads the answers of the authorizer under test: duplicate
+// names, invalid UTF-8 and any letter case are accepted.
+var foreignJSON = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+	json.MatchCaseInsensitiveNames(true),
+)

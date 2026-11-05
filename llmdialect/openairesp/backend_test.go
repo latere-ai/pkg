@@ -4,7 +4,8 @@
 package openairesp
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"reflect"
@@ -46,14 +47,14 @@ func TestBackendEncodeRequest(t *testing.T) {
 		Reasoning:   &ir.Reasoning{Effort: ir.EffortHigh},
 		Tools: []ir.Tool{{
 			Name: "shell", Description: "run a command",
-			InputSchema: json.RawMessage(`{"type":"object","properties":{"cmd":{"type":"string"}}}`),
+			InputSchema: jsontext.Value(`{"type":"object","properties":{"cmd":{"type":"string"}}}`),
 		}},
 		ToolChoice: &ir.ToolChoice{Mode: ir.ToolChoiceAuto},
 		Messages: []ir.Message{
 			{Role: ir.RoleUser, Blocks: []ir.Block{{Type: ir.BlockText, Text: "make hello.py"}}},
 			{Role: ir.RoleAssistant, Blocks: []ir.Block{
 				{Type: ir.BlockText, Text: "on it"},
-				{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "call_1", Name: "shell", Args: json.RawMessage(`{"cmd":"touch hello.py"}`)}},
+				{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "call_1", Name: "shell", Args: jsontext.Value(`{"cmd":"touch hello.py"}`)}},
 			}},
 			{Role: ir.RoleUser, Blocks: []ir.Block{
 				{Type: ir.BlockToolResult, ToolResult: &ir.ToolResult{ToolUseID: "call_1", Blocks: []ir.Block{{Type: ir.BlockText, Text: "done"}}}},
@@ -126,7 +127,7 @@ func TestBackendFrontendRoundTrip(t *testing.T) {
 		Model:    "gpt-5.6-sol",
 		System:   []ir.Block{{Type: ir.BlockText, Text: "sys"}},
 		Messages: []ir.Message{{Role: ir.RoleUser, Blocks: []ir.Block{{Type: ir.BlockText, Text: "hi"}}}},
-		Tools:    []ir.Tool{{Name: "t", InputSchema: json.RawMessage(`{"type":"object"}`)}},
+		Tools:    []ir.Tool{{Name: "t", InputSchema: jsontext.Value(`{"type":"object"}`)}},
 	}
 	raw, err := NewBackend().EncodeRequest(orig)
 	if err != nil {

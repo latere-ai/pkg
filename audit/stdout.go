@@ -5,7 +5,8 @@ package audit
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"io"
 	"sync"
 )
@@ -49,7 +50,7 @@ func (s *StdoutEmitter) Emit(_ context.Context, ev Event) error {
 	if s.redact != nil {
 		ev = s.redact(ev)
 	}
-	b, err := json.Marshal(ev)
+	b, err := json.Marshal(ev, jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true))
 	if err != nil {
 		return err
 	}

@@ -75,10 +75,10 @@ type openaiModel struct {
 	Object          string        `json:"object"`
 	Created         int64         `json:"created"`
 	OwnedBy         string        `json:"owned_by"`
-	ContextWindow   int           `json:"context_window,omitempty"`
-	MaxOutputTokens int           `json:"max_output_tokens,omitempty"`
+	ContextWindow   int           `json:"context_window,omitzero"`
+	MaxOutputTokens int           `json:"max_output_tokens,omitzero"`
 	InputModalities []string      `json:"input_modalities,omitempty"`
-	Pricing         *snakePricing `json:"pricing,omitempty"`
+	Pricing         *snakePricing `json:"pricing,omitzero"`
 }
 
 type openaiModelList struct {
@@ -91,10 +91,10 @@ type anthropicModel struct {
 	ID              string        `json:"id"`
 	DisplayName     string        `json:"display_name"`
 	CreatedAt       string        `json:"created_at"`
-	MaxInputTokens  int           `json:"max_input_tokens,omitempty"`
-	MaxTokens       int           `json:"max_tokens,omitempty"`
+	MaxInputTokens  int           `json:"max_input_tokens,omitzero"`
+	MaxTokens       int           `json:"max_tokens,omitzero"`
 	InputModalities []string      `json:"input_modalities,omitempty"`
-	Pricing         *snakePricing `json:"pricing,omitempty"`
+	Pricing         *snakePricing `json:"pricing,omitzero"`
 }
 
 // snakePricing is the pricing member of the OpenAI and Anthropic shapes.
@@ -125,8 +125,8 @@ type googleModel struct {
 	Name                       string   `json:"name"`
 	DisplayName                string   `json:"displayName"`
 	SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
-	InputTokenLimit            int      `json:"inputTokenLimit,omitempty"`
-	OutputTokenLimit           int      `json:"outputTokenLimit,omitempty"`
+	InputTokenLimit            int      `json:"inputTokenLimit,omitzero"`
+	OutputTokenLimit           int      `json:"outputTokenLimit,omitzero"`
 }
 
 type googleModelList struct {

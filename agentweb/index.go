@@ -4,7 +4,7 @@
 package agentweb
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"maps"
@@ -70,7 +70,7 @@ type Page struct {
 	// Priority is the sitemap priority, from 0 to 1. Zero means unset and
 	// writes no priority element, so a page cannot state the protocol's
 	// lowest value of 0.0; 0.1 is the lowest one it can.
-	Priority float64 `json:"priority,omitempty"`
+	Priority float64 `json:"priority,omitzero"`
 
 	// Markdown is the path of the page's Markdown twin, such as
 	// "/en/part/chapter.md". Empty when the page has none.

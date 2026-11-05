@@ -22,12 +22,14 @@
 package openairesp
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"strings"
 
 	"latere.ai/x/pkg/llmdialect/internal/sse"
+	"latere.ai/x/pkg/llmdialect/internal/wirejson"
 	"latere.ai/x/pkg/llmdialect/ir"
 )
 
@@ -57,8 +59,8 @@ var requestKeys = map[string]bool{
 
 // DecodeRequest parses a stateless Responses API request into the IR.
 func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal(body, &top); err != nil {
+	var top map[string]jsontext.Value
+	if err := json.Unmarshal(body, &top, wirejson.In); err != nil {
 		return nil, fmt.Errorf("openairesp: invalid request JSON: %w", err)
 	}
 	req := &ir.Request{}
@@ -69,38 +71,38 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	}
 
 	var wire struct {
-		Model             string          `json:"model"`
-		Input             json.RawMessage `json:"input"`
-		Instructions      string          `json:"instructions"`
-		MaxOutputTokens   *int64          `json:"max_output_tokens"`
-		Temperature       *float64        `json:"temperature"`
-		TopP              *float64        `json:"top_p"`
-		Stream            bool            `json:"stream"`
-		Tools             []respTool      `json:"tools"`
-		ToolChoice        json.RawMessage `json:"tool_choice"`
-		ParallelToolCalls *bool           `json:"parallel_tool_calls"`
+		Model             string         `json:"model"`
+		Input             jsontext.Value `json:"input"`
+		Instructions      string         `json:"instructions"`
+		MaxOutputTokens   *int64         `json:"max_output_tokens"`
+		Temperature       *float64       `json:"temperature"`
+		TopP              *float64       `json:"top_p"`
+		Stream            bool           `json:"stream"`
+		Tools             []respTool     `json:"tools"`
+		ToolChoice        jsontext.Value `json:"tool_choice"`
+		ParallelToolCalls *bool          `json:"parallel_tool_calls"`
 		Reasoning         *struct {
-			Effort  string          `json:"effort"`
-			Summary json.RawMessage `json:"summary"`
+			Effort  string         `json:"effort"`
+			Summary jsontext.Value `json:"summary"`
 		} `json:"reasoning"`
 		Text *struct {
 			Format *struct {
-				Type        string          `json:"type"`
-				Name        string          `json:"name"`
-				Description string          `json:"description"`
-				Schema      json.RawMessage `json:"schema"`
-				Strict      bool            `json:"strict"`
+				Type        string         `json:"type"`
+				Name        string         `json:"name"`
+				Description string         `json:"description"`
+				Schema      jsontext.Value `json:"schema"`
+				Strict      bool           `json:"strict"`
 			} `json:"format"`
 			Verbosity string `json:"verbosity"`
 		} `json:"text"`
-		Store              *bool           `json:"store"`
-		PreviousResponseID string          `json:"previous_response_id"`
-		User               string          `json:"user"`
-		Include            json.RawMessage `json:"include"`
-		TopLogProbs        *int            `json:"top_logprobs"`
-		PromptCacheKey     string          `json:"prompt_cache_key"`
+		Store              *bool          `json:"store"`
+		PreviousResponseID string         `json:"previous_response_id"`
+		User               string         `json:"user"`
+		Include            jsontext.Value `json:"include"`
+		TopLogProbs        *int           `json:"top_logprobs"`
+		PromptCacheKey     string         `json:"prompt_cache_key"`
 	}
-	if err := json.Unmarshal(body, &wire); err != nil {
+	if err := json.Unmarshal(body, &wire, wirejson.In); err != nil {
 		return nil, fmt.Errorf("openairesp: malformed request: %w", err)
 	}
 	if wire.Model == "" {
@@ -206,9 +208,9 @@ const includeLogProbs = "message.output_text.logprobs"
 // for reasoning the next request can carry back. The rest name response
 // parts that exist only in the upstream's own store and land in the
 // loss report.
-func decodeInclude(req *ir.Request, raw json.RawMessage) {
+func decodeInclude(req *ir.Request, raw jsontext.Value) {
 	var want []string
-	if err := json.Unmarshal(raw, &want); err != nil {
+	if err := json.Unmarshal(raw, &want, wirejson.In); err != nil {
 		req.Loss.Add(ir.LossInclude)
 		return
 	}
@@ -225,24 +227,24 @@ func decodeInclude(req *ir.Request, raw json.RawMessage) {
 }
 
 type respTool struct {
-	Type        string          `json:"type"`
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Parameters  json.RawMessage `json:"parameters"`
-	Strict      bool            `json:"strict"`
+	Type        string         `json:"type"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  jsontext.Value `json:"parameters"`
+	Strict      bool           `json:"strict"`
 }
 
 type respItem struct {
-	Type    string          `json:"type"`
-	Role    string          `json:"role"`
-	Content json.RawMessage `json:"content"`
+	Type    string         `json:"type"`
+	Role    string         `json:"role"`
+	Content jsontext.Value `json:"content"`
 	// function_call / function_call_output fields.
 	CallID    string `json:"call_id"`
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`
 	// Output is a string or a list of input_text, input_image and
 	// input_file parts.
-	Output json.RawMessage `json:"output"`
+	Output jsontext.Value `json:"output"`
 	// reasoning field.
 	EncryptedContent string `json:"encrypted_content"`
 }
@@ -260,17 +262,17 @@ type respItem struct {
 // with ir.LossReasoningItems: it names an item only the upstream's
 // store could resolve, and this surface stores nothing, so replaying it
 // would turn a lossy item into a request the upstream rejects.
-func decodeInput(req *ir.Request, raw json.RawMessage) error {
+func decodeInput(req *ir.Request, raw jsontext.Value) error {
 	if len(raw) == 0 {
 		return nil
 	}
 	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
+	if err := json.Unmarshal(raw, &s, wirejson.In); err == nil {
 		req.Messages = append(req.Messages, ir.Message{Role: ir.RoleUser, Blocks: []ir.Block{{Type: ir.BlockText, Text: s}}})
 		return nil
 	}
-	var items []json.RawMessage
-	if err := json.Unmarshal(raw, &items); err != nil {
+	var items []jsontext.Value
+	if err := json.Unmarshal(raw, &items, wirejson.In); err != nil {
 		return fmt.Errorf("openairesp: input must be a string or item array")
 	}
 
@@ -291,7 +293,7 @@ func decodeInput(req *ir.Request, raw json.RawMessage) error {
 
 	for i, rawItem := range items {
 		var item respItem
-		if err := json.Unmarshal(rawItem, &item); err != nil {
+		if err := json.Unmarshal(rawItem, &item, wirejson.In); err != nil {
 			return fmt.Errorf("openairesp: input[%d]: item must be an object", i)
 		}
 		switch item.Type {
@@ -308,7 +310,7 @@ func decodeInput(req *ir.Request, raw json.RawMessage) error {
 			}
 		case "function_call":
 			appendBlock(ir.RoleAssistant, ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{
-				ID: item.CallID, Name: item.Name, Args: json.RawMessage(item.Arguments),
+				ID: item.CallID, Name: item.Name, Args: jsontext.Value(item.Arguments),
 			}})
 		case "function_call_output":
 			blocks, err := decodeItemContent(item.Output, req)
@@ -363,12 +365,12 @@ func decodeMessageItem(item respItem, req *ir.Request) (ir.Role, []ir.Block, err
 	}
 }
 
-func decodeItemContent(raw json.RawMessage, req *ir.Request) ([]ir.Block, error) {
+func decodeItemContent(raw jsontext.Value, req *ir.Request) ([]ir.Block, error) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
 	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
+	if err := json.Unmarshal(raw, &s, wirejson.In); err == nil {
 		return []ir.Block{{Type: ir.BlockText, Text: s}}, nil
 	}
 	var parts []struct {
@@ -376,7 +378,7 @@ func decodeItemContent(raw json.RawMessage, req *ir.Request) ([]ir.Block, error)
 		Text     string `json:"text"`
 		ImageURL string `json:"image_url"`
 	}
-	if err := json.Unmarshal(raw, &parts); err != nil {
+	if err := json.Unmarshal(raw, &parts, wirejson.In); err != nil {
 		return nil, fmt.Errorf("content must be a string or content parts")
 	}
 	var out []ir.Block
@@ -409,9 +411,9 @@ func decodeImageURL(url string) (*ir.Image, error) {
 	return &ir.Image{MediaType: before, Data: after}, nil
 }
 
-func decodeToolChoice(raw json.RawMessage) (*ir.ToolChoice, error) {
+func decodeToolChoice(raw jsontext.Value) (*ir.ToolChoice, error) {
 	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
+	if err := json.Unmarshal(raw, &s, wirejson.In); err == nil {
 		switch s {
 		case "auto":
 			return &ir.ToolChoice{Mode: ir.ToolChoiceAuto}, nil
@@ -426,7 +428,7 @@ func decodeToolChoice(raw json.RawMessage) (*ir.ToolChoice, error) {
 	var named struct {
 		Name string `json:"name"`
 	}
-	if err := json.Unmarshal(raw, &named); err != nil || named.Name == "" {
+	if err := json.Unmarshal(raw, &named, wirejson.In); err != nil || named.Name == "" {
 		return nil, fmt.Errorf("openairesp: malformed tool_choice")
 	}
 	return &ir.ToolChoice{Mode: ir.ToolChoiceTool, Name: named.Name}, nil
@@ -549,7 +551,7 @@ func (*Frontend) EncodeResponse(resp *ir.Response) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(envelope)
+	return json.Marshal(envelope, wirejson.Out)
 }
 
 // encodeLogProbs renders the per-token sequence this dialect declares.
@@ -628,9 +630,9 @@ type eventEncoder struct {
 	probsAcc    []ir.TokenLogProb
 	toolID      string
 	toolName    string
-	opaqueRaw   json.RawMessage // the open opaque item, nil when it is not written
-	held        map[string]any  // a finished thinking item whose done frame waits
-	done        []any           // completed output items, in order
+	opaqueRaw   jsontext.Value // the open opaque item, nil when it is not written
+	held        map[string]any // a finished thinking item whose done frame waits
+	done        []any          // completed output items, in order
 }
 
 // Encode writes the SSE event(s) for one IR event.
@@ -773,7 +775,7 @@ func (e *eventEncoder) openOpaque(blk ir.Block) error {
 	var head struct {
 		ID string `json:"id"`
 	}
-	if err := json.Unmarshal(blk.Opaque.Raw, &head); err != nil {
+	if err := json.Unmarshal(blk.Opaque.Raw, &head, wirejson.In); err != nil {
 		return fmt.Errorf("openairesp: reasoning item: %w", err)
 	}
 	e.itemID = head.ID
@@ -849,7 +851,7 @@ func (e *eventEncoder) write(name string, data map[string]any) error {
 	data["type"] = name
 	data["sequence_number"] = e.seq
 	e.seq++
-	raw, err := json.Marshal(data)
+	raw, err := json.Marshal(data, wirejson.Out)
 	if err != nil {
 		return err
 	}

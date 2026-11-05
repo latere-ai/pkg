@@ -5,7 +5,8 @@ package egress
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -465,7 +466,7 @@ func FuzzTokenErrorText(f *testing.F) {
 	f.Add([]byte(strings.Repeat("z", 400)))
 	f.Fuzz(func(t *testing.T, body []byte) {
 		s := tokenErrorText(body)
-		if !json.Valid(body) && len(s) > 203 {
+		if !jsontext.Value(body).IsValid() && len(s) > 203 {
 			t.Fatalf("excerpt not bounded: %d", len(s))
 		}
 	})

@@ -5,7 +5,7 @@ package oidc
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -190,7 +190,7 @@ func TestFetchOrgs_BearerHeader(t *testing.T) {
 			return
 		}
 		sawAuth = r.Header.Get("Authorization")
-		_ = json.NewEncoder(w).Encode([]OrgEntry{
+		_ = json.MarshalWrite(w, []OrgEntry{
 			{ID: "org-1", Name: "Acme", Slug: "acme", Owner: true},
 			{ID: "org-2", Name: "Globex"},
 		})

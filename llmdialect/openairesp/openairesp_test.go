@@ -5,7 +5,8 @@ package openairesp
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"reflect"
 	"slices"
 	"strings"
@@ -200,7 +201,7 @@ func TestEncodeResponse(t *testing.T) {
 		Blocks: []ir.Block{
 			{Type: ir.BlockThinking, Text: "hm"},
 			{Type: ir.BlockText, Text: "hi"},
-			{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "call_1", Name: "shell", Args: json.RawMessage(`{"cmd":"ls"}`)}},
+			{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "call_1", Name: "shell", Args: jsontext.Value(`{"cmd":"ls"}`)}},
 		},
 		StopReason: ir.StopToolUse,
 		Usage:      ir.Usage{InputTokens: 40, OutputTokens: 6, CacheReadInputTokens: i64(60), ReasoningTokens: 2},

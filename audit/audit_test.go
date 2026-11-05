@@ -6,7 +6,8 @@ package audit
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"strings"
@@ -39,7 +40,7 @@ func TestEventJSONOmitOptionalFields(t *testing.T) {
 
 	// With Subject and Payload populated.
 	ev.Subject = &Subject{Kind: "sandbox", ID: "sb-1", Name: "demo"}
-	ev.Payload = json.RawMessage(`{"k":"v"}`)
+	ev.Payload = jsontext.Value(`{"k":"v"}`)
 	b, _ = json.Marshal(ev)
 	s = string(b)
 	if !strings.Contains(s, `"subject":{"kind":"sandbox","id":"sb-1","name":"demo"}`) {
@@ -169,7 +170,7 @@ func TestStdoutEmitterRedactCallback(t *testing.T) {
 		ev.Payload = RedactJSON(ev.Payload)
 		return ev
 	}))
-	payload := json.RawMessage(`{"argv":["env","GITHUB_TOKEN=ghp_0123456789abcdef0123456789abcdef0123"]}`)
+	payload := jsontext.Value(`{"argv":["env","GITHUB_TOKEN=ghp_0123456789abcdef0123456789abcdef0123"]}`)
 	if err := em.Emit(context.Background(), Event{EventID: "x", Payload: payload}); err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +197,7 @@ func TestStdoutEmitterConcurrent(t *testing.T) {
 		t.Fatalf("got %d lines, want %d", len(lines), writers*each)
 	}
 	for i, line := range lines {
-		if !json.Valid([]byte(line)) {
+		if !jsontext.Value([]byte(line)).IsValid() {
 			t.Fatalf("line %d not valid JSON: %q", i, line)
 		}
 	}
@@ -215,10 +216,10 @@ func TestStdoutEmitterWriteError(t *testing.T) {
 
 func TestStdoutEmitterMarshalError(t *testing.T) {
 	em := NewStdoutEmitter(&bytes.Buffer{})
-	// Construct an Event whose Payload errors during marshaling. json.RawMessage
+	// Construct an Event whose Payload errors during marshaling. jsontext.Value
 	// can carry invalid JSON; encoding/json validates it on Marshal and returns
 	// an error. Pass syntactically invalid bytes.
-	if err := em.Emit(context.Background(), Event{EventID: "x", Payload: json.RawMessage(`{`)}); err == nil {
+	if err := em.Emit(context.Background(), Event{EventID: "x", Payload: jsontext.Value(`{`)}); err == nil {
 		t.Error("expected marshal error on invalid RawMessage")
 	}
 }

@@ -4,7 +4,8 @@
 package pricelist
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"math/big"
 	"regexp"
 	"strings"
@@ -101,7 +102,7 @@ func (p Price) Zero() bool {
 // null; any other value fails the decode, as it would for a string field.
 func (p *Price) UnmarshalJSON(b []byte) error {
 	var s *string
-	if err := json.Unmarshal(b, &s); err != nil {
+	if err := json.Unmarshal(b, &s, jsontext.AllowInvalidUTF8(true)); err != nil {
 		return err
 	}
 	if s == nil {

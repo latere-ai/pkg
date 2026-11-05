@@ -4,7 +4,7 @@
 package ndjson
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"slices"
 	"strings"
 )
@@ -34,7 +34,7 @@ func PreferResultLine[T any](raw string, backward bool, isCandidate, isTerminal 
 		if len(line) == 0 || line[0] != '{' {
 			return c, false
 		}
-		if json.Unmarshal([]byte(line), &c) != nil {
+		if json.Unmarshal([]byte(line), &c, foreignJSON) != nil {
 			return c, false
 		}
 		if isCandidate != nil && !isCandidate(&c) {

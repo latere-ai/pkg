@@ -5,7 +5,7 @@ package oidc
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -35,14 +35,14 @@ func actorIssuer(t *testing.T, session string, known ...string) (*httptest.Serve
 			Audience string `json:"audience"`
 			TTL      int    `json:"ttl_seconds"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.TTL != 300 {
+		if err := json.UnmarshalRead(r.Body, &body); err != nil || body.TTL != 300 {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
 		if slices.Contains(known, body.Audience) {
 			n := mints.Add(1)
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{
+			_ = json.MarshalWrite(w, map[string]any{
 				"actor_token": body.Audience + "-token-" + strconv.Itoa(int(n)),
 				"expires_in":  300,
 			})

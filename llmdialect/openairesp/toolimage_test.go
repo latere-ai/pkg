@@ -4,7 +4,7 @@
 package openairesp
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"reflect"
 	"slices"
 	"strings"
@@ -20,7 +20,7 @@ func toolImageRequest(blocks ...ir.Block) *ir.Request {
 		Model: "gpt-5",
 		Messages: []ir.Message{
 			{Role: ir.RoleAssistant, Blocks: []ir.Block{
-				{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "call_1", Name: "read", Args: json.RawMessage(`{"path":"a.png"}`)}},
+				{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "call_1", Name: "read", Args: jsontext.Value(`{"path":"a.png"}`)}},
 			}},
 			{Role: ir.RoleUser, Blocks: []ir.Block{
 				{Type: ir.BlockToolResult, ToolResult: &ir.ToolResult{ToolUseID: "call_1", Blocks: blocks}},

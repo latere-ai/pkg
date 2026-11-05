@@ -7,7 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"maps"
@@ -48,12 +48,12 @@ func issuerWithIDToken(t *testing.T, clientID, nonce string, resp map[string]any
 			"exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(),
 		})
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(body); err != nil {
+		if err := json.MarshalWrite(w, body); err != nil {
 			t.Errorf("encode token response: %v", err)
 		}
 	})
 	mux.HandleFunc("/.well-known/jwks.json", func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []map[string]any{{
+		_ = json.MarshalWrite(w, map[string]any{"keys": []map[string]any{{
 			"kty": "RSA", "alg": "RS256", "use": "sig", "kid": "kid-1",
 			"n": base64.RawURLEncoding.EncodeToString(key.N.Bytes()),
 			"e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.E)).Bytes()),
@@ -108,7 +108,7 @@ func TestHandleCallback_IDTokenVerifiedSetsSession(t *testing.T) {
 func TestHandleCallback_MissingIDTokenRejected(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]any{
+		if err := json.MarshalWrite(w, map[string]any{
 			"access_token": makeJWT(map[string]string{"sub": "user1", "email": "user@test.com"}),
 			"token_type":   "Bearer",
 			"expires_in":   3600,

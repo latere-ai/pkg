@@ -17,13 +17,15 @@
 package openairesp
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
 
 	"latere.ai/x/pkg/llmdialect/internal/sse"
+	"latere.ai/x/pkg/llmdialect/internal/wirejson"
 	"latere.ai/x/pkg/llmdialect/ir"
 )
 
@@ -94,7 +96,7 @@ func (*Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 		for _, t := range req.Tools {
 			schema := t.InputSchema
 			if len(schema) == 0 {
-				schema = json.RawMessage(`{"type":"object"}`)
+				schema = jsontext.Value(`{"type":"object"}`)
 			}
 			tool := map[string]any{"type": "function", "name": t.Name, "parameters": schema}
 			if t.Description != "" {
@@ -183,7 +185,7 @@ func (*Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 	if req.Stream {
 		body["stream"] = true
 	}
-	return json.Marshal(body)
+	return json.Marshal(body, wirejson.Out)
 }
 
 // encodeInstructions folds the IR system blocks into the Responses
@@ -333,12 +335,12 @@ func imageURL(img *ir.Image) string {
 // ── response decoding ───────────────────────────────────────────────
 
 type respOutputItem struct {
-	Type    string          `json:"type"`
-	Role    string          `json:"role"`
-	Content json.RawMessage `json:"content"`
-	CallID  string          `json:"call_id"`
-	Name    string          `json:"name"`
-	Args    string          `json:"arguments"`
+	Type    string         `json:"type"`
+	Role    string         `json:"role"`
+	Content jsontext.Value `json:"content"`
+	CallID  string         `json:"call_id"`
+	Name    string         `json:"name"`
+	Args    string         `json:"arguments"`
 	Summary []struct {
 		Text string `json:"text"`
 	} `json:"summary"`
@@ -359,8 +361,8 @@ const includeReasoning = "reasoning.encrypted_content"
 // request asked for it, and without it a request that stores nothing
 // upstream has nothing to resolve the item by, so a caller that did not
 // ask sees no opaque block.
-func reasoningBlock(item json.RawMessage) (ir.Block, error) {
-	raw, err := json.Marshal(item)
+func reasoningBlock(item jsontext.Value) (ir.Block, error) {
+	raw, err := json.Marshal(item, wirejson.Out)
 	if err != nil {
 		return ir.Block{}, fmt.Errorf("openairesp: reasoning item: %w", err)
 	}
@@ -433,11 +435,11 @@ func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 		IncompleteDetails *struct {
 			Reason string `json:"reason"`
 		} `json:"incomplete_details"`
-		Output []json.RawMessage `json:"output"`
-		Usage  *respUsage        `json:"usage"`
-		Error  *respError        `json:"error"`
+		Output []jsontext.Value `json:"output"`
+		Usage  *respUsage       `json:"usage"`
+		Error  *respError       `json:"error"`
 	}
-	if err := json.Unmarshal(body, &wire); err != nil {
+	if err := json.Unmarshal(body, &wire, wirejson.In); err != nil {
 		return nil, fmt.Errorf("openairesp: invalid response JSON: %w", err)
 	}
 	if wire.Error != nil {
@@ -448,7 +450,7 @@ func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 	sawTool := false
 	for _, rawItem := range wire.Output {
 		var item respOutputItem
-		if err := json.Unmarshal(rawItem, &item); err != nil {
+		if err := json.Unmarshal(rawItem, &item, wirejson.In); err != nil {
 			return nil, fmt.Errorf("openairesp: invalid response JSON: %w", err)
 		}
 		switch item.Type {
@@ -479,7 +481,7 @@ func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 				args = "{}"
 			}
 			resp.Blocks = append(resp.Blocks, ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{
-				ID: item.CallID, Name: item.Name, Args: json.RawMessage(args),
+				ID: item.CallID, Name: item.Name, Args: jsontext.Value(args),
 			}})
 		}
 	}
@@ -556,7 +558,7 @@ func bytesFromInts(in []int) []byte {
 
 // decodeOutputLogProbs pulls the per-token sequence off a message
 // item's output_text parts.
-func decodeOutputLogProbs(raw json.RawMessage) []ir.TokenLogProb {
+func decodeOutputLogProbs(raw jsontext.Value) []ir.TokenLogProb {
 	if len(raw) == 0 {
 		return nil
 	}
@@ -564,7 +566,7 @@ func decodeOutputLogProbs(raw json.RawMessage) []ir.TokenLogProb {
 		Type     string             `json:"type"`
 		LogProbs []respTokenLogProb `json:"logprobs"`
 	}
-	if err := json.Unmarshal(raw, &parts); err != nil {
+	if err := json.Unmarshal(raw, &parts, wirejson.In); err != nil {
 		return nil
 	}
 	var out []ir.TokenLogProb
@@ -578,12 +580,12 @@ func decodeOutputLogProbs(raw json.RawMessage) []ir.TokenLogProb {
 
 // decodeOutputText pulls the output_text strings out of a message
 // item's content (string or content-part array).
-func decodeOutputText(raw json.RawMessage) []string {
+func decodeOutputText(raw jsontext.Value) []string {
 	if len(raw) == 0 {
 		return nil
 	}
 	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
+	if err := json.Unmarshal(raw, &s, wirejson.In); err == nil {
 		if s == "" {
 			return nil
 		}
@@ -593,7 +595,7 @@ func decodeOutputText(raw json.RawMessage) []string {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	}
-	if err := json.Unmarshal(raw, &parts); err != nil {
+	if err := json.Unmarshal(raw, &parts, wirejson.In); err != nil {
 		return nil
 	}
 	var out []string
@@ -685,10 +687,10 @@ func (d *EventDecoder) consume(data []byte) error {
 			Usage *respUsage `json:"usage"`
 			Error *respError `json:"error"`
 		} `json:"response"`
-		Item  json.RawMessage `json:"item"`
-		Error *respError      `json:"error"`
+		Item  jsontext.Value `json:"item"`
+		Error *respError     `json:"error"`
 	}
-	if err := json.Unmarshal(data, &ev); err != nil {
+	if err := json.Unmarshal(data, &ev, wirejson.In); err != nil {
 		return fmt.Errorf("openairesp: invalid stream frame: %w", err)
 	}
 	// The item stays raw beside its typed head, so a finished reasoning
@@ -700,7 +702,7 @@ func (d *EventDecoder) consume(data []byte) error {
 		EncryptedContent string `json:"encrypted_content"`
 	}
 	if len(ev.Item) > 0 {
-		if err := json.Unmarshal(ev.Item, &item); err != nil {
+		if err := json.Unmarshal(ev.Item, &item, wirejson.In); err != nil {
 			return fmt.Errorf("openairesp: invalid stream frame: %w", err)
 		}
 	}

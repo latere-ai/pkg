@@ -5,7 +5,7 @@ package oidc
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -56,7 +56,7 @@ func (ri *rotatingIssuer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	time.Sleep(ri.hold)
-	if err := json.NewEncoder(w).Encode(map[string]any{
+	if err := json.MarshalWrite(w, map[string]any{
 		"access_token":  makeRichJWT(map[string]any{"sub": "u1", "n": n}),
 		"token_type":    "Bearer",
 		"expires_in":    3600,

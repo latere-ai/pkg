@@ -4,7 +4,8 @@
 package openaichat
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"math"
@@ -124,11 +125,11 @@ func TestEncodeResponseServesLogProbs(t *testing.T) {
 					LogProb *float64 `json:"logprob"`
 					Bytes   []int    `json:"bytes"`
 					Top     []struct {
-						Token string          `json:"token"`
-						Top   json.RawMessage `json:"top_logprobs"`
+						Token string         `json:"token"`
+						Top   jsontext.Value `json:"top_logprobs"`
 					} `json:"top_logprobs"`
 				} `json:"content"`
-				Refusal json.RawMessage `json:"refusal"`
+				Refusal jsontext.Value `json:"refusal"`
 			} `json:"logprobs"`
 		} `json:"choices"`
 	}
@@ -170,7 +171,7 @@ func TestEncodeResponseLogProbsNullWhenNotAsked(t *testing.T) {
 		t.Fatal(err)
 	}
 	var body struct {
-		Choices []map[string]json.RawMessage `json:"choices"`
+		Choices []map[string]jsontext.Value `json:"choices"`
 	}
 	if err := json.Unmarshal(raw, &body); err != nil {
 		t.Fatal(err)

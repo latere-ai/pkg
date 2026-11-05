@@ -14,11 +14,13 @@
 package lux
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 
 	"latere.ai/x/pkg/llmdialect/internal/sse"
+	"latere.ai/x/pkg/llmdialect/internal/wirejson"
 	"latere.ai/x/pkg/llmdialect/ir"
 )
 
@@ -49,8 +51,8 @@ var requestKeys = map[string]bool{
 
 // DecodeRequest parses a lux request body into the IR.
 func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal(body, &top); err != nil {
+	var top map[string]jsontext.Value
+	if err := json.Unmarshal(body, &top, wirejson.In); err != nil {
 		return nil, fmt.Errorf("lux: invalid request JSON: %w", err)
 	}
 	req := &ir.Request{}
@@ -61,7 +63,7 @@ func (*Frontend) DecodeRequest(body []byte) (*ir.Request, error) {
 	}
 
 	var wire Request
-	if err := json.Unmarshal(body, &wire); err != nil {
+	if err := json.Unmarshal(body, &wire, wirejson.In); err != nil {
 		return nil, fmt.Errorf("lux: malformed request: %w", err)
 	}
 	if wire.Model == "" {
@@ -200,7 +202,7 @@ func (*Frontend) EncodeResponse(resp *ir.Response) ([]byte, error) {
 		}
 		out.Blocks = append(out.Blocks, blk)
 	}
-	return json.Marshal(out)
+	return json.Marshal(out, wirejson.Out)
 }
 
 // EventEncoder writes the lux SSE stream: one `event: <type>` frame
@@ -220,7 +222,7 @@ func (e *EventEncoder) Encode(ev ir.Event) error {
 	if err != nil {
 		return err
 	}
-	raw, err := json.Marshal(wireEv)
+	raw, err := json.Marshal(wireEv, wirejson.Out)
 	if err != nil {
 		return err
 	}

@@ -4,7 +4,7 @@
 package typesafe
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"reflect"
 	"testing"
@@ -168,7 +168,7 @@ func TestEncodeRequestFailsOnAnUnencodableState(t *testing.T) {
 	if err == nil {
 		t.Fatal("encoding a channel state should fail")
 	}
-	var unsupported *json.UnsupportedTypeError
+	var unsupported *json.SemanticError
 	if !errors.As(err, &unsupported) {
 		t.Errorf("error %v does not unwrap to the encoder's own error", err)
 	}

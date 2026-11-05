@@ -5,7 +5,8 @@ package typesafe
 
 import (
 	"cmp"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"slices"
 	"strconv"
@@ -91,7 +92,7 @@ type UnknownAnswer struct {
 	// Type is the value of the answer's type field.
 	Type string
 	// Raw is the answer object as it arrived.
-	Raw json.RawMessage
+	Raw jsontext.Value
 }
 
 func (a UnknownAnswer) answerType() string { return a.Type }
@@ -99,10 +100,10 @@ func (a UnknownAnswer) answerType() string { return a.Type }
 // Answers holds one answer per question, under the ids the request used.
 type Answers map[string]Answer
 
-// UnmarshalJSON decodes each answer into the type its discriminator names.
-func (a *Answers) UnmarshalJSON(data []byte) error {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
+// UnmarshalJSONFrom decodes each answer into the type its discriminator names.
+func (a *Answers) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+	var raw map[string]jsontext.Value
+	if err := json.UnmarshalDecode(dec, &raw); err != nil {
 		return fmt.Errorf("typesafe: decoding answers: %w", err)
 	}
 	if raw == nil {
@@ -122,29 +123,29 @@ func (a *Answers) UnmarshalJSON(data []byte) error {
 }
 
 // decodeAnswer reads one answer object, dispatching on its type field.
-func decodeAnswer(message json.RawMessage) (Answer, error) {
+func decodeAnswer(message jsontext.Value) (Answer, error) {
 	var probe struct {
 		Type string `json:"type"`
 	}
-	if err := json.Unmarshal(message, &probe); err != nil {
+	if err := json.Unmarshal(message, &probe, foreignJSON); err != nil {
 		return nil, err
 	}
 	switch probe.Type {
 	case typeNoul:
 		var answer NoulAnswer
-		if err := json.Unmarshal(message, &answer); err != nil {
+		if err := json.Unmarshal(message, &answer, foreignJSON); err != nil {
 			return nil, err
 		}
 		return answer, nil
 	case typeChoice:
 		var answer ChoiceAnswer
-		if err := json.Unmarshal(message, &answer); err != nil {
+		if err := json.Unmarshal(message, &answer, foreignJSON); err != nil {
 			return nil, err
 		}
 		return answer, nil
 	case typeScore:
 		var answer ScoreAnswer
-		if err := json.Unmarshal(message, &answer); err != nil {
+		if err := json.Unmarshal(message, &answer, foreignJSON); err != nil {
 			return nil, err
 		}
 		return answer, nil
@@ -194,8 +195,8 @@ func answerOf[T Answer](answers Answers, id, want string) (T, error) {
 // optional: a nil field is one the server did not report, which a zero count
 // would be indistinguishable from.
 type Usage struct {
-	InputTokens  *int64 `json:"input_tokens,omitempty"`
-	OutputTokens *int64 `json:"output_tokens,omitempty"`
+	InputTokens  *int64 `json:"input_tokens,omitzero"`
+	OutputTokens *int64 `json:"output_tokens,omitzero"`
 }
 
 // Response is the result of one evaluation.
@@ -213,3 +214,12 @@ type Response struct {
 	// part of the response body.
 	RequestID string `json:"-"`
 }
+
+// foreignJSON reads what the service answers with: duplicate names, invalid
+// UTF-8 and any letter case are accepted, as the service's own clients accept
+// them.
+var foreignJSON = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+	json.MatchCaseInsensitiveNames(true),
+)

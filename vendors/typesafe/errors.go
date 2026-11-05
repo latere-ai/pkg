@@ -5,7 +5,8 @@ package typesafe
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"strings"
@@ -103,9 +104,9 @@ func statusText(status int) string {
 // gateway's HTML page, is carried through as text.
 func parseErrorBody(body []byte) (errType, message string) {
 	var envelope struct {
-		Detail json.RawMessage `json:"detail"`
+		Detail jsontext.Value `json:"detail"`
 	}
-	if err := json.Unmarshal(body, &envelope); err != nil {
+	if err := json.Unmarshal(body, &envelope, foreignJSON); err != nil {
 		return "", plainText(body)
 	}
 	detail := bytes.TrimSpace(envelope.Detail)
@@ -118,13 +119,13 @@ func parseErrorBody(body []byte) (errType, message string) {
 			ErrorType string `json:"error_type"`
 			Message   string `json:"message"`
 		}
-		if err := json.Unmarshal(detail, &object); err != nil {
+		if err := json.Unmarshal(detail, &object, foreignJSON); err != nil {
 			return "", compactJSON(detail)
 		}
 		return object.ErrorType, object.Message
 	case '"':
 		var text string
-		if err := json.Unmarshal(detail, &text); err != nil {
+		if err := json.Unmarshal(detail, &text, foreignJSON); err != nil {
 			return "", compactJSON(detail)
 		}
 		return "", text
@@ -137,23 +138,27 @@ func parseErrorBody(body []byte) (errType, message string) {
 
 // validationText renders a validation failure array as one line per offending
 // field, each the field path followed by what is wrong with it.
-func validationText(detail json.RawMessage) string {
+func validationText(detail jsontext.Value) string {
 	var entries []struct {
-		Loc []any  `json:"loc"`
-		Msg string `json:"msg"`
+		Loc []jsontext.Value `json:"loc"`
+		Msg string           `json:"msg"`
 	}
-	// UseNumber keeps an integer path element, which is the index of an
-	// offending array entry, exact instead of routing it through float64.
-	dec := json.NewDecoder(bytes.NewReader(detail))
-	dec.UseNumber()
-	if err := dec.Decode(&entries); err != nil {
+	// A path element stays as raw JSON, so an integer index is exact
+	// instead of passing through float64.
+	if err := json.Unmarshal(detail, &entries, foreignJSON); err != nil {
 		return compactJSON(detail)
 	}
 	parts := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		loc := make([]string, 0, len(entry.Loc))
 		for _, element := range entry.Loc {
-			loc = append(loc, fmt.Sprint(element))
+			name := string(element)
+			if len(element) > 0 && element[0] == '"' {
+				if err := json.Unmarshal(element, &name, foreignJSON); err != nil {
+					name = string(element)
+				}
+			}
+			loc = append(loc, name)
 		}
 		path := strings.Join(loc, ".")
 		switch {
@@ -173,12 +178,12 @@ func validationText(detail json.RawMessage) string {
 
 // compactJSON renders JSON the message shapes do not cover as one line, so an
 // unrecognised body still reads in an error string.
-func compactJSON(raw json.RawMessage) string {
-	var buf bytes.Buffer
-	if err := json.Compact(&buf, raw); err != nil {
+func compactJSON(raw jsontext.Value) string {
+	v := jsontext.Value(bytes.Clone(raw))
+	if err := v.Compact(foreignJSON); err != nil {
 		return plainText(raw)
 	}
-	return plainText(buf.Bytes())
+	return plainText(v)
 }
 
 // maxMessage caps the length of a message lifted out of a response body.

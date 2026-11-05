@@ -4,7 +4,8 @@
 package atomicfile
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"os"
 	"path/filepath"
 )
@@ -104,7 +105,7 @@ func write(path string, data []byte, perm os.FileMode, sync bool) error {
 // WriteJSON marshals v as indented JSON and atomically writes the result
 // to path. See Write for atomicity guarantees.
 func WriteJSON(path string, v any, perm os.FileMode) error {
-	raw, err := json.MarshalIndent(v, "", "  ")
+	raw, err := json.Marshal(v, jsontext.WithIndent("  "), json.Deterministic(true))
 	if err != nil {
 		return err
 	}

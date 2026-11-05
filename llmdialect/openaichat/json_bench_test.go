@@ -5,7 +5,7 @@ package openaichat
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"io"
@@ -52,7 +52,7 @@ func benchRequest(turns, tools, pct int) *ir.Request {
 		req.Tools = append(req.Tools, ir.Tool{
 			Name:        fmt.Sprintf("tool_%02d", i),
 			Description: benchText(sc(200), 100+i),
-			InputSchema: json.RawMessage(`{"type":"object","properties":{"path":{"type":"string","description":"File path relative to the workspace root"},"query":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500},"flags":{"type":"array","items":{"type":"string"}}},"required":["path"]}`),
+			InputSchema: jsontext.Value(`{"type":"object","properties":{"path":{"type":"string","description":"File path relative to the workspace root"},"query":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500},"flags":{"type":"array","items":{"type":"string"}}},"required":["path"]}`),
 		})
 	}
 	for i := range turns {
@@ -61,7 +61,7 @@ func benchRequest(turns, tools, pct int) *ir.Request {
 			ir.Message{Role: ir.RoleUser, Blocks: []ir.Block{{Type: ir.BlockText, Text: benchText(sc(400), 1000+i)}}},
 			ir.Message{Role: ir.RoleAssistant, Blocks: []ir.Block{
 				{Type: ir.BlockText, Text: benchText(sc(300), 2000+i)},
-				{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: id, Name: "tool_00", Args: json.RawMessage(fmt.Sprintf(`{"path":"internal/svc/handler_%d.go","limit":200}`, i))}},
+				{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: id, Name: "tool_00", Args: jsontext.Value(fmt.Sprintf(`{"path":"internal/svc/handler_%d.go","limit":200}`, i))}},
 			}},
 			ir.Message{Role: ir.RoleUser, Blocks: []ir.Block{
 				{Type: ir.BlockToolResult, ToolResult: &ir.ToolResult{ToolUseID: id, Blocks: []ir.Block{{Type: ir.BlockText, Text: benchText(sc(600), 3000+i)}}}},
@@ -79,7 +79,7 @@ func benchResponse(textLen int) *ir.Response {
 		Model: "gpt-5.1",
 		Blocks: []ir.Block{
 			{Type: ir.BlockText, Text: benchText(textLen, 7)},
-			{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_01A09q90qw90lq917835lq9", Name: "tool_00", Args: json.RawMessage(`{"path":"internal/svc/handler.go","limit":200}`)}},
+			{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "toolu_01A09q90qw90lq917835lq9", Name: "tool_00", Args: jsontext.Value(`{"path":"internal/svc/handler.go","limit":200}`)}},
 		},
 		StopReason: ir.StopToolUse,
 		Usage:      ir.Usage{InputTokens: 2048, OutputTokens: 311, CacheReadInputTokens: &cr},

@@ -16,7 +16,7 @@ import (
 
 // reasoningItem is a Responses reasoning item in the form ir.Opaque
 // documents: compact, with the HTML characters escaped.
-const reasoningItem = `{"id":"rs_1","type":"reasoning","summary":[{"type":"summary_text","text":"a \u003c b"}],"encrypted_content":"gAAAAABo"}`
+const reasoningItem = `{"id":"rs_1","type":"reasoning","summary":[{"type":"summary_text","text":"a < b"}],"encrypted_content":"gAAAAABo"}`
 
 func opaqueBlock() ir.Block {
 	return ir.Block{Type: ir.BlockOpaque, Opaque: &ir.Opaque{

@@ -5,7 +5,7 @@ package oidc
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -20,7 +20,7 @@ type OrgEntry struct {
 	ID    string `json:"id"`
 	Name  string `json:"name"`
 	Slug  string `json:"slug,omitempty"`
-	Owner bool   `json:"owner,omitempty"`
+	Owner bool   `json:"owner,omitzero"`
 }
 
 // FetchOrgs calls GET /me/orgs on the configured AuthURL with the
@@ -51,7 +51,7 @@ func (c *Client) FetchOrgs(ctx context.Context, accessToken string) ([]OrgEntry,
 	}
 
 	var out []OrgEntry
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &out); err != nil {
 		return nil, fmt.Errorf("decode /me/orgs: %w", err)
 	}
 	return out, nil

@@ -5,7 +5,7 @@ package oidc
 
 import (
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -30,7 +30,7 @@ func TestBuildMeCurrentRoles(t *testing.T) {
 					if mints.Add(1) != 1 || r.FormValue("refresh_token") != "rt" {
 						t.Error("refresh repeated or wrong token")
 					}
-					_ = json.NewEncoder(w).Encode(map[string]any{"access_token": fresh, "token_type": "Bearer", "refresh_token": "rotated", "expires_in": 3600})
+					_ = json.MarshalWrite(w, map[string]any{"access_token": fresh, "token_type": "Bearer", "refresh_token": "rotated", "expires_in": 3600})
 				case "/userinfo", "/me/orgs":
 					if r.Header.Get("Authorization") != "Bearer "+fresh {
 						t.Error("profile used stale token")

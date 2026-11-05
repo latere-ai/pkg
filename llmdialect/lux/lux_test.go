@@ -5,7 +5,8 @@ package lux
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"reflect"
@@ -15,9 +16,9 @@ import (
 	"latere.ai/x/pkg/llmdialect/ir"
 )
 
-func i64(v int64) *int64           { return &v }
-func f64(v float64) *float64       { return &v }
-func raw(s string) json.RawMessage { return json.RawMessage(s) }
+func i64(v int64) *int64          { return &v }
+func f64(v float64) *float64      { return &v }
+func raw(s string) jsontext.Value { return jsontext.Value(s) }
 
 // richIRRequest exercises every representable request field.
 func richIRRequest() *ir.Request {
@@ -174,7 +175,7 @@ func TestDecodeRequestServerToolsAndWebSearchAreNotLoss(t *testing.T) {
 	}
 	// Every field Request declares is a key the decoder names, so the two
 	// cannot drift apart again.
-	var wire map[string]json.RawMessage
+	var wire map[string]jsontext.Value
 	raw, _ := json.Marshal(Request{})
 	_ = json.Unmarshal(raw, &wire)
 	for k := range wire {
@@ -759,7 +760,7 @@ func TestUsageCacheCountsNilVsZero(t *testing.T) {
 // folds to key, which is how encoding/json matches a member, so the
 // fuzz invariant asks the question the decoder answers.
 func jsonHasKey(raw []byte, key string) bool {
-	var obj map[string]json.RawMessage
+	var obj map[string]jsontext.Value
 	if json.Unmarshal(raw, &obj) != nil {
 		return false
 	}

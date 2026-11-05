@@ -7,7 +7,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -161,9 +162,9 @@ func (c *Client) Authorize(ctx context.Context, req Request) (Decision, error) {
 		return Decision{}, err
 	}
 	// Serialize once: the cache fingerprint and the wire must describe the
-	// same snapshot, even when a resource value implements json.Marshaler.
+	// same snapshot, even when a resource value implements a JSON marshaler.
 	start := time.Now()
-	body, err := json.Marshal(req)
+	body, err := json.Marshal(req, wireJSON)
 	if err != nil {
 		c.observe("error", time.Since(start).Seconds())
 		return Decision{}, &Unavailable{URL: c.url, Err: err}
@@ -210,7 +211,7 @@ func (c *Client) Authorize(ctx context.Context, req Request) (Decision, error) {
 // action whose answer has a shape of the core's own, such as a directory
 // page; every other outcome than a 200 is an *Unavailable.
 func (c *Client) Ask(ctx context.Context, req Request) ([]byte, error) {
-	body, err := json.Marshal(req)
+	body, err := json.Marshal(req, wireJSON)
 	if err != nil {
 		return nil, &Unavailable{URL: c.url, Err: err}
 	}
@@ -239,22 +240,22 @@ func (c *Client) ask(ctx context.Context, body []byte) ([]byte, error) {
 // purpose is correlation. RawMessage preserves numeric precision, including
 // integer claim values above 2^53. Maps are marshaled in deterministic order.
 func requestFingerprint(body []byte) (cacheKey, error) {
-	var envelope map[string]json.RawMessage
-	if err := json.Unmarshal(body, &envelope); err != nil {
+	var envelope map[string]jsontext.Value
+	if err := json.Unmarshal(body, &envelope, foreignJSON); err != nil {
 		return cacheKey{}, err
 	}
-	var caller map[string]json.RawMessage
-	if err := json.Unmarshal(envelope["request"], &caller); err != nil {
+	var caller map[string]jsontext.Value
+	if err := json.Unmarshal(envelope["request"], &caller, foreignJSON); err != nil {
 		return cacheKey{}, err
 	}
 	delete(caller, "id")
-	// Values implementing json.Marshaler have already run exactly once.
-	normalizedCaller, err := json.Marshal(caller)
+	// Values implementing a JSON marshaler have already run exactly once.
+	normalizedCaller, err := json.Marshal(caller, wireJSON)
 	if err != nil {
 		return cacheKey{}, err
 	}
 	envelope["request"] = normalizedCaller
-	normalized, err := json.Marshal(envelope)
+	normalized, err := json.Marshal(envelope, wireJSON)
 	if err != nil {
 		return cacheKey{}, err
 	}

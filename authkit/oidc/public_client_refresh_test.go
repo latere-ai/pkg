@@ -4,7 +4,7 @@
 package oidc
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -58,7 +58,7 @@ func TestPublicClientExchangeSendsNoSecret(t *testing.T) {
 			t.Error("PKCE code_verifier missing")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		_ = json.MarshalWrite(w, map[string]any{
 			"access_token": "at-1", "token_type": "Bearer", "refresh_token": "rt-1", "expires_in": 3600,
 		})
 	}))
@@ -94,11 +94,11 @@ func TestPublicClientRefreshRotationRoundTrip(t *testing.T) {
 		if !ok {
 			// Reuse of an already-rotated token → family revoked (OAuth 2.1).
 			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid_grant"})
+			_ = json.MarshalWrite(w, map[string]any{"error": "invalid_grant"})
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		_ = json.MarshalWrite(w, map[string]any{
 			"access_token": "at-for-" + next, "token_type": "Bearer", "refresh_token": next, "expires_in": 3600,
 		})
 	}))

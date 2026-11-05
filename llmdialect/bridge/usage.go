@@ -5,8 +5,9 @@ package bridge
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 
+	"latere.ai/x/pkg/llmdialect/internal/wirejson"
 	"latere.ai/x/pkg/llmdialect/ir"
 )
 
@@ -69,7 +70,7 @@ type wireEnvelope struct {
 // JSON object contributes nothing.
 func (p *parts) merge(w Wire, data []byte) {
 	var env wireEnvelope
-	if err := json.Unmarshal(data, &env); err != nil {
+	if err := json.Unmarshal(data, &env, wirejson.In); err != nil {
 		return
 	}
 	for _, u := range []*wireUsage{env.Usage, env.UsageMetadata} {

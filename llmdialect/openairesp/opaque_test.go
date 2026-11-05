@@ -5,7 +5,8 @@ package openairesp
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"reflect"
 	"strings"
@@ -21,16 +22,16 @@ const ownItem = `{"id":"rs_1","type":"reasoning","summary":[],"encrypted_content
 
 func ownOpaque(raw string) ir.Block {
 	return ir.Block{Type: ir.BlockOpaque, Opaque: &ir.Opaque{
-		Dialect: DialectName, Kind: "reasoning", Raw: json.RawMessage(raw),
+		Dialect: DialectName, Kind: "reasoning", Raw: jsontext.Value(raw),
 	}}
 }
 
 // inputItems returns the encoded request's input items as raw JSON, in
 // order, so a test can compare an item byte for byte.
-func inputItems(t *testing.T, body []byte) []json.RawMessage {
+func inputItems(t *testing.T, body []byte) []jsontext.Value {
 	t.Helper()
 	var wire struct {
-		Input []json.RawMessage `json:"input"`
+		Input []jsontext.Value `json:"input"`
 	}
 	if err := json.Unmarshal(body, &wire); err != nil {
 		t.Fatalf("unmarshal: %v\n%s", err, body)
@@ -47,7 +48,7 @@ func TestBackendReplaysOwnOpaqueInPlace(t *testing.T) {
 		{Role: ir.RoleAssistant, Blocks: []ir.Block{
 			{Type: ir.BlockText, Text: "before"},
 			ownOpaque(ownItem),
-			{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "call_1", Name: "shell", Args: json.RawMessage(`{}`)}},
+			{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "call_1", Name: "shell", Args: jsontext.Value(`{}`)}},
 		}},
 	}}
 	body, err := NewBackend().EncodeRequest(req)
@@ -82,7 +83,7 @@ func TestBackendReplaysOwnOpaqueInPlace(t *testing.T) {
 // Another dialect's opaque block is dropped with the loss recorded.
 func TestBackendDropsForeignOpaque(t *testing.T) {
 	foreign := ir.Block{Type: ir.BlockOpaque, Opaque: &ir.Opaque{
-		Dialect: ir.DialectAnthropicMessages, Kind: "widget", Raw: json.RawMessage(`{"id":"w_1"}`),
+		Dialect: ir.DialectAnthropicMessages, Kind: "widget", Raw: jsontext.Value(`{"id":"w_1"}`),
 	}}
 	req := &ir.Request{Model: "m", Messages: []ir.Message{
 		{Role: ir.RoleUser, Blocks: []ir.Block{{Type: ir.BlockText, Text: "hi"}, foreign}},
@@ -132,7 +133,7 @@ func encodeStream(t *testing.T, events ...ir.Event) []sse.Event {
 type outputFrame struct {
 	name  string
 	index int
-	item  json.RawMessage
+	item  jsontext.Value
 }
 
 func outputFrames(t *testing.T, frames []sse.Event) []outputFrame {
@@ -143,8 +144,8 @@ func outputFrames(t *testing.T, frames []sse.Event) []outputFrame {
 			continue
 		}
 		var wire struct {
-			OutputIndex int             `json:"output_index"`
-			Item        json.RawMessage `json:"item"`
+			OutputIndex int            `json:"output_index"`
+			Item        jsontext.Value `json:"item"`
 		}
 		if err := json.Unmarshal(f.Data, &wire); err != nil {
 			t.Fatal(err)
@@ -156,12 +157,12 @@ func outputFrames(t *testing.T, frames []sse.Event) []outputFrame {
 
 // completedOutput is the output list of the stream's final
 // response.completed or response.incomplete frame.
-func completedOutput(t *testing.T, frames []sse.Event) []json.RawMessage {
+func completedOutput(t *testing.T, frames []sse.Event) []jsontext.Value {
 	t.Helper()
 	last := frames[len(frames)-1]
 	var wire struct {
 		Response struct {
-			Output []json.RawMessage `json:"output"`
+			Output []jsontext.Value `json:"output"`
 		} `json:"response"`
 	}
 	if err := json.Unmarshal(last.Data, &wire); err != nil {
@@ -171,10 +172,10 @@ func completedOutput(t *testing.T, frames []sse.Event) []json.RawMessage {
 }
 
 // responseOutput is the output list of an encoded response body.
-func responseOutput(t *testing.T, body []byte) []json.RawMessage {
+func responseOutput(t *testing.T, body []byte) []jsontext.Value {
 	t.Helper()
 	var wire struct {
-		Output []json.RawMessage `json:"output"`
+		Output []jsontext.Value `json:"output"`
 	}
 	if err := json.Unmarshal(body, &wire); err != nil {
 		t.Fatalf("unmarshal: %v\n%s", err, body)
@@ -182,7 +183,7 @@ func responseOutput(t *testing.T, body []byte) []json.RawMessage {
 	return wire.Output
 }
 
-func itemType(t *testing.T, item json.RawMessage) string {
+func itemType(t *testing.T, item jsontext.Value) string {
 	t.Helper()
 	var head struct {
 		Type string `json:"type"`
@@ -198,10 +199,10 @@ func itemType(t *testing.T, item json.RawMessage) string {
 // carry none of them, and the stream's output indices stay dense.
 func TestFrontendSkipsOtherOpaque(t *testing.T) {
 	foreign := ir.Block{Type: ir.BlockOpaque, Opaque: &ir.Opaque{
-		Dialect: ir.DialectAnthropicMessages, Kind: "reasoning", Raw: json.RawMessage(`{"id":"w_1"}`),
+		Dialect: ir.DialectAnthropicMessages, Kind: "reasoning", Raw: jsontext.Value(`{"id":"w_1"}`),
 	}}
 	otherKind := ir.Block{Type: ir.BlockOpaque, Opaque: &ir.Opaque{
-		Dialect: DialectName, Kind: "compaction", Raw: json.RawMessage(`{"id":"cmp_1","type":"compaction"}`),
+		Dialect: DialectName, Kind: "compaction", Raw: jsontext.Value(`{"id":"cmp_1","type":"compaction"}`),
 	}}
 	for name, blk := range map[string]ir.Block{"foreign": foreign, "other kind": otherKind} {
 		raw, err := NewFrontend().EncodeResponse(&ir.Response{ID: "r1", Blocks: []ir.Block{
@@ -258,7 +259,7 @@ func TestFrontendWritesReasoningItem(t *testing.T) {
 		{Type: ir.BlockText, Text: "yes"},
 		ownOpaque(second),
 		{Type: ir.BlockThinking, Text: "alone"},
-		{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "call_1", Name: "shell", Args: json.RawMessage(`{}`)}},
+		{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "call_1", Name: "shell", Args: jsontext.Value(`{}`)}},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -409,7 +410,7 @@ func TestFrontendDecodesReasoningItem(t *testing.T) {
 		t.Fatalf("assistant turn = %s %v", asst.Role, got)
 	}
 	op := asst.Blocks[1].Opaque
-	const want = `{"id":"rs_1","type":"reasoning","summary":[{"type":"summary_text","text":"a \u003c b"}],"encrypted_content":"gAAAAABo"}`
+	const want = `{"id":"rs_1","type":"reasoning","summary":[{"type":"summary_text","text":"a < b"}],"encrypted_content":"gAAAAABo"}`
 	if op.Dialect != DialectName || op.Kind != "reasoning" || string(op.Raw) != want {
 		t.Fatalf("opaque = %s %s %s", op.Dialect, op.Kind, op.Raw)
 	}
@@ -443,7 +444,7 @@ func TestBackendDecodeResponseKeepsReasoningItem(t *testing.T) {
 		t.Fatalf("blocks = %v", got)
 	}
 	op := resp.Blocks[1].Opaque
-	const want = `{"id":"rs_1","type":"reasoning","summary":[{"type":"summary_text","text":"a \u003c b"}],"encrypted_content":"gAAAAABo"}`
+	const want = `{"id":"rs_1","type":"reasoning","summary":[{"type":"summary_text","text":"a < b"}],"encrypted_content":"gAAAAABo"}`
 	if op.Dialect != DialectName || op.Kind != "reasoning" || string(op.Raw) != want {
 		t.Fatalf("opaque = %s %s %s", op.Dialect, op.Kind, op.Raw)
 	}
@@ -489,7 +490,7 @@ func TestBackendDecodeResponseRejectsNonObjectItem(t *testing.T) {
 }
 
 func TestReasoningBlockRejectsInvalidJSON(t *testing.T) {
-	if _, err := reasoningBlock(json.RawMessage(`{`)); err == nil {
+	if _, err := reasoningBlock(jsontext.Value(`{`)); err == nil {
 		t.Fatal("want error for an item that is not JSON")
 	}
 }
@@ -615,7 +616,7 @@ func TestBackendEncodeReasoningReplay(t *testing.T) {
 // travels without loss; any other thinking is still reported.
 func TestBackendEncodeThinkingBesideReasoningItem(t *testing.T) {
 	other := ownOpaque(ownItem)
-	other.Opaque = &ir.Opaque{Dialect: DialectName, Kind: "compaction", Raw: json.RawMessage(`{"type":"compaction"}`)}
+	other.Opaque = &ir.Opaque{Dialect: DialectName, Kind: "compaction", Raw: jsontext.Value(`{"type":"compaction"}`)}
 	for name, tc := range map[string]struct {
 		blocks []ir.Block
 		loss   []string

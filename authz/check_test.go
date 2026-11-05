@@ -4,7 +4,7 @@
 package authz_test
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"net/http"
@@ -88,11 +88,11 @@ func TestNilClaimsMarshalAsAnObject(t *testing.T) {
 	nilClaims := authz.Request{Subject: "s", Action: "a", Resource: authz.NewResource("K", "1", map[string]any{"owner": "o"})}
 	empty := nilClaims
 	empty.Claims = map[string]any{}
-	a, err := json.Marshal(nilClaims)
+	a, err := json.Marshal(nilClaims, json.Deterministic(true))
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := json.Marshal(empty)
+	b, err := json.Marshal(empty, json.Deterministic(true))
 	if err != nil {
 		t.Fatal(err)
 	}

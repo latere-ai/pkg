@@ -5,7 +5,8 @@ package linkup
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"net/http"
@@ -168,7 +169,7 @@ func TestSearchEncodesTheRequest(t *testing.T) {
 	// A structured request sends its schema as a JSON string.
 	rec.answer = `{"revenue":"245.1"}`
 	structured := search(OutputStructured)
-	structured.StructuredOutputSchema = json.RawMessage(`{"type":"object","properties":{"revenue":{"type":"string"}}}`)
+	structured.StructuredOutputSchema = jsontext.Value(`{"type":"object","properties":{"revenue":{"type":"string"}}}`)
 	if _, err := c.Search(t.Context(), structured); err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +193,7 @@ func TestSearchRefusesAnIncompleteRequest(t *testing.T) {
 	c, rec := serve(t)
 	schemaless := search(OutputStructured)
 	badSchema := search(OutputStructured)
-	badSchema.StructuredOutputSchema = json.RawMessage(`{"type":`)
+	badSchema.StructuredOutputSchema = jsontext.Value(`{"type":`)
 	negative := search(OutputSearchResults)
 	negative.MaxResults = -1
 	for name, tc := range map[string]struct {
@@ -221,7 +222,8 @@ func TestSearchRefusesAnIncompleteRequest(t *testing.T) {
 
 func TestSearchEncodingFailure(t *testing.T) {
 	c, rec := serve(t)
-	t.Cleanup(func() { marshal = json.Marshal })
+	orig := marshal
+	t.Cleanup(func() { marshal = orig })
 	marshal = func(any) ([]byte, error) { return nil, errors.New("injected") }
 	if _, err := c.Search(t.Context(), search(OutputSearchResults)); err == nil || !strings.Contains(err.Error(), "injected") {
 		t.Fatalf("an encoding failure: %v", err)
@@ -276,7 +278,7 @@ func TestSearchSourcedAnswer(t *testing.T) {
 func TestSearchStructured(t *testing.T) {
 	c, rec := serve(t)
 	req := search(OutputStructured)
-	req.StructuredOutputSchema = json.RawMessage(`{"type":"object"}`)
+	req.StructuredOutputSchema = jsontext.Value(`{"type":"object"}`)
 
 	rec.answer = " {\"revenue\": \"245.1\"}\n"
 	resp, err := c.Search(t.Context(), req)
@@ -293,7 +295,7 @@ func TestSearchStructured(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Response{Data: json.RawMessage(`{"revenue":"245.1"}`), Results: []Result{
+	want := Response{Data: jsontext.Value(`{"revenue":"245.1"}`), Results: []Result{
 		{Type: ResultText, Name: "Annual Report", URL: "https://example.com/ar24", Content: "Revenue increased."},
 	}}
 	if !reflect.DeepEqual(resp, want) {
@@ -317,7 +319,7 @@ func TestSearchAnOutputTypeItDoesNotName(t *testing.T) {
 func TestSearchAnswerOutsideItsShape(t *testing.T) {
 	c, rec := serve(t)
 	structured := search(OutputStructured)
-	structured.StructuredOutputSchema = json.RawMessage(`{"type":"object"}`)
+	structured.StructuredOutputSchema = jsontext.Value(`{"type":"object"}`)
 	withSources := structured
 	withSources.IncludeSources = true
 	for name, tc := range map[string]struct {

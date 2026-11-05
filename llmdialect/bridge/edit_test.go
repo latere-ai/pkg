@@ -5,7 +5,8 @@ package bridge
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"strings"
 	"testing"
 )
@@ -68,9 +69,8 @@ func TestSetModel(t *testing.T) {
 			t.Errorf("SetModel(%s) = %s, want %s", c.in, got, c.want)
 		}
 	}
-	// A name is written as json.Marshal writes a string: valid JSON for
-	// any name, with the HTML-sensitive characters escaped.
-	if got := string(SetModel([]byte(`{"model":"a"}`), "x<y>&\"z\n")); got != `{"model":"x\u003cy\u003e\u0026\"z\n"}` || !json.Valid([]byte(got)) {
+	// A name is written as a JSON string: valid JSON for any name.
+	if got := string(SetModel([]byte(`{"model":"a"}`), "x<y>&\"z\n")); got != `{"model":"x<y>&\"z\n"}` || !jsontext.Value([]byte(got)).IsValid() {
 		t.Errorf("quoting %s", got)
 	}
 }
@@ -110,7 +110,7 @@ func TestSetIncludeUsage(t *testing.T) {
 		if got != c.want {
 			t.Errorf("SetIncludeUsage(%s) = %s, want %s", c.in, got, c.want)
 		}
-		if json.Valid([]byte(c.in)) && !json.Valid([]byte(got)) {
+		if jsontext.Value([]byte(c.in)).IsValid() && !jsontext.Value([]byte(got)).IsValid() {
 			t.Errorf("SetIncludeUsage(%s) = %s is not valid JSON", c.in, got)
 		}
 	}
@@ -133,15 +133,15 @@ func TestRemoveMember(t *testing.T) {
 		if got != c.want {
 			t.Errorf("RemoveMember(%s, %s) = %s, want %s", c.in, c.key, got, c.want)
 		}
-		if !json.Valid([]byte(got)) {
+		if !jsontext.Value([]byte(got)).IsValid() {
 			t.Errorf("RemoveMember(%s) = %s is not valid JSON", c.in, got)
 		}
 	}
 }
 
 // keys of a JSON object body, for the fuzz invariants.
-func keys(body []byte) map[string]json.RawMessage {
-	var m map[string]json.RawMessage
+func keys(body []byte) map[string]jsontext.Value {
+	var m map[string]jsontext.Value
 	if json.Unmarshal(body, &m) != nil {
 		return nil
 	}
@@ -172,7 +172,7 @@ func FuzzSetModel(f *testing.F) {
 	f.Add([]byte(`{"a":"unterminated}`), "n")
 	f.Fuzz(func(t *testing.T, body []byte, name string) {
 		out := SetModel(body, name)
-		if json.Valid(body) && !json.Valid(out) {
+		if jsontext.Value(body).IsValid() && !jsontext.Value(out).IsValid() {
 			t.Fatalf("valid in, invalid out: %s -> %s", body, out)
 		}
 		if again := SetModel(out, name); !bytes.Equal(again, out) {
@@ -222,7 +222,7 @@ func FuzzSetIncludeUsage(f *testing.F) {
 	f.Add([]byte(`{"stream_options":null}`))
 	f.Fuzz(func(t *testing.T, body []byte) {
 		out := SetIncludeUsage(body)
-		if json.Valid(body) && !json.Valid(out) {
+		if jsontext.Value(body).IsValid() && !jsontext.Value(out).IsValid() {
 			t.Fatalf("valid in, invalid out: %s -> %s", body, out)
 		}
 		if again := SetIncludeUsage(out); !bytes.Equal(again, out) {
@@ -252,7 +252,7 @@ func FuzzRemoveMember(f *testing.F) {
 	f.Add([]byte(`{"a\"b":1,"c":2}`), `a"b`)
 	f.Fuzz(func(t *testing.T, body []byte, key string) {
 		out := RemoveMember(body, key)
-		if json.Valid(body) && !json.Valid(out) {
+		if jsontext.Value(body).IsValid() && !jsontext.Value(out).IsValid() {
 			t.Fatalf("valid in, invalid out: %s -> %s", body, out)
 		}
 		in, res := keys(body), keys(out)

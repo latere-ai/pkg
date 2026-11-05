@@ -4,7 +4,7 @@
 package tokencount
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"strings"
 	"testing"
 
@@ -31,7 +31,7 @@ func TestEstimateCoversAllBlockKinds(t *testing.T) {
 			{Role: ir.RoleAssistant, Blocks: []ir.Block{
 				{Type: ir.BlockThinking, Text: "let me think about this"},
 				{Type: ir.BlockRedactedThinking, Redacted: strings.Repeat("x", 400)},
-				{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{Name: "bash", Args: json.RawMessage(`{"cmd":"ls -la"}`)}},
+				{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{Name: "bash", Args: jsontext.Value(`{"cmd":"ls -la"}`)}},
 			}},
 			{Role: ir.RoleUser, Blocks: []ir.Block{
 				{Type: ir.BlockImage, Image: &ir.Image{URL: "https://x/y.png"}},
@@ -39,7 +39,7 @@ func TestEstimateCoversAllBlockKinds(t *testing.T) {
 				{Type: "unknown"},
 			}},
 		},
-		Tools: []ir.Tool{{Name: "bash", Description: "run a command", InputSchema: json.RawMessage(`{"type":"object","properties":{"cmd":{"type":"string"}}}`)}},
+		Tools: []ir.Tool{{Name: "bash", Description: "run a command", InputSchema: jsontext.Value(`{"type":"object","properties":{"cmd":{"type":"string"}}}`)}},
 	}
 	got := Estimate(req)
 	// Image dominates: at least the flat image cost plus overheads.

@@ -34,7 +34,7 @@ package stub
 
 import (
 	"crypto/subtle"
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -61,9 +61,9 @@ type Rule struct {
 	Resource string         `json:"resource"`
 	Allow    bool           `json:"allow"`
 	Reason   string         `json:"reason,omitempty"`
-	TTL      int            `json:"ttl,omitempty"`
+	TTL      int            `json:"ttl,omitzero"`
 	Limits   map[string]any `json:"limits,omitempty"`
-	Filter   *authz.Filter  `json:"filter,omitempty"`
+	Filter   *authz.Filter  `json:"filter,omitzero"`
 }
 
 func star(pattern, value string) bool {
@@ -407,7 +407,7 @@ func (s *Server) putRules(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Rules []Rule `json:"rules"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(http.MaxBytesReader(w, r.Body, 1<<20), &body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -423,7 +423,7 @@ func (s *Server) putFail(w http.ResponseWriter, r *http.Request) {
 		Status int  `json:"status"`
 		Body   Body `json:"body"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(http.MaxBytesReader(w, r.Body, 4<<10), &body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -441,7 +441,7 @@ func (s *Server) putFail(w http.ResponseWriter, r *http.Request) {
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(v); err != nil {
+	if err := json.MarshalWrite(w, v); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }

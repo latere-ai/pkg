@@ -29,7 +29,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"maps"
 	"math/big"
@@ -51,9 +51,9 @@ import (
 type Claims struct {
 	Sub           string         `json:"sub,omitempty"`
 	Aud           StringList     `json:"aud,omitempty"`
-	Exp           int64          `json:"exp,omitempty"`
-	Nbf           int64          `json:"nbf,omitempty"`
-	Iat           int64          `json:"iat,omitempty"`
+	Exp           int64          `json:"exp,omitzero"`
+	Nbf           int64          `json:"nbf,omitzero"`
+	Iat           int64          `json:"iat,omitzero"`
 	Kid           string         `json:"kid,omitempty"`
 	Alg           string         `json:"alg,omitempty"`
 	OrgID         string         `json:"org_id,omitempty"`
@@ -364,11 +364,11 @@ func (s *Server) Mint(c Claims) string {
 	for _, k := range c.Omit {
 		delete(claims, k)
 	}
-	header, err := json.Marshal(map[string]string{"alg": c.Alg, "kid": c.Kid, "typ": "JWT"})
+	header, err := json.Marshal(map[string]string{"alg": c.Alg, "kid": c.Kid, "typ": "JWT"}, json.Deterministic(true))
 	if err != nil {
 		panic(err)
 	}
-	body, err := json.Marshal(claims)
+	body, err := json.Marshal(claims, json.Deterministic(true))
 	if err != nil {
 		panic(err)
 	}
@@ -509,7 +509,7 @@ func (s *Server) actorTokens(w http.ResponseWriter, r *http.Request) {
 		Audience string `json:"audience"`
 		TTL      int64  `json:"ttl_seconds"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(http.MaxBytesReader(w, r.Body, 64<<10), &body); err != nil {
 		http.Error(w, `{"error":"bad_request","message":"invalid json"}`, http.StatusBadRequest)
 		return
 	}
@@ -572,7 +572,7 @@ func payloadOf(token string) (payload, bool) {
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(v); err != nil {
+	if err := json.MarshalWrite(w, v); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }

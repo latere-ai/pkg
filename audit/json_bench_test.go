@@ -5,14 +5,15 @@ package audit
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"testing"
 	"time"
 )
 
-func benchAuditPayload(items int) json.RawMessage {
+func benchAuditPayload(items int) jsontext.Value {
 	list := make([]map[string]any, items)
 	for i := range list {
 		list[i] = map[string]any{

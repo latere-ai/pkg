@@ -5,10 +5,12 @@ package bridge
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"maps"
 
 	"latere.ai/x/pkg/httpjson"
+	"latere.ai/x/pkg/llmdialect/internal/wirejson"
 )
 
 // Failure is one refusal rendered in a wire's own error shape. Code and
@@ -109,7 +111,7 @@ func Envelope(w Wire, f Failure) []byte {
 	default:
 		return nil
 	}
-	out, err := json.Marshal(body)
+	out, err := json.Marshal(body, wirejson.Out)
 	if err != nil {
 		// Only the lux shape can fail, on a Details value that does not
 		// marshal; the envelope is then written without them.
@@ -138,17 +140,17 @@ func ParseEnvelope(w Wire, body []byte) (Failure, bool) {
 	case WireOpenAI:
 		var e struct {
 			Error *struct {
-				Message *string         `json:"message"`
-				Type    string          `json:"type"`
-				Code    json.RawMessage `json:"code"`
+				Message *string        `json:"message"`
+				Type    string         `json:"type"`
+				Code    jsontext.Value `json:"code"`
 			} `json:"error"`
 		}
-		if json.Unmarshal(body, &e) != nil || e.Error == nil || e.Error.Message == nil {
+		if json.Unmarshal(body, &e, wirejson.In) != nil || e.Error == nil || e.Error.Message == nil {
 			return Failure{}, false
 		}
 		code := e.Error.Type
 		if len(e.Error.Code) > 0 && string(e.Error.Code) != "null" {
-			if json.Unmarshal(e.Error.Code, &code) != nil {
+			if json.Unmarshal(e.Error.Code, &code, wirejson.In) != nil {
 				return Failure{}, false
 			}
 		}
@@ -162,7 +164,7 @@ func ParseEnvelope(w Wire, body []byte) (Failure, bool) {
 			} `json:"error"`
 			RequestID string `json:"request_id"`
 		}
-		if json.Unmarshal(body, &e) != nil || e.Type != "error" || e.Error == nil {
+		if json.Unmarshal(body, &e, wirejson.In) != nil || e.Type != "error" || e.Error == nil {
 			return Failure{}, false
 		}
 		return Failure{Code: e.Error.Type, Message: e.Error.Message, RequestID: e.RequestID}, true
@@ -175,7 +177,7 @@ func ParseEnvelope(w Wire, body []byte) (Failure, bool) {
 				Details []googleErrorInfo `json:"details"`
 			} `json:"error"`
 		}
-		if json.Unmarshal(body, &e) != nil || e.Error == nil || (e.Error.Code == 0 && e.Error.Status == "") {
+		if json.Unmarshal(body, &e, wirejson.In) != nil || e.Error == nil || (e.Error.Code == 0 && e.Error.Status == "") {
 			return Failure{}, false
 		}
 		f := Failure{Message: e.Error.Message, Status: e.Error.Code}
@@ -194,7 +196,7 @@ func ParseEnvelope(w Wire, body []byte) (Failure, bool) {
 				Details map[string]any `json:"details"`
 			} `json:"error"`
 		}
-		if json.Unmarshal(body, &e) != nil || e.Error == nil || e.Error.Code == nil {
+		if json.Unmarshal(body, &e, wirejson.In) != nil || e.Error == nil || e.Error.Code == nil {
 			return Failure{}, false
 		}
 		f := Failure{Code: *e.Error.Code, Message: e.Error.Message}

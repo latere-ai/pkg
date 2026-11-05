@@ -5,7 +5,7 @@ package jwt
 
 import (
 	"crypto/rsa"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"strings"
 	"testing"

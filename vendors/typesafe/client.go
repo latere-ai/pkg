@@ -6,7 +6,7 @@ package typesafe
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -157,7 +157,7 @@ func (c *Client) Evaluate(ctx context.Context, req *Request) (*Response, error) 
 		return nil, err
 	}
 	var response Response
-	if err := json.Unmarshal(result.body, &response); err != nil {
+	if err := json.Unmarshal(result.body, &response, foreignJSON); err != nil {
 		return nil, fmt.Errorf("typesafe: decoding the %s response: %w", pathSystemOne, err)
 	}
 	response.RequestID = result.requestID

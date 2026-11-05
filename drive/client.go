@@ -9,7 +9,7 @@ package drive
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -326,7 +326,7 @@ type Workspace struct {
 	Kind        string  `json:"kind"` // "workspace" | "repo"
 	Slug        string  `json:"slug"`
 	Locked      bool    `json:"locked"`
-	LastSync    *string `json:"last_sync,omitempty"`
+	LastSync    *string `json:"last_sync,omitzero"`
 	CreatedBy   string  `json:"created_by"`
 	AgentAccess string  `json:"agent_access"`
 	RootPrefix  string  `json:"root_prefix"`

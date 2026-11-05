@@ -5,7 +5,8 @@ package llmdialect
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"os"
@@ -47,8 +48,8 @@ func streamedReasoningItem(t *testing.T, sse []byte) []byte {
 			continue
 		}
 		var frame struct {
-			Type string          `json:"type"`
-			Item json.RawMessage `json:"item"`
+			Type string         `json:"type"`
+			Item jsontext.Value `json:"item"`
 		}
 		if err := json.Unmarshal([]byte(data), &frame); err != nil {
 			t.Fatal(err)
@@ -76,16 +77,16 @@ func streamedReasoningItem(t *testing.T, sse []byte) []byte {
 func respondedReasoningItem(t *testing.T, body []byte) []byte {
 	t.Helper()
 	var wire struct {
-		Output []json.RawMessage `json:"output"`
+		Output []jsontext.Value `json:"output"`
 	}
 	if err := json.Unmarshal(body, &wire); err != nil {
 		t.Fatal(err)
 	}
-	var buf bytes.Buffer
-	if err := json.Compact(&buf, wire.Output[0]); err != nil {
+	compact := jsontext.Value(bytes.Clone(wire.Output[0]))
+	if err := compact.Compact(); err != nil {
 		t.Fatal(err)
 	}
-	return buf.Bytes()
+	return compact
 }
 
 // collectBlocks assembles the blocks a stream carried, the way a
@@ -201,9 +202,9 @@ func assertReplayed(t *testing.T, req *ir.Request, item []byte) {
 		t.Fatalf("loss = %v, want none", losses)
 	}
 	var wire struct {
-		Input   []json.RawMessage `json:"input"`
-		Include []string          `json:"include"`
-		Store   *bool             `json:"store"`
+		Input   []jsontext.Value `json:"input"`
+		Include []string         `json:"include"`
+		Store   *bool            `json:"store"`
 	}
 	if err := json.Unmarshal(body, &wire); err != nil {
 		t.Fatal(err)
@@ -311,11 +312,11 @@ func responsesTranslator() *Translator {
 // as they came, then the tool's result. The first item is indented and
 // holds a <, as a client may write it, so the decoder has to bring it
 // into the form ir.Opaque documents.
-func clientTurn(t *testing.T, items ...json.RawMessage) []byte {
+func clientTurn(t *testing.T, items ...jsontext.Value) []byte {
 	t.Helper()
-	input := []json.RawMessage{json.RawMessage(`{"type":"message","role":"user","content":"list the files"}`)}
+	input := []jsontext.Value{jsontext.Value(`{"type":"message","role":"user","content":"list the files"}`)}
 	input = append(input, items...)
-	input = append(input, json.RawMessage(`{"type":"function_call_output","call_id":"call_Qm3tW9","output":"a.txt\nb.txt"}`))
+	input = append(input, jsontext.Value(`{"type":"function_call_output","call_id":"call_Qm3tW9","output":"a.txt\nb.txt"}`))
 	body, err := json.Marshal(map[string]any{
 		"model":   "gpt-5.6-sol",
 		"include": []string{"reasoning.encrypted_content"},
@@ -337,17 +338,17 @@ const (
 		"summary": [{"type": "summary_text", "text": "a < b"}],
 		"encrypted_content": "gAAAAABo"
 	}`
-	canonicalItem = `{"id":"rs_1","type":"reasoning","summary":[{"type":"summary_text","text":"a \u003c b"}],"encrypted_content":"gAAAAABo"}`
+	canonicalItem = `{"id":"rs_1","type":"reasoning","summary":[{"type":"summary_text","text":"a < b"}],"encrypted_content":"gAAAAABo"}`
 )
 
-var priorCall = json.RawMessage(`{"type":"function_call","call_id":"call_Qm3tW9","name":"shell","arguments":"{\"cmd\":\"ls\"}"}`)
+var priorCall = jsontext.Value(`{"type":"function_call","call_id":"call_Qm3tW9","name":"shell","arguments":"{\"cmd\":\"ls\"}"}`)
 
 // A Responses client's request that asks for encrypted reasoning and
 // carries a prior reasoning item reaches a Responses upstream with the
 // ask and the item: include and store false upstream, the item in its
 // input where the client put it, with nothing lost.
 func TestResponsesClientReplaysReasoningUpstream(t *testing.T) {
-	out, req, err := responsesTranslator().Request(clientTurn(t, json.RawMessage(indentedItem), priorCall))
+	out, req, err := responsesTranslator().Request(clientTurn(t, jsontext.Value(indentedItem), priorCall))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -355,9 +356,9 @@ func TestResponsesClientReplaysReasoningUpstream(t *testing.T) {
 		t.Fatalf("loss = %v, want none", losses)
 	}
 	var wire struct {
-		Input   []json.RawMessage `json:"input"`
-		Include []string          `json:"include"`
-		Store   *bool             `json:"store"`
+		Input   []jsontext.Value `json:"input"`
+		Include []string         `json:"include"`
+		Store   *bool            `json:"store"`
 	}
 	if err := json.Unmarshal(out, &wire); err != nil {
 		t.Fatal(err)
@@ -382,7 +383,7 @@ func TestResponsesClientKeepsReasoningFromResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	var wire struct {
-		Output []json.RawMessage `json:"output"`
+		Output []jsontext.Value `json:"output"`
 	}
 	if err := json.Unmarshal(client, &wire); err != nil {
 		t.Fatal(err)
@@ -408,7 +409,7 @@ func TestResponsesClientKeepsReasoningFromStream(t *testing.T) {
 	if got := streamedReasoningItem(t, buf.Bytes()); !bytes.Equal(got, item) {
 		t.Fatalf("client done frame item = %s\nwant %s", got, item)
 	}
-	var output []json.RawMessage
+	var output []jsontext.Value
 	for line := range strings.SplitSeq(buf.String(), "\n") {
 		data, ok := strings.CutPrefix(line, "data: ")
 		if !ok {
@@ -417,7 +418,7 @@ func TestResponsesClientKeepsReasoningFromStream(t *testing.T) {
 		var frame struct {
 			Type     string `json:"type"`
 			Response struct {
-				Output []json.RawMessage `json:"output"`
+				Output []jsontext.Value `json:"output"`
 			} `json:"response"`
 		}
 		if err := json.Unmarshal([]byte(data), &frame); err != nil {
@@ -436,7 +437,7 @@ func TestResponsesClientKeepsReasoningFromStream(t *testing.T) {
 // assertReplayedFromClient sends the client's output items back as the
 // next request's input and checks the upstream gets the reasoning item
 // byte for byte, with nothing lost.
-func assertReplayedFromClient(t *testing.T, output []json.RawMessage, item []byte) {
+func assertReplayedFromClient(t *testing.T, output []jsontext.Value, item []byte) {
 	t.Helper()
 	out, req, err := responsesTranslator().Request(clientTurn(t, output...))
 	if err != nil {
@@ -446,7 +447,7 @@ func assertReplayedFromClient(t *testing.T, output []json.RawMessage, item []byt
 		t.Fatalf("next turn loss = %v, want none", losses)
 	}
 	var wire struct {
-		Input []json.RawMessage `json:"input"`
+		Input []jsontext.Value `json:"input"`
 	}
 	if err := json.Unmarshal(out, &wire); err != nil {
 		t.Fatal(err)
@@ -470,7 +471,7 @@ func TestResponsesClientReasoningToOtherDialects(t *testing.T) {
 		{openaichat.NewBackend(openaichat.BackendOptions{}), []ir.LossField{ir.LossOpaque, ir.LossReasoningReplay}},
 	} {
 		tr := &Translator{Frontend: openairesp.NewFrontend(), Backend: tc.be}
-		out, req, err := tr.Request(clientTurn(t, json.RawMessage(indentedItem), priorCall))
+		out, req, err := tr.Request(clientTurn(t, jsontext.Value(indentedItem), priorCall))
 		if err != nil {
 			t.Fatalf("%s: %v", tc.be.Name(), err)
 		}
@@ -492,7 +493,7 @@ func TestResponsesClientReasoningToOtherDialects(t *testing.T) {
 // item is reported lost rather than sent to be rejected.
 func TestResponsesClientReasoningWithoutContent(t *testing.T) {
 	out, req, err := responsesTranslator().Request(clientTurn(t,
-		json.RawMessage(`{"id":"rs_2","type":"reasoning","summary":[]}`), priorCall))
+		jsontext.Value(`{"id":"rs_2","type":"reasoning","summary":[]}`), priorCall))
 	if err != nil {
 		t.Fatal(err)
 	}

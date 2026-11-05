@@ -4,7 +4,8 @@
 package servertool
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"reflect"
 	"testing"
 
@@ -25,12 +26,12 @@ func TestDecode(t *testing.T) {
 		{
 			name: "options are kept unread",
 			raw:  `{"type":"web_fetch_20250910","name":"web_fetch","max_uses":5}`,
-			want: ir.ServerTool{Type: "web_fetch_20250910", Name: "web_fetch", Config: json.RawMessage(`{"max_uses":5}`)},
+			want: ir.ServerTool{Type: "web_fetch_20250910", Name: "web_fetch", Config: jsontext.Value(`{"max_uses":5}`)},
 		},
 		{
 			name: "nested options survive",
 			raw:  `{"type":"web_search","web_search":{"allowed_domains":["a.com"]}}`,
-			want: ir.ServerTool{Type: "web_search", Config: json.RawMessage(`{"web_search":{"allowed_domains":["a.com"]}}`)},
+			want: ir.ServerTool{Type: "web_search", Config: jsontext.Value(`{"web_search":{"allowed_domains":["a.com"]}}`)},
 		},
 		{
 			name: "no type is still a tool",
@@ -41,7 +42,7 @@ func TestDecode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Decode(json.RawMessage(tt.raw))
+			got, err := Decode(jsontext.Value(tt.raw))
 			if err != nil {
 				t.Fatalf("Decode() error: %v", err)
 			}
@@ -58,7 +59,7 @@ func TestDecode(t *testing.T) {
 // TestDecodeNilConfigWhenNothingRemains keeps a bare tool from growing an
 // empty object that would then encode back as one.
 func TestDecodeNilConfigWhenNothingRemains(t *testing.T) {
-	got, err := Decode(json.RawMessage(`{"type":"t","name":"n"}`))
+	got, err := Decode(jsontext.Value(`{"type":"t","name":"n"}`))
 	if err != nil {
 		t.Fatalf("Decode() error: %v", err)
 	}
@@ -70,7 +71,7 @@ func TestDecodeNilConfigWhenNothingRemains(t *testing.T) {
 func TestDecodeErrors(t *testing.T) {
 	for _, raw := range []string{`not json`, `[]`, `{"type":5}`, `{"name":{}}`} {
 		t.Run(raw, func(t *testing.T) {
-			if _, err := Decode(json.RawMessage(raw)); err == nil {
+			if _, err := Decode(jsontext.Value(raw)); err == nil {
 				t.Fatalf("Decode(%s) = nil error, want one", raw)
 			}
 		})
@@ -81,7 +82,7 @@ func TestEncode(t *testing.T) {
 	got, err := Encode(ir.ServerTool{
 		Type:   "web_fetch_20250910",
 		Name:   "web_fetch",
-		Config: json.RawMessage(`{"max_uses":5}`),
+		Config: jsontext.Value(`{"max_uses":5}`),
 	})
 	if err != nil {
 		t.Fatalf("Encode() error: %v", err)
@@ -98,7 +99,7 @@ func TestEncodeStructFieldsWin(t *testing.T) {
 	got, err := Encode(ir.ServerTool{
 		Type:   "real_type",
 		Name:   "real_name",
-		Config: json.RawMessage(`{"type":"stale","name":"stale","max_uses":2}`),
+		Config: jsontext.Value(`{"type":"stale","name":"stale","max_uses":2}`),
 	})
 	if err != nil {
 		t.Fatalf("Encode() error: %v", err)
@@ -111,7 +112,7 @@ func TestEncodeStructFieldsWin(t *testing.T) {
 // TestEncodeDropsNameWhenUnset avoids emitting a tool named "" when Config
 // carried a name the struct did not.
 func TestEncodeDropsNameWhenUnset(t *testing.T) {
-	got, err := Encode(ir.ServerTool{Type: "t", Config: json.RawMessage(`{"name":"stale"}`)})
+	got, err := Encode(ir.ServerTool{Type: "t", Config: jsontext.Value(`{"name":"stale"}`)})
 	if err != nil {
 		t.Fatalf("Encode() error: %v", err)
 	}
@@ -121,7 +122,7 @@ func TestEncodeDropsNameWhenUnset(t *testing.T) {
 }
 
 func TestEncodeMalformedConfig(t *testing.T) {
-	if _, err := Encode(ir.ServerTool{Type: "t", Config: json.RawMessage(`[1,2]`)}); err == nil {
+	if _, err := Encode(ir.ServerTool{Type: "t", Config: jsontext.Value(`[1,2]`)}); err == nil {
 		t.Fatal("Encode() = nil error, want one for a non-object config")
 	}
 }
@@ -135,7 +136,7 @@ func TestRoundTrip(t *testing.T) {
 		`{"type":"web_search_20250305","name":"web_search","allowed_domains":["a.com","b.org"],"max_uses":3}`,
 	} {
 		t.Run(raw, func(t *testing.T) {
-			st, err := Decode(json.RawMessage(raw))
+			st, err := Decode(jsontext.Value(raw))
 			if err != nil {
 				t.Fatalf("Decode() error: %v", err)
 			}
@@ -147,7 +148,7 @@ func TestRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Fatalf("marshal: %v", err)
 			}
-			if !jsonEqual(t, out, json.RawMessage(raw)) {
+			if !jsonEqual(t, out, jsontext.Value(raw)) {
 				t.Fatalf("round trip = %s, want %s", out, raw)
 			}
 		})
@@ -163,7 +164,7 @@ func FuzzDecode(f *testing.F) {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, s string) {
-		st, err := Decode(json.RawMessage(s))
+		st, err := Decode(jsontext.Value(s))
 		if err != nil {
 			return
 		}
@@ -177,7 +178,7 @@ func FuzzDecode(f *testing.F) {
 	})
 }
 
-func jsonEqual(t *testing.T, a, b json.RawMessage) bool {
+func jsonEqual(t *testing.T, a, b jsontext.Value) bool {
 	t.Helper()
 	if len(a) == 0 && len(b) == 0 {
 		return true

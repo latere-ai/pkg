@@ -10,7 +10,7 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -49,7 +49,7 @@ func newFakeIDPServer(t *testing.T, tls bool) *fakeIDP {
 	f := &fakeIDP{key: key, kid: "test-kid"}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(discoveryDoc{
+		_ = json.MarshalWrite(w, discoveryDoc{
 			Issuer:                f.srv.URL,
 			AuthorizationEndpoint: f.srv.URL + "/authorize",
 			TokenEndpoint:         f.srv.URL + "/token",
@@ -61,7 +61,7 @@ func newFakeIDPServer(t *testing.T, tls bool) *fakeIDP {
 		// nonce is fixed to "flow-nonce" to match TestExchangeAndVerify.
 		idToken := f.signRS256(t, baseIDClaims(f, "client-1", "flow-nonce"))
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		_ = json.MarshalWrite(w, map[string]any{
 			"access_token": "opaque-at",
 			"token_type":   "Bearer",
 			"expires_in":   3600,
@@ -71,7 +71,7 @@ func newFakeIDPServer(t *testing.T, tls bool) *fakeIDP {
 	mux.HandleFunc("/jwks.json", func(w http.ResponseWriter, _ *http.Request) {
 		n := base64.RawURLEncoding.EncodeToString(key.N.Bytes())
 		e := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.E)).Bytes())
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		_ = json.MarshalWrite(w, map[string]any{
 			"keys": []map[string]any{{
 				"kty": "RSA", "alg": "RS256", "use": "sig", "kid": f.kid, "n": n, "e": e,
 			}},
@@ -336,7 +336,7 @@ func TestFetchDiscovery_Errors(t *testing.T) {
 
 	// Missing endpoints.
 	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(discoveryDoc{Issuer: "x"})
+		_ = json.MarshalWrite(w, discoveryDoc{Issuer: "x"})
 	}))
 	defer srv2.Close()
 	if _, err := NewProvider(context.Background(), ProviderConfig{Issuer: srv2.URL, ClientID: "c", RedirectURL: "r", HTTPClient: srv2.Client()}); err == nil {

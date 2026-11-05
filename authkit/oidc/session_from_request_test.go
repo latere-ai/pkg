@@ -5,7 +5,7 @@ package oidc
 
 import (
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -25,7 +25,7 @@ func refreshClient(t *testing.T, newAccessToken string) *Client {
 			t.Errorf("grant_type = %q, want refresh_token", r.FormValue("grant_type"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]any{
+		if err := json.MarshalWrite(w, map[string]any{
 			"access_token": newAccessToken, "token_type": "Bearer", "expires_in": 3600,
 		}); err != nil {
 			t.Errorf("encode token response: %v", err)

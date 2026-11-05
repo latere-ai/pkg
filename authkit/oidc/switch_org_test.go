@@ -6,7 +6,7 @@ package oidc
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -54,7 +54,7 @@ func switchOrgIssuer(t *testing.T, got *map[string][]string, status int) *httpte
 			roles = []string{"member"}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		_ = json.MarshalWrite(w, map[string]any{
 			"access_token": claimsJWT(t, map[string]any{
 				"sub": "u1", "org_id": r.PostForm.Get("org_id"), "roles": roles,
 			}),

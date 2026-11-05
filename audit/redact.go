@@ -5,7 +5,10 @@ package audit
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
+	"errors"
+	"io"
 	"regexp"
 )
 
@@ -35,26 +38,95 @@ func Redact(s string) string {
 // passed through Redact (whole-string scrub) so callers can use it on
 // arbitrary blobs.
 func RedactJSON(b []byte) []byte {
-	var v any
-	// UseNumber so integers above 2^53 (snowflake IDs, unix-ns timestamps)
-	// survive as json.Number instead of being mangled by a float64 round-trip.
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.UseNumber()
-	if err := dec.Decode(&v); err != nil {
+	// Numbers stay as the digits they arrived with, so integers above 2^53
+	// (snowflake IDs, unix-ns timestamps) are not mangled by a float64
+	// round-trip.
+	dec := jsontext.NewDecoder(bytes.NewReader(b), blobJSON)
+	v, err := readTree(dec)
+	if err != nil {
 		return []byte(Redact(string(b)))
 	}
 	// Reject trailing data so a blob like `{"a":1}garbage` falls back to the
-	// whole-string scrub instead of silently dropping the trailing bytes
-	// (json.Unmarshal rejected this; the streaming decoder does not).
-	if dec.More() {
+	// whole-string scrub instead of silently dropping the trailing bytes.
+	if _, err := dec.ReadValue(); !errors.Is(err, io.EOF) {
 		return []byte(Redact(string(b)))
 	}
 	cleaned := walk(v)
-	out, err := json.Marshal(cleaned)
+	out, err := json.Marshal(cleaned, json.Deterministic(true), blobJSON)
 	if err != nil {
 		return []byte(Redact(string(b)))
 	}
 	return out
+}
+
+// blobJSON admits the blobs this package scrubs: they are process output and
+// tool results, so duplicate names and invalid UTF-8 can occur.
+var blobJSON = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+)
+
+// readTree reads one JSON value into maps, slices, strings, bools and nil.
+// A number is kept as its raw text in a jsontext.Value.
+func readTree(dec *jsontext.Decoder) (any, error) {
+	switch dec.PeekKind() {
+	case '{':
+		if _, err := dec.ReadToken(); err != nil {
+			return nil, err
+		}
+		m := map[string]any{}
+		for dec.PeekKind() != '}' {
+			k, err := dec.ReadToken()
+			if err != nil {
+				return nil, err
+			}
+			name := k.String() // a token is valid only until the next read
+			val, err := readTree(dec)
+			if err != nil {
+				return nil, err
+			}
+			m[name] = val
+		}
+		_, err := dec.ReadToken()
+		return m, err
+	case '[':
+		if _, err := dec.ReadToken(); err != nil {
+			return nil, err
+		}
+		arr := []any{}
+		for dec.PeekKind() != ']' {
+			e, err := readTree(dec)
+			if err != nil {
+				return nil, err
+			}
+			arr = append(arr, e)
+		}
+		_, err := dec.ReadToken()
+		return arr, err
+	case '0':
+		raw, err := dec.ReadValue()
+		return jsontext.Value(bytes.Clone(raw)), err
+	case 0:
+		_, err := dec.ReadToken()
+		if err == nil {
+			err = io.ErrUnexpectedEOF
+		}
+		return nil, err
+	default:
+		tok, err := dec.ReadToken()
+		if err != nil {
+			return nil, err
+		}
+		switch tok.Kind() {
+		case '"':
+			return tok.String(), nil
+		case 't':
+			return true, nil
+		case 'f':
+			return false, nil
+		}
+		return nil, nil
+	}
 }
 
 const redacted = "***"
@@ -104,8 +176,8 @@ func walk(v any) any {
 	switch t := v.(type) {
 	case string:
 		return Redact(t)
-	case json.Number:
-		// A numeric leaf (from UseNumber); not a credential string.
+	case jsontext.Value:
+		// A numeric leaf; not a credential string.
 		return t
 	case map[string]any:
 		for k, val := range t {

@@ -4,7 +4,7 @@
 package openaichat
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
 	"reflect"
 	"testing"
@@ -20,8 +20,8 @@ func toolImageRequest(model string, hint bool) *ir.Request {
 		Model: model,
 		Messages: []ir.Message{
 			{Role: ir.RoleAssistant, Blocks: []ir.Block{
-				{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "call_1", Name: "read", Args: json.RawMessage(`{"path":"a.png"}`)}},
-				{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "call_2", Name: "read", Args: json.RawMessage(`{"path":"b.png"}`)}},
+				{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "call_1", Name: "read", Args: jsontext.Value(`{"path":"a.png"}`)}},
+				{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "call_2", Name: "read", Args: jsontext.Value(`{"path":"b.png"}`)}},
 			}},
 			{Role: ir.RoleUser, Blocks: []ir.Block{
 				{Type: ir.BlockToolResult, ToolResult: &ir.ToolResult{ToolUseID: "call_1", Blocks: []ir.Block{

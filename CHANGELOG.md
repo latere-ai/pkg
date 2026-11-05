@@ -10,6 +10,30 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Changed
+
+- **Every package encodes and decodes JSON with `encoding/json/v2`.**
+  Exported `json.RawMessage` fields and parameters are now
+  `jsontext.Value`, the same type under another name, so callers keep
+  compiling. Struct tags moved from `omitempty` to `omitzero` where the two
+  differ under v2, so every field that was omitted before still is, in
+  every package.
+- **`httpjson` responses write a nil list or map as `[]` or `{}`**, leave
+  map keys unsorted and no longer escape `<`, `>` and `&`. The `health`
+  document and the `authz/stub` and `authkit/issuertest` servers end their
+  bodies without a newline. Error text from a malformed request body
+  changes.
+- **Model-provider requests keep their bytes.** `llmdialect` and
+  `llmdirect` write provider payloads with sorted keys and nil lists as
+  `null`, as before, and read provider answers leniently: a repeated name,
+  invalid UTF-8 or a name in another case is accepted.
+- **`authkit/jwt` refuses a token whose header or claims repeat a name,
+  hold invalid UTF-8 or spell a claim in another case** (`ErrMalformedToken`),
+  where it took the last value or matched the case before. RFC 7519 makes
+  claim names case-sensitive and lets a parser reject duplicates.
+- Requires `latere.ai/x/sdk-go` v0.33.0, whose wire types carry the same
+  tags, so Lux requests omit unset flags as before.
+
 ## v0.111.0 - 2026-11-05
 
 ### Added

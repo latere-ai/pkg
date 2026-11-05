@@ -5,7 +5,7 @@ package oidc
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -77,7 +77,7 @@ func mintActorToken(ctx context.Context, authURL, accessToken, audience string) 
 		ActorToken string `json:"actor_token"`
 		ExpiresIn  int64  `json:"expires_in"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &out); err != nil {
 		return "", 0, fmt.Errorf("oidc: actor token for %s: decode: %w", audience, err)
 	}
 	if out.ActorToken == "" || out.ExpiresIn <= 0 {

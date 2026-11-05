@@ -4,7 +4,8 @@
 package openaichat
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"reflect"
 	"slices"
 	"strings"
@@ -26,7 +27,7 @@ func agentTurn(model string) *ir.Request {
 		Messages: []ir.Message{
 			{Role: ir.RoleUser, Blocks: []ir.Block{{Type: ir.BlockText, Text: "read a.txt", CacheHint: true}}},
 			{Role: ir.RoleAssistant, Blocks: []ir.Block{
-				{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "t1", Name: "read", Args: json.RawMessage(`{"path":"a.txt"}`)}},
+				{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{ID: "t1", Name: "read", Args: jsontext.Value(`{"path":"a.txt"}`)}},
 			}},
 			{Role: ir.RoleUser, Blocks: []ir.Block{
 				{Type: ir.BlockToolResult, CacheHint: true, ToolResult: &ir.ToolResult{

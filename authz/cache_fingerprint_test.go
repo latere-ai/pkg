@@ -4,7 +4,8 @@
 package authz
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"testing"
 )
 
@@ -34,18 +35,18 @@ func FuzzRequestFingerprint(f *testing.F) {
 		if err != nil {
 			return
 		}
-		var envelope map[string]json.RawMessage
+		var envelope map[string]jsontext.Value
 		if err := json.Unmarshal(body, &envelope); err != nil {
 			t.Fatal(err)
 		}
-		var caller map[string]json.RawMessage
+		var caller map[string]jsontext.Value
 		if err := json.Unmarshal(envelope["request"], &caller); err != nil {
 			t.Fatal(err)
 		}
 		if caller == nil {
-			caller = map[string]json.RawMessage{}
+			caller = map[string]jsontext.Value{}
 		}
-		caller["id"] = json.RawMessage(`"different-correlation"`)
+		caller["id"] = jsontext.Value(`"different-correlation"`)
 		envelope["request"], _ = json.Marshal(caller)
 		again, err := json.Marshal(envelope)
 		if err != nil {
@@ -57,7 +58,7 @@ func FuzzRequestFingerprint(f *testing.F) {
 		}
 		// A null caller becomes an empty object when it acquires an ID; production
 		// Caller is always an object. Compare only original object-valued callers.
-		var original map[string]json.RawMessage
+		var original map[string]jsontext.Value
 		_ = json.Unmarshal(body, &original)
 		if string(original["request"]) != "null" && first != second {
 			t.Fatalf("correlation changed fingerprint for %s", body)

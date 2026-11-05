@@ -5,7 +5,8 @@ package hostsandbox
 
 import (
 	"bufio"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -107,7 +108,7 @@ func (r *reporter) report(host, port string) {
 // network carries on.
 func (r *reporter) send(w io.Writer, done <-chan struct{}) {
 	write := func(item refusal) bool {
-		line, err := json.Marshal(item)
+		line, err := json.Marshal(item, jsontext.AllowInvalidUTF8(true))
 		if err != nil {
 			return false
 		}
@@ -155,7 +156,7 @@ var openRefusals = func() (io.WriteCloser, error) {
 // normalized form and a port from 1 to 65535.
 func decodeRefusal(line []byte) (string, int, bool) {
 	var item refusal
-	if err := json.Unmarshal(line, &item); err != nil {
+	if err := json.Unmarshal(line, &item, jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true), json.MatchCaseInsensitiveNames(true)); err != nil {
 		return "", 0, false
 	}
 	if item.Port < 1 || item.Port > 65535 || normalizeHost(item.Host) != item.Host || !reportable(item.Host) {

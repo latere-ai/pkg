@@ -22,7 +22,8 @@
 package openaichat
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -30,6 +31,7 @@ import (
 
 	"latere.ai/x/pkg/llmdialect/internal/servertool"
 	"latere.ai/x/pkg/llmdialect/internal/sse"
+	"latere.ai/x/pkg/llmdialect/internal/wirejson"
 	"latere.ai/x/pkg/llmdialect/ir"
 )
 
@@ -83,7 +85,7 @@ func (b *Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 		for _, t := range req.Tools {
 			schema := t.InputSchema
 			if len(schema) == 0 {
-				schema = json.RawMessage(`{"type":"object"}`)
+				schema = jsontext.Value(`{"type":"object"}`)
 			}
 			fn := map[string]any{"name": t.Name, "parameters": schema}
 			if t.Description != "" {
@@ -190,7 +192,7 @@ func (b *Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 		// streamed calls (mirrors lux's passthrough injection).
 		body["stream_options"] = map[string]any{"include_usage": true}
 	}
-	return json.Marshal(body)
+	return json.Marshal(body, wirejson.Out)
 }
 
 // Effort banding thresholds for Anthropic-style token budgets.
@@ -602,11 +604,11 @@ func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 		Model   string `json:"model"`
 		Choices []struct {
 			Message struct {
-				Content          *string         `json:"content"`
-				Refusal          *string         `json:"refusal"`
-				ReasoningContent string          `json:"reasoning_content"`
-				Reasoning        json.RawMessage `json:"reasoning"`
-				ToolCalls        []wireToolCall  `json:"tool_calls"`
+				Content          *string        `json:"content"`
+				Refusal          *string        `json:"refusal"`
+				ReasoningContent string         `json:"reasoning_content"`
+				Reasoning        jsontext.Value `json:"reasoning"`
+				ToolCalls        []wireToolCall `json:"tool_calls"`
 			} `json:"message"`
 			LogProbs           *wireLogProbs `json:"logprobs"`
 			FinishReason       string        `json:"finish_reason"`
@@ -615,7 +617,7 @@ func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 		Usage *wireUsage `json:"usage"`
 		Error *wireError `json:"error"`
 	}
-	if err := json.Unmarshal(body, &wire); err != nil {
+	if err := json.Unmarshal(body, &wire, wirejson.In); err != nil {
 		return nil, fmt.Errorf("openaichat: invalid response JSON: %w", err)
 	}
 	if wire.Error != nil {
@@ -639,7 +641,7 @@ func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 	}
 	for _, tc := range choice.Message.ToolCalls {
 		resp.Blocks = append(resp.Blocks, ir.Block{Type: ir.BlockToolUse, ToolUse: &ir.ToolUse{
-			ID: tc.ID, Name: tc.Function.Name, Args: json.RawMessage(tc.Function.Arguments),
+			ID: tc.ID, Name: tc.Function.Name, Args: jsontext.Value(tc.Function.Arguments),
 		}})
 	}
 	resp.LogProbs = choice.LogProbs.toIR()
@@ -660,12 +662,12 @@ func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 // first. A reasoning member that is not a JSON string is not thinking (a
 // server may echo the request's reasoning object under that name) and is
 // ignored rather than failing the decode.
-func reasoningText(content string, alias json.RawMessage) string {
+func reasoningText(content string, alias jsontext.Value) string {
 	if content != "" {
 		return content
 	}
 	var s string
-	if len(alias) > 0 && alias[0] == '"' && json.Unmarshal(alias, &s) == nil {
+	if len(alias) > 0 && alias[0] == '"' && json.Unmarshal(alias, &s, wirejson.In) == nil {
 		return s
 	}
 	return ""
@@ -832,10 +834,10 @@ func (d *EventDecoder) consume(data []byte) error {
 		Choices []struct {
 			Index int `json:"index"`
 			Delta struct {
-				Content          *string         `json:"content"`
-				ReasoningContent string          `json:"reasoning_content"`
-				Reasoning        json.RawMessage `json:"reasoning"`
-				ToolCalls        []wireToolCall  `json:"tool_calls"`
+				Content          *string        `json:"content"`
+				ReasoningContent string         `json:"reasoning_content"`
+				Reasoning        jsontext.Value `json:"reasoning"`
+				ToolCalls        []wireToolCall `json:"tool_calls"`
 			} `json:"delta"`
 			LogProbs           *wireLogProbs `json:"logprobs"`
 			FinishReason       string        `json:"finish_reason"`
@@ -844,7 +846,7 @@ func (d *EventDecoder) consume(data []byte) error {
 		Usage *wireUsage `json:"usage"`
 		Error *wireError `json:"error"`
 	}
-	if err := json.Unmarshal(data, &chunk); err != nil {
+	if err := json.Unmarshal(data, &chunk, wirejson.In); err != nil {
 		return fmt.Errorf("openaichat: invalid stream chunk: %w", err)
 	}
 	if chunk.Error != nil {
@@ -933,7 +935,7 @@ func (d *EventDecoder) consumeToolDelta(tc wireToolCall) {
 // cannot be interleaved with it.
 func (d *EventDecoder) openComplete() bool {
 	c := d.calls[d.openTool]
-	return c != nil && json.Valid([]byte(c.args.String()))
+	return c != nil && jsontext.Value([]byte(c.args.String())).IsValid(wirejson.In)
 }
 
 // startTool opens the block of call c, upstream index upstream, with

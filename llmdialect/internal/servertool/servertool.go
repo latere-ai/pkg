@@ -14,9 +14,11 @@
 package servertool
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 
+	"latere.ai/x/pkg/llmdialect/internal/wirejson"
 	"latere.ai/x/pkg/llmdialect/ir"
 )
 
@@ -29,7 +31,7 @@ import (
 func Encode(t ir.ServerTool) (map[string]any, error) {
 	out := map[string]any{}
 	if len(t.Config) > 0 {
-		if err := json.Unmarshal(t.Config, &out); err != nil {
+		if err := json.Unmarshal(t.Config, &out, wirejson.In); err != nil {
 			return nil, fmt.Errorf("server tool %q config: %w", t.Type, err)
 		}
 	}
@@ -48,27 +50,27 @@ func Encode(t ir.ServerTool) (map[string]any, error) {
 // Config is nil when nothing else remains, so a tool that takes no options
 // encodes back to exactly the two fields it arrived with rather than an empty
 // object.
-func Decode(raw json.RawMessage) (ir.ServerTool, error) {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil {
+func Decode(raw jsontext.Value) (ir.ServerTool, error) {
+	var fields map[string]jsontext.Value
+	if err := json.Unmarshal(raw, &fields, wirejson.In); err != nil {
 		return ir.ServerTool{}, fmt.Errorf("server tool: %w", err)
 	}
 
 	var t ir.ServerTool
 	if v, ok := fields["type"]; ok {
-		if err := json.Unmarshal(v, &t.Type); err != nil {
+		if err := json.Unmarshal(v, &t.Type, wirejson.In); err != nil {
 			return ir.ServerTool{}, fmt.Errorf("server tool type: %w", err)
 		}
 		delete(fields, "type")
 	}
 	if v, ok := fields["name"]; ok {
-		if err := json.Unmarshal(v, &t.Name); err != nil {
+		if err := json.Unmarshal(v, &t.Name, wirejson.In); err != nil {
 			return ir.ServerTool{}, fmt.Errorf("server tool name: %w", err)
 		}
 		delete(fields, "name")
 	}
 	if len(fields) > 0 {
-		cfg, err := json.Marshal(fields)
+		cfg, err := json.Marshal(fields, wirejson.Out)
 		if err != nil {
 			return ir.ServerTool{}, fmt.Errorf("server tool %q config: %w", t.Type, err)
 		}

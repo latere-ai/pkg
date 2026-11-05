@@ -9,13 +9,15 @@ package anthropic
 // dialect can drive a native Anthropic model.
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
 
 	"latere.ai/x/pkg/llmdialect/internal/servertool"
 	"latere.ai/x/pkg/llmdialect/internal/sse"
+	"latere.ai/x/pkg/llmdialect/internal/wirejson"
 	"latere.ai/x/pkg/llmdialect/ir"
 )
 
@@ -90,7 +92,7 @@ func (b *Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 		for _, t := range req.Tools {
 			schema := t.InputSchema
 			if len(schema) == 0 {
-				schema = json.RawMessage(`{"type":"object"}`)
+				schema = jsontext.Value(`{"type":"object"}`)
 			}
 			tool := map[string]any{"name": t.Name, "input_schema": schema}
 			if t.Description != "" {
@@ -205,7 +207,7 @@ func (b *Backend) EncodeRequest(req *ir.Request) ([]byte, error) {
 	if req.Stream {
 		body["stream"] = true
 	}
-	return json.Marshal(body)
+	return json.Marshal(body, wirejson.Out)
 }
 
 // Budget→effort banding thresholds for Anthropic-style callers, now
@@ -285,7 +287,7 @@ func encodeBackendBlock(blk ir.Block, role ir.Role, req *ir.Request) (map[string
 	case ir.BlockToolUse:
 		args := blk.ToolUse.Args
 		if len(args) == 0 {
-			args = json.RawMessage("{}")
+			args = jsontext.Value("{}")
 		}
 		return map[string]any{"type": "tool_use", "id": blk.ToolUse.ID, "name": blk.ToolUse.Name, "input": args}, true, nil
 	case ir.BlockToolResult:
@@ -380,7 +382,7 @@ func (*Backend) DecodeResponse(body []byte) (*ir.Response, error) {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	if err := json.Unmarshal(body, &wire); err != nil {
+	if err := json.Unmarshal(body, &wire, wirejson.In); err != nil {
 		return nil, fmt.Errorf("anthropic: invalid response JSON: %w", err)
 	}
 	if wire.Error != nil {
@@ -500,7 +502,7 @@ func (d *backendEventDecoder) consume(data []byte) error {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	if err := json.Unmarshal(data, &frame); err != nil {
+	if err := json.Unmarshal(data, &frame, wirejson.In); err != nil {
 		return fmt.Errorf("anthropic: invalid stream event: %w", err)
 	}
 	switch frame.Type {

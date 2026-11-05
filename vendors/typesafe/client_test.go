@@ -5,7 +5,7 @@ package typesafe
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"net"
@@ -296,7 +296,7 @@ func TestEvaluateUsesTheConfiguredDefaultModel(t *testing.T) {
 		var body struct {
 			Model string `json:"model"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := json.UnmarshalRead(r.Body, &body); err != nil {
 			t.Errorf("decoding the request: %v", err)
 		}
 		gotModel = body.Model

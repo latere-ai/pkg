@@ -4,7 +4,8 @@
 package hostsandbox
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -28,7 +29,7 @@ type NetworkSettings struct {
 	// TLSTerminate configures inspection. srt intercepts egress with its own
 	// certificate authority and publishes that authority to the per-tool
 	// trust variables only when this block is present.
-	TLSTerminate *TLSSettings `json:"tlsTerminate,omitempty"`
+	TLSTerminate *TLSSettings `json:"tlsTerminate,omitzero"`
 	// AllowLocalBinding stays false. A stage that binds a local port is
 	// communicating with something outside the sandbox's control.
 	AllowLocalBinding bool `json:"allowLocalBinding"`
@@ -128,7 +129,7 @@ func Render(profile Profile) Settings {
 
 // Encode renders the settings as the file srt reads.
 func (s Settings) Encode() ([]byte, error) {
-	body, err := json.MarshalIndent(s, "", "  ")
+	body, err := json.Marshal(s, jsontext.WithIndent("  "), json.Deterministic(true), json.FormatNilSliceAsNull(true), json.FormatNilMapAsNull(true))
 	if err != nil {
 		return nil, fmt.Errorf("encode sandbox settings: %w", err)
 	}

@@ -28,7 +28,8 @@ package llmdirect
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -254,7 +255,7 @@ func (c *Client) Generate(ctx context.Context, req *llm.Request) (*llm.Result, e
 		return nil, fmt.Errorf("llmdirect: %w", err)
 	}
 	res := &llm.Result{Loss: ireq.Loss.Strings()}
-	if err := json.Unmarshal(out, &res.Response); err != nil {
+	if err := json.Unmarshal(out, &res.Response, inJSON); err != nil {
 		return nil, fmt.Errorf("llmdirect: decoding the answer: %w", err)
 	}
 	return res, nil
@@ -300,7 +301,7 @@ func (c *Client) call(ctx context.Context, req *llm.Request, stream bool) (*ir.R
 	}
 	wire := *req
 	wire.Stream = stream
-	body, err := json.Marshal(&wire)
+	body, err := json.Marshal(&wire, outJSON)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("llmdirect: encoding the request: %w", err)
 	}
@@ -380,7 +381,7 @@ func decodeProviderError(resp *http.Response) error {
 			RequestID string `json:"request_id"`
 		} `json:"error"`
 	}
-	if json.Unmarshal(body, &wire) != nil || (wire.Error.Type == "" && wire.Error.Message == "") {
+	if json.Unmarshal(body, &wire, inJSON) != nil || (wire.Error.Type == "" && wire.Error.Message == "") {
 		out.Message = strings.TrimSpace(string(body))
 		return out
 	}
@@ -389,3 +390,21 @@ func decodeProviderError(resp *http.Response) error {
 	out.RequestID = wire.Error.RequestID
 	return out
 }
+
+// inJSON reads what a provider or the dialect packages hand back: duplicate
+// names, invalid UTF-8 and any letter case are accepted.
+var inJSON = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+	json.MatchCaseInsensitiveNames(true),
+)
+
+// outJSON writes the request handed to the dialect packages on its way to a
+// provider: keys sorted, nil slices and maps as null, invalid UTF-8 replaced.
+var outJSON = json.JoinOptions(
+	json.Deterministic(true),
+	json.FormatNilSliceAsNull(true),
+	json.FormatNilMapAsNull(true),
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+)

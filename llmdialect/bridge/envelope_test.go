@@ -5,7 +5,7 @@ package bridge
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -184,7 +184,7 @@ func FuzzParseEnvelope(f *testing.F) {
 		if !ok && (got.Code != "" || got.Message != "" || got.Detail != "" || got.RequestID != "" || got.Status != 0 || got.Domain != "" || got.Details != nil) {
 			t.Fatalf("a failure with ok false: %+v", got)
 		}
-		if ok && !json.Valid(body) {
+		if ok && !jsontext.Value(body).IsValid() {
 			t.Fatal("ok on invalid JSON")
 		}
 	})
@@ -203,7 +203,7 @@ func FuzzEnvelopeRoundTrip(f *testing.F) {
 		in := Failure{Code: code, Message: message, RequestID: requestID, Detail: detail, Status: status, Domain: domain}
 		for w := range wireFiles {
 			body := Envelope(w, in)
-			if !json.Valid(body) {
+			if !jsontext.Value(body).IsValid() {
 				t.Fatalf("%s: invalid JSON %s", w, body)
 			}
 			got, ok := ParseEnvelope(w, body)

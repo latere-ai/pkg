@@ -17,7 +17,7 @@ package ir
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"io"
 	"slices"
 	"strconv"
@@ -125,10 +125,10 @@ type Opaque struct {
 	Kind string
 
 	// Raw is the item's JSON. Codecs that produce an opaque block store
-	// it in the form encoding/json writes a json.RawMessage: compact,
+	// it in the form encoding/json writes a jsontext.Value: compact,
 	// with <, > and & escaped. Raw then survives every later marshal,
 	// the lux wire and a backend request body included, byte for byte.
-	Raw json.RawMessage
+	Raw jsontext.Value
 }
 
 // Image is image content, either inline base64 or by URL.
@@ -142,7 +142,7 @@ type Image struct {
 type ToolUse struct {
 	ID   string
 	Name string
-	Args json.RawMessage // arguments object as JSON
+	Args jsontext.Value // arguments object as JSON
 }
 
 // ToolResult is a caller-supplied result for a prior ToolUse.
@@ -162,7 +162,7 @@ type Message struct {
 type Tool struct {
 	Name        string
 	Description string
-	InputSchema json.RawMessage // JSON Schema object
+	InputSchema jsontext.Value // JSON Schema object
 }
 
 // ServerTool is a tool the provider runs itself.
@@ -189,7 +189,7 @@ type ServerTool struct {
 	// Config carries the fields that sit beside Type and Name in the same
 	// object — max_uses, allowed_domains, and whatever a provider adds
 	// next — as a JSON object. Nil when the tool takes no options.
-	Config json.RawMessage
+	Config jsontext.Value
 }
 
 // WebSearch asks the provider to ground the answer in a web search it runs
@@ -205,7 +205,7 @@ type WebSearch struct {
 	// UserLocation biases results geographically. Provider-shaped and
 	// passed through unread, since the dialects that accept it do not
 	// agree on its fields.
-	UserLocation json.RawMessage
+	UserLocation jsontext.Value
 }
 
 // ToolChoiceMode says how the model may use tools.
@@ -284,7 +284,7 @@ type TokenLogProb struct {
 type ResponseSchema struct {
 	Name        string
 	Description string
-	Schema      json.RawMessage
+	Schema      jsontext.Value
 	Strict      bool
 }
 

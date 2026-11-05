@@ -11,11 +11,12 @@ package lux
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 
 	"latere.ai/x/sdk-go/llm/wire"
 
+	"latere.ai/x/pkg/llmdialect/internal/wirejson"
 	"latere.ai/x/pkg/llmdialect/ir"
 )
 
@@ -117,7 +118,7 @@ func opaqueToIR(o *Opaque) (*ir.Opaque, error) {
 	if len(o.Raw) == 0 {
 		return nil, fmt.Errorf("opaque block needs raw")
 	}
-	raw, err := json.Marshal(o.Raw)
+	raw, err := json.Marshal(o.Raw, wirejson.Out)
 	if err != nil {
 		return nil, fmt.Errorf("opaque block raw: %w", err)
 	}

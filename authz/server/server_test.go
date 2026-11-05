@@ -5,7 +5,8 @@ package server_test
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -306,7 +307,7 @@ func TestADecisionIsWrittenWhole(t *testing.T) {
 		{"a ttl over the cap", authz.Decision{Allow: true, TTL: 2 * authz.MaxTTL},
 			`{"allow":true,"ttl":` + fmt.Sprint(int(authz.MaxTTL/time.Second)) + `}`},
 		{"a ttl under a second", authz.Decision{Allow: true, TTL: time.Millisecond}, `{"allow":true}`},
-		{"the core's limits", authz.Decision{Allow: true, Limits: json.RawMessage(`{"quota_bytes":10}`)},
+		{"the core's limits", authz.Decision{Allow: true, Limits: jsontext.Value(`{"quota_bytes":10}`)},
 			`{"allow":true,"limits":{"quota_bytes":10}}`},
 		{"a filter", authz.Decision{Allow: true, Filter: &authz.Filter{Owners: []string{"acme"}}},
 			`{"allow":true,"filter":{"owners":["acme"]}}`},

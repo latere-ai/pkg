@@ -58,7 +58,8 @@ package server
 import (
 	"context"
 	"crypto/subtle"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"log/slog"
@@ -208,11 +209,11 @@ const (
 // 200 is never a body that is no answer; every other field is omitted
 // when it is nothing.
 type answer struct {
-	Allow  bool            `json:"allow"`
-	Reason string          `json:"reason,omitempty"`
-	TTL    int             `json:"ttl,omitempty"`
-	Limits json.RawMessage `json:"limits,omitempty"`
-	Filter *authz.Filter   `json:"filter,omitempty"`
+	Allow  bool           `json:"allow"`
+	Reason string         `json:"reason,omitempty"`
+	TTL    int            `json:"ttl,omitzero"`
+	Limits jsontext.Value `json:"limits,omitzero"`
+	Filter *authz.Filter  `json:"filter,omitzero"`
 }
 
 type handler struct {

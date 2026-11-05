@@ -21,7 +21,7 @@ package health
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -106,7 +106,7 @@ func Handler(o Options) http.Handler {
 	})
 	mux.HandleFunc("GET /version", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(Build{Version: o.Version, Commit: o.Commit, BuildTime: o.BuildTime})
+		_ = json.MarshalWrite(w, Build{Version: o.Version, Commit: o.Commit, BuildTime: o.BuildTime})
 	})
 	if o.Metrics != nil {
 		mux.Handle("GET /metrics", o.Metrics)
