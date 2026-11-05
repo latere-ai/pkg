@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.113.0 - 2026-11-05
+
 ### Changed
 
 - **`httpjson.WriteError` writes the members of `details` in sorted
