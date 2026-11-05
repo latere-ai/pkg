@@ -15,11 +15,22 @@ name: ci
 # imports or calls, and the fuzz targets. It runs the same work the single
 # pre-migration job did, in parallel with the rest instead of in front of it.
 
+# A push or pull request that changes only markdown starts no run, because no
+# build or test here reads it. specs/ is not ignored: this module is public,
+# and `make no-tracked-specs` fails a tree that tracks anything under it.
 on:
   push:
     branches: [main]
+    paths:
+      - "**"
+      - "!**.md"
+      - "specs/**"
   pull_request:
     branches: [main]
+    paths:
+      - "**"
+      - "!**.md"
+      - "specs/**"
   workflow_dispatch:
 
 # A newer push to the same ref supersedes this run: its commit carries every
