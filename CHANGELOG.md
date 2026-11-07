@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.115.0 - 2026-11-07
+
 ### Security
 
 - **`otel.Transport` keeps no query on a client span.** `url.full` held
