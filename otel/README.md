@@ -72,7 +72,7 @@ With export on, the metrics include the Go runtime's, with no code in the servic
 - `RunServer(ctx, srv, timeout, preShutdown)`: runs an `http.Server` and shuts it down gracefully when ctx is cancelled. Caller owns signals and handler wrapping.
 - `Version(override)`: resolves a version string from the override, then build info (module version or short VCS revision), then `"dev"`.
 - `Replica()`: resolves a replica label from `POD_NAME`, `HOSTNAME`, or the OS hostname.
-- `Transport(base)` / `HTTPClient()`: instrument an outbound `http.Client` and propagate the trace context.
+- `Transport(base)` / `HTTPClient()`: instrument an outbound `http.Client` and propagate the trace context. A client span's `url.full` holds the scheme, host and path, never the query or the fragment; a server span from `Handler` holds the path alone.
 - `Setup(ctx, name, version)`: lower-level traces + metrics only (used by `Bootstrap`), the Go runtime's metrics among them.
 - `SetupLogs(ctx, LogsConfig)`: lower-level logging only (used by `Bootstrap`).
 - `Handler(h, operation, opts...)`: wraps an `http.Handler` with tracing/metrics and sets the `X-Trace-Id` response header.

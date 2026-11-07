@@ -10,6 +10,15 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Security
+
+- **`otel.Transport` keeps no query on a client span.** `url.full` held
+  the whole URL, so a token, a cursor or a name in a query reached the
+  telemetry backend. It now holds the scheme, host and path, and drops
+  the query, the fragment and any user info. Server spans from
+  `otel.Handler` already recorded the path alone; a test now holds them
+  to it.
+
 ## v0.114.0 - 2026-11-06
 
 ### Added

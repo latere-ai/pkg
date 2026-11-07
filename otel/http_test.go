@@ -162,6 +162,44 @@ func TestHandlerWithRouteAndSurface(t *testing.T) {
 	}
 }
 
+// A server span holds the request's path and none of its query, by any
+// attribute, its name or its events, as no client span does.
+func TestHandlerKeepsNoQueryOnTheSpan(t *testing.T) {
+	rec := installRecorder(t)
+	wrapped := Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}), "edge")
+	wrapped.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/v1/items/abc?token=secret&cursor=c2", nil))
+
+	spans := rec.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("got %d spans, want 1", len(spans))
+	}
+	span := spans[0]
+	seen := []string{span.Name()}
+	path := ""
+	for _, kv := range span.Attributes() {
+		seen = append(seen, kv.Value.String())
+		if kv.Key == "url.path" {
+			path = kv.Value.AsString()
+		}
+	}
+	for _, ev := range span.Events() {
+		seen = append(seen, ev.Name)
+		for _, kv := range ev.Attributes {
+			seen = append(seen, kv.Value.String())
+		}
+	}
+	for _, v := range seen {
+		if strings.Contains(v, "secret") || strings.Contains(v, "cursor") {
+			t.Errorf("the span carries the query: %q", v)
+		}
+	}
+	if path != "/v1/items/abc" {
+		t.Errorf("url.path = %q", path)
+	}
+}
+
 func TestHandlerWithSurfaceAttrEmptyOmitsAttribute(t *testing.T) {
 	rec := installRecorder(t)
 	wrapped := Handler(
