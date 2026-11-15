@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+- Built with Go 1.27.4, which fixes GO-2026-6859.
+
 ## v0.115.0 - 2026-11-07
 
 ### Security
