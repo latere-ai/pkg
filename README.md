@@ -149,7 +149,7 @@ Smaller pieces with no product knowledge in them.
 | [`routine`](routine/) | Periodic fire-and-forget callbacks keyed by UUID, one timer each, with an injectable clock |
 | [`sanitize`](sanitize/) | Rune-safe display truncation, byte-budget truncation that never splits a rune, text collapsed to one line, a check that a string is one clean line, slug generation, and slug validation |
 | [`semaphore`](semaphore/) | Cancellable admission for concurrent work, with a wait deadline and an idempotent release |
-| [`statemachine`](statemachine/) | Generic finite state machine that validates each transition against a table |
+| [`statemachine`](statemachine/) | A stored record's lifecycle as one validated transition table: start states, successors, the sources a guarded write names, and checks that wrap `ErrIllegalTransition`. `statemachine/statemachinetest` drives a service's real writers through every step and every race, and renders each table into a Lean model and a TLA+ model that lateregate's `lean` and `tla` gates check. See [`statemachine/README.md`](statemachine/README.md) |
 | [`syncmap`](syncmap/) | Type-safe `sync.Map`, with `LoadOrStore` for the per-key mutex idiom |
 | [`trackedwg`](trackedwg/) | Wait group that reports which labeled goroutines are still outstanding |
 | [`tree`](tree/) | Generic rooted tree with parent-child links, a key index, and a walk |

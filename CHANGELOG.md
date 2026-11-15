@@ -12,6 +12,32 @@ under **Removed** or **Changed** with what to do about it.
 
 - Built with Go 1.27.4, which fixes GO-2026-6859.
 
+### Changed
+
+- **`statemachine` is a validated table with start states.** `New(name,
+  initial, next)` replaces `New(map)` and returns an error: every state is
+  a key of `next` (a terminal state maps to nothing), every state is
+  reached from an initial state, and no state lists itself or a successor
+  twice. The table is copied and immutable, and every list it returns is a
+  sorted copy. `Validate(from, to)` is now `Check(from, to)`, and its error
+  wraps `ErrIllegalTransition`, renamed from `ErrInvalidTransition`.
+  `Allowed` is now `Next`. To move: declare terminal states as keys with
+  `nil`, pass the start states, wrap the call in `Must` for a package
+  variable, and rename the calls.
+
+### Added
+
+- **`statemachine.Table.Sources`, `Terminal`, `CheckStart` and `Graph`.**
+  `Sources(to)` is the condition of a guarded write,
+  `UPDATE ... WHERE status = ANY($sources)`.
+- **`statemachine/statemachinetest`.** `Exhaustive` and `Race` drive a
+  service's own writers, against its own store, through every pair of
+  states and every pair of racing successors. `Models` renders each table
+  into a Lean 4 model with proofs and a TLA+ model of concurrent writers,
+  and fails a test when the committed models differ from the tables. The
+  `lean` and `tla` gates of lateregate check the rendered models. How the
+  code and the models stay in step is in `statemachine/README.md`.
+
 ## v0.115.0 - 2026-11-07
 
 ### Security
