@@ -5,89 +5,189 @@ package statemachine
 
 import (
 	"errors"
+	"slices"
+	"strings"
 	"testing"
 )
 
-func TestValidate_Allowed(t *testing.T) {
-	m := New(map[string][]string{
-		"a": {"b", "c"},
-		"b": {"c"},
-		"c": {},
+type status string
+
+const (
+	pending  status = "pending"
+	approved status = "approved"
+	denied   status = "denied"
+	expired  status = "expired"
+)
+
+func device(t *testing.T) *Table[status] {
+	t.Helper()
+	tab, err := New("Device", []status{pending}, map[status][]status{
+		pending:  {expired, approved, denied},
+		approved: {expired},
+		denied:   nil,
+		expired:  {},
 	})
-	if err := m.Validate("a", "b"); err != nil {
-		t.Errorf("a→b should be allowed: %v", err)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := m.Validate("a", "c"); err != nil {
-		t.Errorf("a→c should be allowed: %v", err)
+	return tab
+}
+
+func TestTableAnswersFromItsSteps(t *testing.T) {
+	tab := device(t)
+	if tab.Name() != "Device" {
+		t.Errorf("Name = %q", tab.Name())
+	}
+	if got := tab.States(); !slices.Equal(got, []status{approved, denied, expired, pending}) {
+		t.Errorf("States = %v, want sorted", got)
+	}
+	if got := tab.Initial(); !slices.Equal(got, []status{pending}) {
+		t.Errorf("Initial = %v", got)
+	}
+	if got := tab.Next(pending); !slices.Equal(got, []status{approved, denied, expired}) {
+		t.Errorf("Next(pending) = %v, want sorted", got)
+	}
+	if got := tab.Next("unknown"); got != nil {
+		t.Errorf("Next(unknown) = %v, want nil", got)
+	}
+	if got := tab.Sources(expired); !slices.Equal(got, []status{approved, pending}) {
+		t.Errorf("Sources(expired) = %v", got)
+	}
+	if got := tab.Sources(pending); got != nil {
+		t.Errorf("Sources(pending) = %v, want none", got)
+	}
+	if !tab.Can(pending, approved) || tab.Can(approved, pending) || tab.Can(pending, pending) {
+		t.Error("Can disagrees with the table")
+	}
+	if !tab.Terminal(denied) || tab.Terminal(pending) || tab.Terminal("unknown") {
+		t.Error("Terminal disagrees with the table")
 	}
 }
 
-func TestValidate_Disallowed(t *testing.T) {
-	m := New(map[string][]string{
-		"a": {"b"},
-		"b": {},
-	})
-	err := m.Validate("b", "a")
-	if err == nil {
-		t.Fatal("b→a should not be allowed")
-	}
-	if !errors.Is(err, ErrInvalidTransition) {
-		t.Errorf("error should wrap ErrInvalidTransition: %v", err)
+func TestReturnedSlicesAreCopies(t *testing.T) {
+	tab := device(t)
+	tab.Next(pending)[0] = denied
+	tab.States()[0] = denied
+	tab.Initial()[0] = denied
+	if !tab.Can(pending, approved) || tab.States()[0] != approved || tab.Initial()[0] != pending {
+		t.Error("a caller's change to a returned slice reached the table")
 	}
 }
 
-func TestValidate_SameState(t *testing.T) {
-	m := New(map[string][]string{
-		"a": {"b"},
-	})
-	if err := m.Validate("a", "a"); err == nil {
-		t.Error("a→a should not be allowed")
+func TestNewCopiesTheMap(t *testing.T) {
+	next := map[status][]status{pending: {approved}, approved: nil}
+	tab, err := New("Copy", []status{pending}, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next[pending][0] = pending
+	next[approved] = []status{pending}
+	if !tab.Can(pending, approved) || tab.Can(approved, pending) {
+		t.Error("a caller's change to the map reached the table")
 	}
 }
 
-func TestCanTransition(t *testing.T) {
-	m := New(map[string][]string{
-		"x": {"y"},
-	})
-	if !m.CanTransition("x", "y") {
-		t.Error("x→y should be allowed")
+func TestCheck(t *testing.T) {
+	tab := device(t)
+	if err := tab.Check(pending, approved); err != nil {
+		t.Errorf("pending -> approved: %v", err)
 	}
-	if m.CanTransition("y", "x") {
-		t.Error("y→x should not be allowed")
+	err := tab.Check(denied, approved)
+	if !errors.Is(err, ErrIllegalTransition) {
+		t.Fatalf("denied -> approved: %v, want ErrIllegalTransition", err)
 	}
-}
-
-func TestAllowed(t *testing.T) {
-	m := New(map[string][]string{
-		"a": {"b", "c"},
-		"b": {},
-	})
-	got := m.Allowed("a")
-	if len(got) != 2 {
-		t.Errorf("Allowed(a) = %v, want 2 entries", got)
+	if !strings.Contains(err.Error(), "Device denied -> approved") {
+		t.Errorf("error %q does not name the table and the step", err)
 	}
-	got = m.Allowed("b")
-	if len(got) != 0 {
-		t.Errorf("Allowed(b) = %v, want empty", got)
+	if err := tab.CheckStart(pending); err != nil {
+		t.Errorf("start in pending: %v", err)
+	}
+	if err := tab.CheckStart(approved); !errors.Is(err, ErrIllegalTransition) {
+		t.Errorf("start in approved: %v, want ErrIllegalTransition", err)
 	}
 }
 
-func TestAllowed_Unknown(t *testing.T) {
-	m := New(map[string][]string{})
-	if got := m.Allowed("unknown"); got != nil {
-		t.Errorf("Allowed(unknown) = %v, want nil", got)
+func TestGraph(t *testing.T) {
+	g := device(t).Graph()
+	if g.Name != "Device" || !slices.Equal(g.States, []string{"approved", "denied", "expired", "pending"}) ||
+		!slices.Equal(g.Initial, []string{"pending"}) {
+		t.Errorf("Graph = %+v", g)
+	}
+	if !slices.Equal(g.Next["pending"], []string{"approved", "denied", "expired"}) {
+		t.Errorf("Graph.Next[pending] = %v", g.Next["pending"])
+	}
+	if s, ok := g.Next["denied"]; !ok || s == nil || len(s) != 0 {
+		t.Errorf("Graph.Next[denied] = %#v, want an empty list", s)
 	}
 }
 
-func TestIntStates(t *testing.T) {
-	m := New(map[int][]int{
-		0: {1, 2},
-		1: {2},
+func TestNewRefuses(t *testing.T) {
+	cases := []struct {
+		name    string
+		label   string
+		initial []status
+		next    map[status][]status
+		want    string
+	}{
+		{"lower-case name", "device", []status{pending}, map[status][]status{pending: nil}, "not an upper-case identifier"},
+		{"reserved name", "Transition", []status{pending}, map[status][]status{pending: nil}, "not an upper-case identifier"},
+		{"no initial", "Device", nil, map[status][]status{pending: nil}, "no initial state"},
+		{"bad state", "Device", []status{"Pending"}, map[status][]status{"Pending": nil}, "not a lower-case identifier"},
+		{"undeclared target", "Device", []status{pending}, map[status][]status{pending: {"approvd"}}, `lists "approvd", which is not a state`},
+		{"self step", "Device", []status{pending}, map[status][]status{pending: {pending}}, "lists itself"},
+		{"repeated step", "Device", []status{pending}, map[status][]status{pending: {approved, approved}, approved: nil}, "a successor twice"},
+		{"undeclared initial", "Device", []status{"new"}, map[status][]status{pending: nil}, `initial state "new" is not a state`},
+		{"unreachable", "Device", []status{pending}, map[status][]status{pending: {approved}, approved: nil, denied: nil}, "reaches denied"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := New(c.label, c.initial, c.next)
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("New = %v, want an error containing %q", err, c.want)
+			}
+		})
+	}
+}
+
+func TestMust(t *testing.T) {
+	tab := Must(New("Device", []status{pending}, map[status][]status{pending: nil}))
+	if tab.Name() != "Device" {
+		t.Errorf("Must returned %v", tab)
+	}
+	defer func() {
+		if recover() == nil {
+			t.Error("Must did not panic on an invalid table")
+		}
+	}()
+	Must(New("Device", nil, map[status][]status{pending: nil}))
+}
+
+func TestRepeatedInitialCollapses(t *testing.T) {
+	tab := Must(New("Device", []status{pending, pending}, map[status][]status{pending: nil}))
+	if got := tab.Initial(); !slices.Equal(got, []status{pending}) {
+		t.Errorf("Initial = %v", got)
+	}
+}
+
+// FuzzNew holds New to its promise for any state names: it either refuses
+// the table or returns one whose every state is reached and whose answers
+// agree with the map it was given.
+func FuzzNew(f *testing.F) {
+	f.Add("pending", "approved", "denied")
+	f.Add("a", "a", "b")
+	f.Add("", "x-y", "z_1")
+	f.Fuzz(func(t *testing.T, a, b, c string) {
+		next := map[status][]status{status(a): {status(b)}, status(b): {status(c)}, status(c): nil}
+		tab, err := New("Fuzz", []status{status(a)}, next)
+		if err != nil {
+			return
+		}
+		for _, s := range tab.States() {
+			for _, to := range tab.Next(s) {
+				if !tab.Can(s, to) || tab.Check(s, to) != nil || !slices.Contains(tab.Sources(to), s) {
+					t.Fatalf("%s -> %s is listed but not answered", s, to)
+				}
+			}
+		}
 	})
-	if err := m.Validate(0, 1); err != nil {
-		t.Errorf("0→1 should be allowed: %v", err)
-	}
-	if err := m.Validate(1, 0); err == nil {
-		t.Error("1→0 should not be allowed")
-	}
 }
