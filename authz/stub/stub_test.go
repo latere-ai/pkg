@@ -204,7 +204,7 @@ func TestFailHangAndActions(t *testing.T) {
 // TestBodyOutagesAreUnavailableToTheClient: the two 200s that are no
 // answer, a body that is not JSON and one with no allow field, are
 // selected by method and by PUT /fail, and authz.Client fails closed on
-// each as it does on a status (Lux spec 006's forms of unavailability).
+// each as it does on a status (the forms of unavailability the contract names).
 func TestBodyOutagesAreUnavailableToTheClient(t *testing.T) {
 	s := stub.New(t)
 	ctx := context.Background()

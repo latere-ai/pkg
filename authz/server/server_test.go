@@ -35,7 +35,7 @@ const (
 	repoKnd = "Repository"
 )
 
-// vocabulary is Origo spec 028's four-row table: one kind, three
+// vocabulary is Origo's four-row table: one kind, three
 // decisions and a list.
 func vocabulary(t testing.TB) authz.Vocabulary {
 	t.Helper()

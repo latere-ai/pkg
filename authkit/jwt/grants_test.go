@@ -34,7 +34,7 @@ func parsedOneRepositoryRead() authkit.Grants {
 	}}
 }
 
-// patPayload is a PAT's minted token: the phase 1 claims plus token_use,
+// patPayload is a PAT's minted token: the base claims plus token_use,
 // and the grants claim when details is not nil.
 func patPayload(details any) map[string]any {
 	p := defaultPayload()
@@ -214,7 +214,7 @@ func TestParseUnverifiedReadsTheGrantsClaim(t *testing.T) {
 }
 
 // TestGrantsAreReadOnAServiceAccountKey: a service account key's token
-// carries grants (auth spec 084). A validator that reads grants reads them
+// carries grants. A validator that reads grants reads them
 // as it reads a PAT's, and one that does not refuses the token, as it
 // refuses a PAT's, so no service decides such a token by its role alone.
 func TestGrantsAreReadOnAServiceAccountKey(t *testing.T) {

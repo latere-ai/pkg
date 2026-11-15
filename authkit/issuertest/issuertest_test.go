@@ -445,7 +445,7 @@ func TestTokenEndpointWithNoClientsRefusesEveryGrant(t *testing.T) {
 
 // TestControlAPIReadsAndClearsTheRecorder: GET /requests is what Requests
 // returns and DELETE /requests is ResetRequests, so a test in another
-// process reads the recorder (Lux spec 015). Neither is recorded itself,
+// process reads the recorder. Neither is recorded itself,
 // and an empty record is an empty array.
 func TestControlAPIReadsAndClearsTheRecorder(t *testing.T) {
 	s := New(t)

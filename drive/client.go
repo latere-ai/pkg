@@ -106,7 +106,7 @@ type SyncResult struct {
 }
 
 // Sentinel errors map drive's documented status codes so mount logic reacts
-// precisely (spec 114): fail the create fast on writer-held, treat not-found as
+// precisely: fail the create fast on writer-held, treat not-found as
 // policy (agent-hidden or unauthorized — existence-hiding), re-attach on gone.
 var (
 	// ErrWriterHeld is the 409 on a second rw attach; see WriterHeldError for

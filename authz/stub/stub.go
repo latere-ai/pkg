@@ -26,7 +26,7 @@
 // action included. The verb decides nothing.
 //
 // The outage modes are the forms of unavailability the contract names
-// (Lux spec 006): a status other than 200 (Fail), a 200 whose body is not
+// (see the authz contract): a status other than 200 (Fail), a 200 whose body is not
 // JSON or parses but carries no allow (FailBody), and no answer at all
 // (Hang). A core's client treats every one of them as *authz.Unavailable
 // and fails closed.

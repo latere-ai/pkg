@@ -599,7 +599,7 @@ func newECKey(key *ecdsa.PrivateKey) signingKey {
 }
 
 // kid is the first 16 hex characters of the SHA-256 of the public key's
-// DER encoding, the convention Origo's spec 007 set.
+// DER encoding, the key id convention Origo's issuer uses.
 func kid(pub any) string {
 	der, err := x509.MarshalPKIXPublicKey(pub)
 	if err != nil {

@@ -406,7 +406,7 @@ func TestGrantsRenderTheClaim(t *testing.T) {
 }
 
 // TestRestrictNarrowsAServiceAccountKey: a service account's key carries
-// grants as a personal access token does (auth spec 084), so its token is
+// grants as a personal access token does, so its token is
 // narrowed by them and a key-minted token with none is denied.
 func TestRestrictNarrowsAServiceAccountKey(t *testing.T) {
 	if !authkit.NarrowedByGrants(authz.TokenUseServiceAccountKey) || !authkit.NarrowedByGrants(authz.TokenUsePAT) {

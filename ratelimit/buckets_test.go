@@ -159,7 +159,7 @@ func TestAllowNIsAllOrNothing(t *testing.T) {
 	}
 }
 
-// TestAdjustSettlesAReservation is Lux spec 007's rate window: a
+// TestAdjustSettlesAReservation is the rate window: a
 // reservation of estimated tokens settled to the measured count, refunded
 // when the estimate was high, debited into a deficit when it was low, and
 // refunded whole on a later refusal.

@@ -11,7 +11,7 @@ import (
 	"latere.ai/x/pkg/authz"
 )
 
-// origo is the four-row table of Origo spec 028, the smallest real
+// origo is the four-row table of Origo, the smallest real
 // vocabulary, and lux stands in for a table over several kinds.
 var (
 	origo = []authz.Action{

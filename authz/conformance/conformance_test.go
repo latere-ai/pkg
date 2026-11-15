@@ -193,7 +193,7 @@ func mentions(failures []string, s string) bool {
 }
 
 // theVocabulary is a four-row table with a list action, the shape Origo
-// spec 028 declares.
+// declares.
 func theVocabulary(t *testing.T) authz.Vocabulary {
 	t.Helper()
 	v, err := authz.NewVocabulary("origo",
