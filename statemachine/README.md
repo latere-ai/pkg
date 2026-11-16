@@ -158,6 +158,29 @@ the test with `-update` after adding the first one.
 [`statemachinetest/testdata/formal`](statemachinetest/testdata/formal) is a
 complete example, checked by this repository's own gates.
 
+### Model a protocol that is not a table
+
+Some correctness lives in timing, not in a state column. One example is a
+lease that must end before another replica may take the same work. Write
+such a protocol by hand as `formal/<Name>.tla` with its `.cfg` beside it;
+`Models` leaves files without its header alone. Keep the numbers out of
+the hand-written spec: a test renders them from the Go constants into a
+module of their own, fails on any difference, and rewrites it under
+`-update`:
+
+```go
+func TestOutboxConstants(t *testing.T) {
+	want := fmt.Sprintf("---- MODULE OutboxConstants ----\nLease == %d\nBatch == %d\n====\n",
+		NoticeClaimLease/time.Second, NoticeBatchSize)
+	// compare with formal/OutboxConstants.tla; write it when -update is set
+}
+```
+
+Add a second configuration that overrides the constants with values that
+break the protocol, marked `\* expect violation: <Invariant>`. The `tla`
+gate then fails if the model stops finding the bad trace, as well as if
+the real constants stop passing.
+
 ## How the code and the models stay in step
 
 The table is the one source. Each link from it fails a check when it
@@ -179,6 +202,7 @@ flowchart LR
 | renders a table that breaks a claim in `Proofs/` | the `lean` gate |
 | renders a table where guarded writers could leave it, or stale writers no longer can | the `tla` gate |
 | leaves a `sorry` in a proof | the `lean` gate, which builds with `--wfail` |
+| changes a constant a protocol model reads | the test that renders its constants module, then the `tla` gate |
 
 What the checks cannot see is a write of the state that does not go
 through the table: a second `UPDATE ... SET status` somewhere else, or a
