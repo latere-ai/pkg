@@ -27,6 +27,7 @@ import (
 	"maps"
 	"regexp"
 	"slices"
+	"strings"
 )
 
 // ErrIllegalTransition is what [Table.Check] and [Table.CheckStart] wrap
@@ -35,7 +36,7 @@ var ErrIllegalTransition = errors.New("illegal transition")
 
 var (
 	nameRE  = regexp.MustCompile(`^[A-Z][A-Za-z0-9]*$`)
-	stateRE = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+	stateRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
 )
 
 // reservedNames are the module names the rendered models use themselves.
@@ -58,8 +59,11 @@ type Table[S ~string] struct {
 //
 // The name is the model's name in the rendered Lean and TLA+ files: an
 // upper-case letter, then letters and digits. A state is a lower-case
-// letter, then lower-case letters, digits, '_' and '-'. New refuses a
-// table with no initial state, a successor or initial state that is not a
+// or lower-case letter, then letters, digits, '_' and '-': the stored wire
+// value itself, in whatever case the column keeps it, so the table's state
+// type is the column's type. Two states that differ only in case are
+// distinct in the models but easy to mistake for one another, so New
+// refuses them. New also refuses a table with no initial state, a successor or initial state that is not a
 // key, a state listed as its own successor or twice in one list, and a
 // state no path from an initial state reaches.
 func New[S ~string](name string, initial []S, next map[S][]S) (*Table[S], error) {
@@ -72,7 +76,7 @@ func New[S ~string](name string, initial []S, next map[S][]S) (*Table[S], error)
 	t := &Table[S]{name: name, next: make(map[S][]S, len(next))}
 	for s, succ := range next {
 		if !stateRE.MatchString(string(s)) {
-			return nil, fmt.Errorf("statemachine %s: state %q is not a lower-case identifier", name, s)
+			return nil, fmt.Errorf("statemachine %s: state %q is not an identifier (a letter, then letters, digits, '_' and '-')", name, s)
 		}
 		for _, to := range succ {
 			if _, ok := next[to]; !ok {
@@ -94,6 +98,14 @@ func New[S ~string](name string, initial []S, next map[S][]S) (*Table[S], error)
 		}
 	}
 	t.states = slices.Sorted(maps.Keys(next))
+	folded := make(map[string]S, len(t.states))
+	for _, s := range t.states {
+		key := strings.ToLower(string(s))
+		if other, ok := folded[key]; ok {
+			return nil, fmt.Errorf("statemachine %s: states %q and %q differ only in case", name, other, s)
+		}
+		folded[key] = s
+	}
 	t.initial = slices.Compact(slices.Sorted(slices.Values(initial)))
 	reached := t.reach(t.initial)
 	for _, s := range t.states {

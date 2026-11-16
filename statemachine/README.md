@@ -36,7 +36,8 @@ var Devices = statemachine.Must(statemachine.New("Device", []Status{Pending}, ma
 
 Every state is a key, terminal states included, so a misspelled target is
 an error. `New` also refuses a state no path from an initial state reaches.
-The name is the model's name in Lean and TLA+.
+The name is the model's name in Lean and TLA+. A state is the stored wire
+value itself, in any case, so the table's type is the column's type.
 
 ## Write the state
 

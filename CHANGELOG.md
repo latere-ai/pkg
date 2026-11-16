@@ -10,6 +10,13 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+### Changed
+
+- **A state may be any identifier the column stores.** `statemachine.New`
+  accepts upper and lower case, so a table can use the stored type directly
+  instead of a second lower-case type. Two states that differ only in case
+  are refused, and `New` names the pair.
+
 ## v0.116.0 - 2026-11-16
 
 - Built with Go 1.27.4, which fixes GO-2026-6859.

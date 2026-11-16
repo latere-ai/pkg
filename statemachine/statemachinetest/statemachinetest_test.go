@@ -30,10 +30,20 @@ var device = statemachine.Must(statemachine.New("Device", []status{"pending"}, m
 	"consumed": nil,
 }))
 
+// tunnel is the example table with mixed-case states, as a column that
+// stores them keeps them.
+var tunnel = statemachine.Must(statemachine.New("Tunnel", []status{"NotConnected"}, map[status][]status{
+	"NotConnected": {"Starting"},
+	"Starting":     {"Online", "Offline"},
+	"Online":       {"Offline"},
+	"Offline":      {"Starting", "Retired"},
+	"Retired":      nil,
+}))
+
 // TestExampleModels keeps testdata/formal, which the lean and tla gates
-// check in this repository, rendered from the example table.
+// check in this repository, rendered from the example tables.
 func TestExampleModels(t *testing.T) {
-	Models(t, filepath.Join("testdata", "formal"), *update, device.Graph())
+	Models(t, filepath.Join("testdata", "formal"), *update, device.Graph(), tunnel.Graph())
 }
 
 // store is an in-memory service whose writer checks the table against the

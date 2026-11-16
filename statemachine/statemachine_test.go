@@ -121,6 +121,24 @@ func TestGraph(t *testing.T) {
 	}
 }
 
+func TestNewAcceptsMixedCase(t *testing.T) {
+	tab, err := New("Tunnel", []status{"NotConnected"}, map[status][]status{
+		"NotConnected": {"Starting"},
+		"Starting":     {"Online", "Offline"},
+		"Online":       {"Offline"},
+		"Offline":      {"Starting"},
+	})
+	if err != nil {
+		t.Fatalf("New refused a mixed-case table: %v", err)
+	}
+	if err := tab.Check("Starting", "Online"); err != nil {
+		t.Errorf("Check(Starting, Online) = %v, want a step", err)
+	}
+	if tab.Can("Online", "Starting") {
+		t.Error("Online -> Starting is not a step")
+	}
+}
+
 func TestNewRefuses(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -132,7 +150,11 @@ func TestNewRefuses(t *testing.T) {
 		{"lower-case name", "device", []status{pending}, map[status][]status{pending: nil}, "not an upper-case identifier"},
 		{"reserved name", "Transition", []status{pending}, map[status][]status{pending: nil}, "not an upper-case identifier"},
 		{"no initial", "Device", nil, map[status][]status{pending: nil}, "no initial state"},
-		{"bad state", "Device", []status{"Pending"}, map[status][]status{"Pending": nil}, "not a lower-case identifier"},
+		{"empty state", "Device", []status{""}, map[status][]status{"": nil}, "is not an identifier"},
+		{"leading digit", "Device", []status{"1x"}, map[status][]status{"1x": nil}, "is not an identifier"},
+		{"space", "Device", []status{"a b"}, map[status][]status{"a b": nil}, "is not an identifier"},
+		{"closing guillemet", "Device", []status{"x»"}, map[status][]status{"x»": nil}, "is not an identifier"},
+		{"case collision", "Device", []status{"Ready"}, map[status][]status{"Ready": {"ready"}, "ready": nil}, `states "Ready" and "ready" differ only in case`},
 		{"undeclared target", "Device", []status{pending}, map[status][]status{pending: {"approvd"}}, `lists "approvd", which is not a state`},
 		{"self step", "Device", []status{pending}, map[status][]status{pending: {pending}}, "lists itself"},
 		{"repeated step", "Device", []status{pending}, map[status][]status{pending: {approved, approved}, approved: nil}, "a successor twice"},
