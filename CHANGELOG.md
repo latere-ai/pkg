@@ -10,6 +10,8 @@ under **Removed** or **Changed** with what to do about it.
 
 ## Unreleased
 
+## v0.117.0 - 2026-11-16
+
 ### Changed
 
 - **A state may be any identifier the column stores.** `statemachine.New`
